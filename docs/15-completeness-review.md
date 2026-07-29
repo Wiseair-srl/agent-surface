@@ -1,0 +1,52 @@
+# 15 — Documentation Completeness Review
+
+> [!NOTE]
+> Self-review of this specification as of its initial authoring (2026-07-29; framework-integration example and orpc-agent alignment added the same day). Purpose: give the implementing agent an honest map of what is settled, what is open, where the spec might bite itself, and what must be proven by code before being trusted.
+
+## Decisions defined
+
+- All 20 mandated decisions (D1–D20) plus the effect-taxonomy question (D-eff) are resolved with recommended v0.1 behavior, alternatives, and trade-offs — indexed in [13 Part A](13-open-questions.md#part-a--decision-log), normative text in the linked sections.
+- Additionally settled beyond the mandate: ID grammar and parsing rule ([01](01-concepts.md#canonical-id-grammar-draft)); tombstones for `COMPONENT_UNMOUNTED` vs `CAPABILITY_NOT_FOUND`; confirmation evidence binding by deep-equal input match; wire-name codec; procedure descriptors at snapshot top level; error `retry` semantics per code; limits table with concrete defaults; adapter duties checklist; milestone plan with acceptance criteria.
+
+## Decisions still open
+
+Tracked with leanings in [13 Part B](13-open-questions.md#part-b--genuinely-open-questions): OQ-1 orpc-agent manifest contract (the only one with a deadline — before M9); OQ-2 WebMCP drift; OQ-3 cross-tab; OQ-4 relevance/budgets; OQ-5 server-side-agent contextual gating; OQ-6 deep binding paths; OQ-7 i18n; OQ-8 snapshot hints; OQ-9 meta-tools threshold; OQ-10 streaming observations; OQ-11 Zod sugar package; OQ-12 confirmation UX weight for view actions. None blocks v0.1.
+
+## Potential inconsistencies (watch these during implementation)
+
+1. **`surfaceVersion` vs lazy `when()`** — the version deliberately does not capture lazy availability drift in non-React usage ([03 §availability](03-core-api.md#availability)). Documented as intentional, but adapters must not assume "same version ⇒ same availability". If this confuses adapter authors in practice, promote push-based availability to a core requirement.
+2. **`CONFIRMATION_REQUIRED` as error-shaped protocol step** — one wire shape (chosen for a binary result union), but prose must keep saying "not a failure". If embedded-loop DX suffers, a 3-status union is the fallback design (noted in [03 §invocation](03-core-api.md#invocation)).
+3. **Two-key staleness** (`registrationId` precise, `surfaceVersion` only for destructive/external) is subtle; the risk is adapters sending neither. Mitigated by toolset defaults and the adapter checklist, but it's the most likely spot for implementation drift.
+4. **Suffix-collision heuristic** (`view:X.Y` vs `domain:X.Y`) is lint-grade and can false-positive/negative; the spec says so, but readers may over-trust it.
+5. **Prompt-sketch divergences, intentional:** procedure references live at snapshot top level (not nested per component); `registry.confirmations` controller replaces a flat `resolveConfirmation` method; capability builders (`action()`/`observation()`) are the recommended authoring form because record-literal inference cannot carry per-entry generics (proven in the prototype).
+
+## Assumptions
+
+- `orpc-agent` can supply (or the app can hand-write) a manifest of exposed procedures with JSON Schemas and effect metadata; the interop is written against the documented API at orpc-agent.dev (`capabilities.capabilities()`, `runtime.describe`, `toAISDKTools`) and quarantined behind `OrpcAgentManifest` (OQ-1 tracks the source choice).
+- Embedded loops and server-side loops with per-turn frontend tool transport (the Mastra + assistant-ui topology in [16](16-mastra-assistant-ui.md)) are in scope; *autonomous* server-side agents without a live frontend remain out of contextual-gating scope (OQ-5).
+- React ≥18.2 effect semantics (register on commit, cleanup on hide/unmount) hold on 19.x; `Activity`-style hiding runs cleanup.
+- JSON-only payloads and the D19 schema subset are sufficient for real capabilities in the target apps.
+- TypeScript ≥5.4 (`NoInfer`) is acceptable as a floor.
+- Same-realm JS is not containable; trust labels are policy inputs, not sandboxes ([06 §trust](06-policies-and-security.md#trust-model-for-registrants)).
+
+## Technical risks
+
+Top items with mitigations in [14 §risk register](14-implementation-plan.md#risk-register-top-5): React 18↔19 effect-timing drift; D19 subset too narrow; orpc-agent API instability; invocation-pipeline races (D13–D17); oversized catalogs in real apps. Additional spec-level risk: total spec volume — implementers should treat [08's recipe list](08-testing.md#recipes-normative-test-list) as the executable contract when prose and tests ever disagree.
+
+## Validated via prototype (already done)
+
+`prototypes/api-typecheck.ts` (tsc `--strict`, clean) + `prototypes/runtime-checks.ts` (executed, passing) confirmed:
+
+- schema→handler inference (`action`/`observation` helpers), input/param typing, result-union narrowing, bind-subset + `overridableFields` constraints (including the intended compile errors);
+- schema-inferred alias types satisfy the `JsonValue` constraints (interface caveat documented in [03](03-core-api.md#serialization-rules-d18-draft));
+- **finding folded back into the spec:** naive `execute` return inference conflicts with `output` schema inference → `NoInfer` on `execute` is now normative in [03 §definitions](03-core-api.md#capability-definitions-and-helpers);
+- wire-name codec round-trips and stays in the provider-safe alphabet; confirmation deep-equal matcher behaves per [06 rule 2](06-policies-and-security.md#normative-rules).
+
+## Must be validated by the implementation prototype (not yet provable on paper)
+
+1. React commit-phase registration under Strict Mode + Suspense + React 19, especially availability-push ordering vs adapters' re-snapshot (M7).
+2. The 9-phase pipeline's race behavior: unmount-mid-flight, dedupe joining, late settlement audit (M4).
+3. Schema surgery for partial bindings against real Zod-generated JSON Schemas, including `required` handling and `$defs` (M9).
+4. Whether `wait`-mode confirmations feel right in a real embedded loop, and whether models actually follow `retry` hints (M8/M10 scripted-model harness first, then a manual session).
+5. Catalog sizes and model behavior in `direct` vs `meta` mode on a page with tens of capabilities (v0.3 measurements, OQ-4/OQ-9).
+6. Bundle-size targets in [02](02-architecture.md#bundle-and-performance-budgets-targets-not-yet-measured) — aspirational until size-limit runs in CI (M0).
