@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["run", "docs:dev"],
       "port": 5173
+    },
+    {
+      "name": "devices-app",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "devices-app-example", "dev", "--port", "5199", "--strictPort"],
+      "port": 5199
     }
   ]
 }

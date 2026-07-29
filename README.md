@@ -1,6 +1,15 @@
 # agent-surface
 
-> **Status: design phase.** This repository currently contains the specification of the library, written before the implementation (documentation-driven development). Nothing described here is published or implemented yet unless explicitly stated. The name `agent-surface` is provisional.
+> **Status: v0.1 implementation.** The specification in [docs/](docs/) was written first (documentation-driven development); the packages under [packages/](packages/) now implement it — core registry, React bindings, oRPC procedure references, testing toolkit, and the experimental WebMCP adapter — with the [docs/08 test recipes](docs/08-testing.md) as the executable contract. Nothing is published to npm yet. The name `agent-surface` is provisional.
+
+**Working with this repo:**
+
+```bash
+pnpm install
+pnpm build      # tsup builds for all packages
+pnpm test       # vitest, no LLM anywhere
+pnpm typecheck
+```
 
 **agent-surface** is a TypeScript library for building frontend interfaces that AI agents can observe and control — *selectively, semantically, and under explicit governance*.
 
@@ -87,11 +96,13 @@ agent-surface never duplicates a domain procedure as a frontend tool. It can onl
 
 | Package | Purpose | Status |
 |---|---|---|
-| `@agent-surface/core` | Framework-agnostic registry, types, policies, errors, snapshot, invocation | Draft spec |
-| `@agent-surface/react` | Hooks binding component lifecycle to registrations | Draft spec |
-| `@agent-surface/orpc` | Contextual references to oRPC procedures exposed via `orpc-agent` | Draft spec |
-| `@agent-surface/testing` | Render/discover/invoke/assert utilities, no LLM required | Draft spec |
-| `@agent-surface/webmcp` | WebMCP transport adapter | Experimental spec |
+| [`@agent-surface/core`](packages/core) | Framework-agnostic registry, types, policies, errors, snapshot, invocation, toolset | Implemented (v0.1) |
+| [`@agent-surface/react`](packages/react) | Hooks binding component lifecycle to registrations | Implemented (v0.1) |
+| [`@agent-surface/orpc`](packages/orpc) | Contextual references to oRPC procedures exposed via `orpc-agent` | Implemented (v0.1) |
+| [`@agent-surface/testing`](packages/testing) | Render/discover/invoke/assert utilities, no LLM required | Implemented (v0.1) |
+| [`@agent-surface/webmcp`](packages/webmcp) | WebMCP transport adapter | Implemented (Experimental) |
+
+The [devices-app example](examples/devices-app) is the spec's acceptance artifact: the full [docs/10](docs/10-examples.md) page driven end to end by a scripted agent (no LLM), with the semantic surface snapshot committed as a reviewable artifact. Releases go through [Changesets](.changeset/README.md) (`pnpm changeset` → release PR → npm publish from CI).
 
 There is deliberately **no per-framework agent package**: any stack that accepts JSON-Schema tools — Vercel AI SDK, Mastra, LangGraph, assistant-ui — consumes the provider-neutral toolset directly. A full worked example (Mastra loop + assistant-ui chat + orpc-agent governance) is in [docs/16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md).
 

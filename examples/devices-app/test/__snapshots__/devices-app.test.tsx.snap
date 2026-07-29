@@ -1,0 +1,448 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the devices page exposes exactly the documented surface (docs/10) > exposes the target surface while mounted, and commits it as a snapshot 1`] = `
+{
+  "components": [
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:app.navigation.goTo",
+          "confirmation": "never",
+          "description": "Navigate to a known application page",
+          "effect": "navigation",
+          "idempotent": false,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "enum": [
+                  "devices",
+                  "comparison",
+                  "reports",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "page",
+            ],
+            "type": "object",
+          },
+          "name": "goTo",
+          "reversible": true,
+        },
+      ],
+      "description": "Top-level navigation between application pages",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:app.navigation.current",
+          "description": "Current page",
+          "name": "current",
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "page": {
+                "enum": [
+                  "devices",
+                  "comparison",
+                  "reports",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "page",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#1>",
+      "type": "app.navigation",
+    },
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.drawer.open",
+          "confirmation": "never",
+          "description": "Open the detail drawer for a device",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "deviceId": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "deviceId",
+            ],
+            "type": "object",
+          },
+          "name": "open",
+          "reversible": true,
+        },
+        {
+          "available": false,
+          "capabilityId": "view:devices.drawer.close",
+          "confirmation": "never",
+          "description": "Close the detail drawer",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object",
+          },
+          "name": "close",
+          "reversible": true,
+          "unavailableReason": "The drawer is not open",
+        },
+      ],
+      "description": "Detail drawer for a single device",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.drawer.state",
+          "description": "Whether the drawer is open and for which device",
+          "name": "state",
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "deviceId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+              },
+              "isOpen": {
+                "type": "boolean",
+              },
+            },
+            "required": [
+              "isOpen",
+              "deviceId",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#2>",
+      "type": "devices.drawer",
+    },
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.filters.set",
+          "confirmation": "never",
+          "description": "Update one or both filters; omitted fields are unchanged. The table refreshes through the app's normal data fetching.",
+          "effect": "local-state",
+          "idempotent": true,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "description": "Fields omitted are left unchanged",
+            "properties": {
+              "city": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+                "description": "Exact city name filter, null = all cities",
+              },
+              "status": {
+                "enum": [
+                  "all",
+                  "online",
+                  "offline",
+                ],
+                "type": "string",
+              },
+            },
+            "type": "object",
+          },
+          "name": "set",
+          "reversible": true,
+        },
+      ],
+      "description": "Status and city filters applied to the devices table",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.filters.read",
+          "description": "Currently active filters",
+          "name": "read",
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "city": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                  },
+                  {
+                    "type": "null",
+                  },
+                ],
+                "description": "Exact city name filter, null = all cities",
+              },
+              "status": {
+                "enum": [
+                  "all",
+                  "online",
+                  "offline",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "status",
+              "city",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#3>",
+      "type": "devices.filters",
+    },
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.table.selectRows",
+          "confirmation": "never",
+          "description": "Replace, extend or reduce the row selection",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "ids": {
+                "description": "Device ids to select",
+                "items": {
+                  "type": "string",
+                },
+                "minItems": 1,
+                "type": "array",
+              },
+              "mode": {
+                "default": "replace",
+                "enum": [
+                  "replace",
+                  "add",
+                  "remove",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "ids",
+              "mode",
+            ],
+            "type": "object",
+          },
+          "name": "selectRows",
+          "reversible": true,
+        },
+        {
+          "available": true,
+          "capabilityId": "view:devices.table.sort",
+          "confirmation": "never",
+          "description": "Change the table sorting",
+          "effect": "local-state",
+          "idempotent": true,
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "by": {
+                "enum": [
+                  "name",
+                  "status",
+                  "city",
+                ],
+                "type": "string",
+              },
+              "dir": {
+                "enum": [
+                  "asc",
+                  "desc",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "by",
+              "dir",
+            ],
+            "type": "object",
+          },
+          "name": "sort",
+          "reversible": true,
+        },
+      ],
+      "description": "Table of devices matching the active filters",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.table.readState",
+          "description": "Visible rows, current selection, current sorting",
+          "name": "readState",
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "additionalProperties": false,
+            "properties": {
+              "selectedIds": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "sorting": {
+                "additionalProperties": false,
+                "properties": {
+                  "by": {
+                    "enum": [
+                      "name",
+                      "status",
+                      "city",
+                    ],
+                    "type": "string",
+                  },
+                  "dir": {
+                    "enum": [
+                      "asc",
+                      "desc",
+                    ],
+                    "type": "string",
+                  },
+                },
+                "required": [
+                  "by",
+                  "dir",
+                ],
+                "type": "object",
+              },
+              "visibleRows": {
+                "description": "Rows currently rendered under the active filters",
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "city": {
+                      "type": "string",
+                    },
+                    "id": {
+                      "type": "string",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                    "status": {
+                      "enum": [
+                        "online",
+                        "offline",
+                        "disabled",
+                      ],
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "status",
+                    "city",
+                  ],
+                  "type": "object",
+                },
+                "type": "array",
+              },
+            },
+            "required": [
+              "visibleRows",
+              "selectedIds",
+              "sorting",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#4>",
+      "type": "devices.table",
+    },
+  ],
+  "procedures": [
+    {
+      "available": false,
+      "boundFields": [
+        {
+          "locked": true,
+          "path": "deviceIds",
+          "source": "ui-state",
+        },
+      ],
+      "confirmation": "required",
+      "context": {
+        "instanceId": "default",
+        "type": "devices.table",
+      },
+      "description": "Disable the given devices Currently bound to the 0 selected device(s).",
+      "effect": "destructive",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "description": "Optional operator note",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "disabled": {
+            "type": "number",
+          },
+        },
+        "required": [
+          "disabled",
+        ],
+        "type": "object",
+      },
+      "procedureId": "domain:devices.disable",
+      "registrationId": "<reg#5>",
+      "unavailableReason": "Select at least one device first",
+    },
+  ],
+  "route": {
+    "path": "/devices",
+  },
+}
+`;
