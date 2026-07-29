@@ -118,7 +118,7 @@ importers:
   packages/orpc:
     dependencies:
       '@agent-surface/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       '@agent-surface/react':
@@ -146,7 +146,7 @@ importers:
   packages/react:
     dependencies:
       '@agent-surface/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       '@testing-library/react':
@@ -168,7 +168,7 @@ importers:
   packages/testing:
     dependencies:
       '@agent-surface/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       '@agent-surface/react':
@@ -196,7 +196,7 @@ importers:
   packages/webmcp:
     dependencies:
       '@agent-surface/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       '@agent-surface/testing':

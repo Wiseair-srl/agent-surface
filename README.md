@@ -145,6 +145,10 @@ pnpm add @agent-surface/core @agent-surface/react
 
 See [docs/12-roadmap.md](docs/12-roadmap.md).
 
+## Contributing
+
+Security analysis, review of the as-built code against the documented invariants, and adoption feedback from a real application are the most useful contributions right now. Start with [CONTRIBUTING.md](CONTRIBUTING.md), report vulnerabilities via [SECURITY.md](SECURITY.md) (never a public issue), and follow the [Code of Conduct](CODE_OF_CONDUCT.md). The standing execution contract for maintainers is [docs/17-maintainer-directive.md](docs/17-maintainer-directive.md).
+
 ## License
 
-MIT (proposed).
+MIT.

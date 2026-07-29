@@ -24,7 +24,7 @@
     "size": "size-limit"
   },
   "dependencies": {
-    "@agent-surface/core": "workspace:*"
+    "@agent-surface/core": "workspace:^"
   },
   "devDependencies": {
     "@agent-surface/testing": "workspace:*",

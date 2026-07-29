@@ -32,10 +32,10 @@
     "size": "size-limit"
   },
   "dependencies": {
-    "@agent-surface/core": "workspace:*"
+    "@agent-surface/core": "workspace:^"
   },
   "peerDependencies": {
-    "@agent-surface/react": "workspace:*",
+    "@agent-surface/react": "workspace:^",
     "@testing-library/react": ">=14",
     "react": ">=18.2"
   },
