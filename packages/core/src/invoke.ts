@@ -17,6 +17,7 @@ import {
   DevDefectError,
   buildPolicyContext,
   computeAvailability,
+  consumerKeyOf,
   maxConfirmation,
   policiesFor,
 } from "./internal.js";
@@ -26,13 +27,15 @@ import { parseCapabilityId } from "./ids.js";
 import { AgentSchemaError, fromJsonSchema } from "./schema.js";
 import {
   CONFIRMATION_ESCALATION,
+  composeAuthorizeChain,
   composeInvokeChain,
   evaluateDiscovery,
+  type AgentInvocationPolicyContext,
   type AgentPolicyWithEscalation,
   type ConfirmationEscalation,
 } from "./policy.js";
 import type { AgentActionContext, AgentReadContext } from "./definition.js";
-import { isJsonValue, randomBase62, truncate } from "./utils.js";
+import { canonicalJson, fnv1a64, isJsonValue, randomBase62, truncate } from "./utils.js";
 
 const DEFAULT_CONSUMER: AgentConsumer = { id: "anonymous", kind: "embedded" };
 
@@ -81,6 +84,30 @@ function stale(
   };
 }
 
+function invocationConflict(): AgentCapabilityErrorPayload {
+  // Agent-visible details MUST NOT expose the prior request (docs/07).
+  return {
+    code: "INVOCATION_CONFLICT",
+    message:
+      "This invocation id was already used for a different request. Use a fresh invocation id if the new request is intentional.",
+    retry: "with-changes",
+    details: { reason: "id-reused-with-different-request" },
+  };
+}
+
+function queueFull(retryAfterMs: number): AgentCapabilityErrorPayload {
+  return {
+    code: "RATE_LIMITED",
+    message: "The queue for this capability is full. Retry shortly.",
+    retry: "after-delay",
+    details: { reason: "queue-full", retryAfterMs },
+  };
+}
+
+function cancelled(message: string): AgentCapabilityErrorPayload {
+  return { code: "CANCELLED", message, retry: "yes" };
+}
+
 function executionFailed(
   reason: "handler-error" | "output-invalid" | "output-too-large" | "transport",
   opts?: { transient?: boolean },
@@ -102,7 +129,21 @@ function executionFailed(
   };
 }
 
-/* ─────────────────────────── entry + dedupe (D14) ─────────────────────────── */
+/* ──────────────── phase 1: consumer-scoped dedupe + conflict (D22) ──────────────── */
+
+/** Fingerprint of the request AS ISSUED (docs/18 §correction 2). */
+function requestFingerprint(request: AgentInvocation): string {
+  return fnv1a64(
+    canonicalJson({
+      capabilityId: request.capabilityId,
+      registrationId: request.registrationId ?? null,
+      instanceId: request.instanceId ?? null,
+      surfaceVersion: request.surfaceVersion ?? null,
+      input: request.input ?? null,
+      confirmationId: request.confirmationId ?? null,
+    }),
+  );
+}
 
 export function performInvoke(
   internals: RegistryInternals,
@@ -113,39 +154,92 @@ export function performInvoke(
     throw new Error("invoke() called on a disposed registry");
   }
   const invocationId = request.invocationId ?? `inv_${randomBase62(12)}`;
+  const consumer = options?.consumer ?? DEFAULT_CONSUMER;
+  const consumerKey = consumerKeyOf(consumer);
+  const fingerprint = requestFingerprint(request);
+  const dedupeKey = `${consumerKey} ${invocationId}`;
 
   pruneDedupe(internals);
-  const existing = internals.dedupe.get(invocationId);
+  const existing = internals.dedupe.get(dedupeKey);
   if (existing) {
-    if (existing.kind === "inflight") return existing.promise; // join, don't re-execute
-    if (existing.expiresAt > internals.now()) return Promise.resolve(existing.result);
-    internals.dedupe.delete(invocationId);
+    if (existing.kind === "inflight") {
+      if (existing.fingerprint === fingerprint) return existing.promise; // join, don't re-execute
+      return Promise.resolve(conflictResult(internals, request, invocationId, consumer));
+    }
+    if (existing.expiresAt > internals.now()) {
+      if (existing.fingerprint === fingerprint) return Promise.resolve(existing.result);
+      return Promise.resolve(conflictResult(internals, request, invocationId, consumer));
+    }
+    internals.dedupe.delete(dedupeKey); // expired key: a new attempt (bounded window)
   }
 
-  const promise = runPipeline(internals, request, invocationId, options);
-  internals.dedupe.set(invocationId, { kind: "inflight", promise });
+  const promise = runPipeline(internals, request, invocationId, consumer, consumerKey, options);
+  internals.dedupe.set(dedupeKey, { kind: "inflight", fingerprint, promise });
   promise.then(
     (result) => {
-      // Terminal = ok and every error except CONFIRMATION_REQUIRED / RATE_LIMITED.
+      // Terminal = ok and every error except CONFIRMATION_REQUIRED / RATE_LIMITED
+      // (expected-retry outcomes; INVOCATION_CONFLICT never reaches here).
       const terminal =
         result.status === "ok" ||
         (result.error.code !== "CONFIRMATION_REQUIRED" && result.error.code !== "RATE_LIMITED");
       if (terminal) {
-        internals.dedupe.set(invocationId, {
+        internals.dedupe.set(dedupeKey, {
           kind: "terminal",
+          fingerprint,
           result,
           expiresAt: internals.now() + internals.limits.dedupeCacheTtlMs,
         });
         pruneDedupe(internals);
       } else {
-        internals.dedupe.delete(invocationId);
+        internals.dedupe.delete(dedupeKey);
       }
     },
     () => {
-      internals.dedupe.delete(invocationId);
+      internals.dedupe.delete(dedupeKey);
     },
   );
   return promise;
+}
+
+/** Fail-closed conflict envelope: emitted through events/audit, never cached. */
+function conflictResult(
+  internals: RegistryInternals,
+  request: AgentInvocation,
+  invocationId: string,
+  consumer: AgentConsumer,
+): AgentInvocationResult {
+  internals.emit({
+    type: "invocation-started",
+    invocationId,
+    capabilityId: request.capabilityId,
+    consumerId: consumer.id,
+  });
+  const error = invocationConflict();
+  const result: AgentInvocationResult = {
+    status: "error",
+    invocationId,
+    capabilityId: request.capabilityId,
+    error,
+    surfaceVersion: String(internals.version),
+  };
+  internals.emit({
+    type: "invocation-settled",
+    invocationId,
+    capabilityId: request.capabilityId,
+    status: "error",
+    code: error.code,
+    durationMs: 0,
+  });
+  internals.recordAudit({
+    type: "invocation-settled",
+    capabilityId: request.capabilityId,
+    invocationId,
+    consumerId: consumerKeyOf(consumer),
+    status: "error",
+    code: error.code,
+    durationMs: 0,
+  });
+  return result;
 }
 
 function pruneDedupe(internals: RegistryInternals): void {
@@ -162,7 +256,7 @@ function pruneDedupe(internals: RegistryInternals): void {
   }
 }
 
-/* ───────────────────────────── the 9 phases ───────────────────────────── */
+/* ───────────────────────────── the 10 phases ───────────────────────────── */
 
 interface ResolvedTarget {
   reg: InternalRegistration;
@@ -173,9 +267,10 @@ async function runPipeline(
   internals: RegistryInternals,
   request: AgentInvocation,
   invocationId: string,
+  consumer: AgentConsumer,
+  consumerKey: string,
   options?: InvokeOptions,
 ): Promise<AgentInvocationResult> {
-  const consumer = options?.consumer ?? DEFAULT_CONSUMER;
   const startVersion = internals.version;
   const startedAt = internals.now();
   internals.emit({
@@ -230,7 +325,7 @@ async function runPipeline(
         capabilityId: request.capabilityId,
         registrationId: resolvedRegistrationId,
         invocationId,
-        consumerId: consumer.id,
+        consumerId: consumerKey,
         status: result.status,
         ...(result.status === "error" ? { code: result.error.code } : {}),
         durationMs,
@@ -248,7 +343,7 @@ async function runPipeline(
   };
 
   try {
-    /* phase 2 — resolve */
+    /* phase 2 — resolve + staleness tokens */
     const resolved = resolveTarget(internals, request);
     if ("error" in resolved) return finalize({ status: "error", error: resolved.error });
     const { reg, cap } = resolved;
@@ -271,7 +366,7 @@ async function runPipeline(
         capabilityId: cap.capabilityId,
         registrationId: reg.id,
         invocationId,
-        consumerId: consumer.id,
+        consumerId: consumerKey,
       });
     }
 
@@ -281,15 +376,14 @@ async function runPipeline(
       return finalize({ status: "error", error: notAvailable(availability.reason) });
     }
 
-    /* phase 4 — policy chain. The onDiscovery re-run in the preamble covers
-       discovery-only policies (hide ⇒ NOT_FOUND, disable ⇒ NOT_AVAILABLE);
-       policies that define onInvoke are the authoritative client-side gate
-       and produce their own typed errors (NOT_AUTHENTICATED, …). */
+    /* phase 4 — pre-input authority. The onDiscovery re-run covers pure
+       discovery policies (hide ⇒ NOT_FOUND, disable ⇒ NOT_AVAILABLE);
+       onAuthorize gates run onion-style with NO agent input in scope (D21). */
     const host = internals.host();
     const chain = policiesFor(internals, reg, cap);
     const policyCtx = buildPolicyContext(internals, reg, cap, consumer, host);
     const discovery = evaluateDiscovery(
-      chain.filter((p) => !p.onInvoke),
+      chain.filter((p) => !p.onAuthorize && !p.onInvoke),
       policyCtx,
     );
     if (discovery.decision === "hide") {
@@ -308,9 +402,12 @@ async function runPipeline(
         request,
         invocationId,
         consumer,
+        consumerKey,
         host,
         reg,
         cap,
+        chain,
+        policyCtx,
         escalations,
         options,
         finalize,
@@ -320,9 +417,8 @@ async function runPipeline(
         },
       });
 
-    const invokeCtx = { ...policyCtx, invocationId, input: request.input };
     try {
-      return await composeInvokeChain(chain, invokeCtx, core);
+      return await composeAuthorizeChain(chain, policyCtx, core);
     } catch (err) {
       if (isAgentSurfaceError(err)) {
         return finalize({ status: "error", error: err.payload });
@@ -427,15 +523,18 @@ function resolveTarget(
   return candidates[0] as Candidate;
 }
 
-/* ───────────────────────── phases 5–9 per kind ───────────────────────── */
+/* ───────────────────────── phases 5–10 per kind ───────────────────────── */
 
 interface CoreArgs {
   request: AgentInvocation;
   invocationId: string;
   consumer: AgentConsumer;
+  consumerKey: string;
   host: Record<string, unknown>;
   reg: InternalRegistration;
   cap: CapabilityRuntime;
+  chain: ReadonlyArray<AgentPolicyWithEscalation>;
+  policyCtx: ReturnType<typeof buildPolicyContext>;
   escalations: ConfirmationEscalation[];
   options: InvokeOptions | undefined;
   finalize: (
@@ -456,37 +555,70 @@ async function executeCore(
   return executeProcedure(internals, args, cap);
 }
 
+/** Phase 6: onInvoke onion over the validated effective input (D21). */
+function runInvokePolicies(
+  args: CoreArgs,
+  effectiveInput: JsonValue,
+  downstream: () => Promise<AgentInvocationResult>,
+): Promise<AgentInvocationResult> {
+  const invokeCtx: AgentInvocationPolicyContext = {
+    ...args.policyCtx,
+    invocationId: args.invocationId,
+    effectiveInput,
+  };
+  return composeInvokeChain(args.chain, invokeCtx, downstream);
+}
+
 async function executeObservation(
   internals: RegistryInternals,
   args: CoreArgs,
   cap: ObservationRuntime,
 ): Promise<AgentInvocationResult> {
-  // Observations skip input parsing, confirmation, and the action queue.
-  const { reg, invocationId, consumer, host, options, finalize } = args;
+  // Observations skip input parsing, confirmation, and the action queue;
+  // their effective input is vacuously {} for phase-6 policies.
+  const { reg, invocationId, consumer, consumerKey, host, options, finalize } = args;
   const readCtx: AgentReadContext = {
     capabilityId: cap.capabilityId,
     registrationId: reg.id,
     consumer,
     host,
   };
-  const timeoutMs = options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.observationTimeoutMs;
-  const outcome = await executeWithGuards(internals, reg, {
-    invocationId,
-    capabilityId: cap.capabilityId,
-    timeoutMs,
-    externalSignal: options?.signal,
-    idempotent: true,
-    run: () => {
-      const live = reg.definition.observations?.[cap.name];
-      if (!live) throw new Error("observation handler missing");
-      return live.read(readCtx);
-    },
-  });
-  if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
-  const output = settleOutput(internals, outcome.value, cap.outputSchema);
-  if ("error" in output) return finalize({ status: "error", error: output.error });
-  args.setAuditPayload(undefined, undefined);
-  return finalize({ status: "ok", output: output.value });
+  const run = async (): Promise<AgentInvocationResult> => {
+    /* phase 8 — bounded observation admission (D24) */
+    const slot = await acquireObservationSlot(internals, consumerKey);
+    if (slot === "overflow") {
+      return finalize({ status: "error", error: queueFull(250) });
+    }
+    if (slot === "cancelled") {
+      return finalize({
+        status: "error",
+        error: { ...cancelled("The registry was disposed."), retry: "no" },
+      });
+    }
+    try {
+      const timeoutMs =
+        options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.observationTimeoutMs;
+      const outcome = await executeWithGuards(internals, reg, {
+        invocationId,
+        capabilityId: cap.capabilityId,
+        timeoutMs,
+        externalSignal: options?.signal,
+        idempotent: true,
+        run: () => {
+          const live = reg.definition.observations?.[cap.name];
+          if (!live) throw new Error("observation handler missing");
+          return live.read(readCtx);
+        },
+      });
+      if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
+      const output = settleOutput(internals, outcome.value, cap.outputSchema);
+      if ("error" in output) return finalize({ status: "error", error: output.error });
+      return finalize({ status: "ok", output: output.value });
+    } finally {
+      releaseObservationSlot(internals, consumerKey);
+    }
+  };
+  return runInvokePolicies(args, {}, run);
 }
 
 async function executeAction(
@@ -494,9 +626,9 @@ async function executeAction(
   args: CoreArgs,
   cap: ActionRuntime,
 ): Promise<AgentInvocationResult> {
-  const { request, reg, invocationId, consumer, host, options, finalize, escalations } = args;
+  const { request, reg, invocationId, consumer, host, options, finalize } = args;
 
-  /* phase 5 — input */
+  /* phase 5 — validated effective input */
   let parsedInput: JsonValue;
   try {
     parsedInput = cap.inputSchema.parse(request.input) as JsonValue;
@@ -512,80 +644,87 @@ async function executeAction(
     host,
   };
 
-  /* confirmation gate (uniform protocol, OQ-12) */
-  const confirmation = gateConfirmation(internals, {
-    ...args,
-    effectiveInput: parsedInput,
-    declared: cap.confirmation,
-    description: cap.description,
-    effect: cap.effect,
-  });
-  if ("error" in confirmation) return finalize({ status: "error", error: confirmation.error });
+  const run = async (): Promise<AgentInvocationResult> => {
+    /* phase 6 (tail) — confirmation decision over the effective input */
+    const confirmation = gateConfirmation(internals, {
+      ...args,
+      effectiveInput: parsedInput,
+      declared: cap.confirmation,
+      description: cap.description,
+      effect: cap.effect,
+    });
+    if ("error" in confirmation) return finalize({ status: "error", error: confirmation.error });
 
-  /* phase 6 — precondition */
-  const livePrecondition = reg.definition.actions?.[cap.name]?.precondition;
-  if (livePrecondition) {
-    try {
-      const failure = livePrecondition(parsedInput, readCtx);
-      if (failure && typeof failure.message === "string") {
-        return finalize({ status: "error", error: preconditionFailed(failure.message, failure.details) });
+    /* phase 7 — precondition */
+    const livePrecondition = reg.definition.actions?.[cap.name]?.precondition;
+    if (livePrecondition) {
+      try {
+        const failure = livePrecondition(parsedInput, readCtx);
+        if (failure && typeof failure.message === "string") {
+          return finalize({
+            status: "error",
+            error: preconditionFailed(failure.message, failure.details),
+          });
+        }
+      } catch (err) {
+        if (isAgentSurfaceError(err)) return finalize({ status: "error", error: err.payload });
+        if (
+          !(err instanceof Error) &&
+          typeof err === "object" &&
+          err !== null &&
+          typeof (err as { message?: unknown }).message === "string"
+        ) {
+          const failure = err as { message: string; details?: Record<string, JsonValue> };
+          return finalize({
+            status: "error",
+            error: preconditionFailed(failure.message, failure.details),
+          });
+        }
+        internals.devError(`[agent-surface] precondition threw for ${cap.capabilityId}`, err);
+        return finalize({ status: "error", error: executionFailed("handler-error") });
       }
-    } catch (err) {
-      if (isAgentSurfaceError(err)) return finalize({ status: "error", error: err.payload });
-      if (!(err instanceof Error) && typeof err === "object" && err !== null && typeof (err as { message?: unknown }).message === "string") {
-        const failure = err as { message: string; details?: Record<string, JsonValue> };
-        return finalize({ status: "error", error: preconditionFailed(failure.message, failure.details) });
-      }
-      internals.devError(`[agent-surface] precondition threw for ${cap.capabilityId}`, err);
-      return finalize({ status: "error", error: executionFailed("handler-error") });
     }
-  }
 
-  /* phase 7 — concurrency: actions serialize per component instance (D13) */
-  const slot = await acquireActionSlot(internals, reg);
-  if (slot === "overflow") {
-    return finalize({
-      status: "error",
-      error: {
-        code: "RATE_LIMITED",
-        message: "The action queue for this component is full. Retry shortly.",
-        retry: "after-delay",
-        details: { reason: "queue-full", retryAfterMs: 250 },
-      },
-    });
-  }
+    /* phase 8 — concurrency: actions serialize per component instance (D13) */
+    const slot = await acquireActionSlot(internals, reg);
+    if (slot === "overflow") {
+      return finalize({ status: "error", error: queueFull(250) });
+    }
 
-  try {
-    /* phase 8 — execute */
-    const timeoutMs = options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.actionTimeoutMs;
-    const outcome = await executeWithGuards(internals, reg, {
-      invocationId,
-      capabilityId: cap.capabilityId,
-      timeoutMs,
-      externalSignal: options?.signal,
-      idempotent: cap.idempotent,
-      run: (signal) => {
-        const live = reg.definition.actions?.[cap.name];
-        if (!live) throw new Error("action handler missing");
-        const actionCtx: AgentActionContext = {
-          ...readCtx,
-          invocationId,
-          signal,
-          ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
-        };
-        return live.execute(parsedInput, actionCtx);
-      },
-    });
-    if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
+    try {
+      /* phase 9 — execute; navigation actions settle on handler settlement (D23) */
+      const timeoutMs = options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.actionTimeoutMs;
+      const outcome = await executeWithGuards(internals, reg, {
+        invocationId,
+        capabilityId: cap.capabilityId,
+        timeoutMs,
+        externalSignal: options?.signal,
+        idempotent: cap.idempotent,
+        navigationSettlement: cap.effect === "navigation",
+        run: (signal) => {
+          const live = reg.definition.actions?.[cap.name];
+          if (!live) throw new Error("action handler missing");
+          const actionCtx: AgentActionContext = {
+            ...readCtx,
+            invocationId,
+            signal,
+            ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
+          };
+          return live.execute(parsedInput, actionCtx);
+        },
+      });
+      if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
 
-    /* phase 9 — settle */
-    const output = settleOutput(internals, outcome.value, cap.outputSchema);
-    if ("error" in output) return finalize({ status: "error", error: output.error });
-    args.setAuditPayload(undefined, output.value);
-    return finalize({ status: "ok", output: output.value });
-  } finally {
-    releaseActionSlot(reg);
-  }
+      /* phase 10 — settle */
+      const output = settleOutput(internals, outcome.value, cap.outputSchema);
+      if ("error" in output) return finalize({ status: "error", error: output.error });
+      args.setAuditPayload(undefined, output.value);
+      return finalize({ status: "ok", output: output.value });
+    } finally {
+      releaseActionSlot(reg);
+    }
+  };
+  return runInvokePolicies(args, parsedInput, run);
 }
 
 async function executeProcedure(
@@ -595,7 +734,8 @@ async function executeProcedure(
 ): Promise<AgentInvocationResult> {
   const { request, reg, invocationId, consumer, options, finalize } = args;
 
-  /* phase 5 — input: locked-binding enforcement, reduced parse, bind, merge */
+  /* phase 5 — validated effective input:
+     locked-field rejection → reduced parse → bind → merge → full-schema parse */
   const agentInput = (request.input ?? {}) as Record<string, JsonValue>;
   if (typeof agentInput !== "object" || agentInput === null || Array.isArray(agentInput)) {
     return finalize({
@@ -656,55 +796,58 @@ async function executeProcedure(
   }
   args.setAuditPayload(effective, undefined);
 
-  /* confirmation gate */
-  const confirmation = gateConfirmation(internals, {
-    ...args,
-    effectiveInput: effective,
-    declared: cap.confirmationFloor,
-    description: cap.baseDescription,
-    effect: cap.effect,
-  });
-  if ("error" in confirmation) return finalize({ status: "error", error: confirmation.error });
+  const run = async (): Promise<AgentInvocationResult> => {
+    /* phase 6 (tail) — confirmation decision over the effective input */
+    const confirmation = gateConfirmation(internals, {
+      ...args,
+      effectiveInput: effective,
+      declared: cap.confirmationFloor,
+      description: cap.baseDescription,
+      effect: cap.effect,
+    });
+    if ("error" in confirmation) return finalize({ status: "error", error: confirmation.error });
 
-  /* phase 8 — forward to the executor (the server re-validates everything) */
-  const executor = internals.executor;
-  if (!executor) {
-    return finalize({ status: "error", error: executionFailed("transport") });
-  }
-  const timeoutMs = options?.timeoutMs ?? internals.limits.procedureTimeoutMs;
-  const outcome = await executeWithGuards(internals, reg, {
-    invocationId,
-    capabilityId: cap.capabilityId,
-    timeoutMs,
-    externalSignal: options?.signal,
-    idempotent: cap.idempotent,
-    run: (signal) =>
-      executor.execute({
-        path: cap.path,
-        input: effective,
-        info: {
-          invocationId,
-          consumer,
-          signal,
-          ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
-        },
-      }),
-    procedureErrors: true,
-  });
-  if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
+    /* phase 9 — forward to the executor (the server re-validates everything) */
+    const executor = internals.executor;
+    if (!executor) {
+      return finalize({ status: "error", error: executionFailed("transport") });
+    }
+    const timeoutMs = options?.timeoutMs ?? internals.limits.procedureTimeoutMs;
+    const outcome = await executeWithGuards(internals, reg, {
+      invocationId,
+      capabilityId: cap.capabilityId,
+      timeoutMs,
+      externalSignal: options?.signal,
+      idempotent: cap.idempotent,
+      run: (signal) =>
+        executor.execute({
+          path: cap.path,
+          input: effective,
+          info: {
+            invocationId,
+            consumer,
+            signal,
+            ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
+          },
+        }),
+      procedureErrors: true,
+    });
+    if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
 
-  /* phase 9 — settle */
-  const output = settleOutput(
-    internals,
-    outcome.value,
-    cap.outputJsonSchema ? fromJsonSchema(cap.outputJsonSchema) : undefined,
-  );
-  if ("error" in output) return finalize({ status: "error", error: output.error });
-  args.setAuditPayload(undefined, output.value);
-  return finalize({ status: "ok", output: output.value });
+    /* phase 10 — settle */
+    const output = settleOutput(
+      internals,
+      outcome.value,
+      cap.outputJsonSchema ? fromJsonSchema(cap.outputJsonSchema) : undefined,
+    );
+    if ("error" in output) return finalize({ status: "error", error: output.error });
+    args.setAuditPayload(undefined, output.value);
+    return finalize({ status: "ok", output: output.value });
+  };
+  return runInvokePolicies(args, effective, run);
 }
 
-/* ───────────────────────── confirmation gate (docs/06) ───────────────────────── */
+/* ───────────────────── confirmation gate (docs/06, D21) ───────────────────── */
 
 function gateConfirmation(
   internals: RegistryInternals,
@@ -717,15 +860,12 @@ function gateConfirmation(
 ):
   | { evidence?: { id: string; approvedAt: string } }
   | { error: AgentCapabilityErrorPayload } {
-  const { request, reg, cap, consumer, escalations, effectiveInput, declared } = args;
+  const { request, reg, cap, consumerKey, escalations, effectiveInput, declared } = args;
 
   const activeEscalations = escalations.filter((e) => {
     if (!e.if) return true;
     try {
-      return e.if({
-        ...buildPolicyContext(internals, reg, cap, consumer, args.host),
-        input: effectiveInput,
-      });
+      return e.if({ ...args.policyCtx, effectiveInput });
     } catch {
       return true; // fail closed: a broken condition still confirms
     }
@@ -744,12 +884,22 @@ function gateConfirmation(
   }
   summary = truncate(summary, 300);
 
+  // Canonical request digest (D21): what the user approves is exactly what
+  // executes. The canonical string itself is the digest — comparison stays
+  // exact-value, never hash-only.
+  const digest = canonicalJson({
+    surfaceId: internals.surfaceId,
+    registrationId: reg.id,
+    capabilityId: cap.capabilityId,
+    consumerKey,
+    effectiveInput,
+    effect: args.effect,
+  });
+
   if (request.confirmationId) {
     const consumed = internals.confirmations.consume({
       confirmationId: request.confirmationId,
-      capabilityId: cap.capabilityId,
-      registrationId: reg.id,
-      consumerId: consumer.id,
+      digest,
       input: effectiveInput,
     });
     if (consumed.ok) {
@@ -778,10 +928,16 @@ function gateConfirmation(
   const record = internals.confirmations.request({
     capabilityId: cap.capabilityId,
     registrationId: reg.id,
-    consumerId: consumer.id,
+    consumerKey,
+    effect: args.policyCtx.effect,
     input: effectiveInput,
     summary,
+    digest,
   });
+  if (record === "overflow") {
+    // Bounded pending store (D24): fail closed, no record created.
+    return { error: queueFull(1000) };
+  }
   return { error: confirmationRequired(record, args.effect) };
 }
 
@@ -879,7 +1035,7 @@ function settleOutput(
   return { value: parsed as JsonValue };
 }
 
-/* ─────────────────── execution guards: timeout/abort/unmount ─────────────────── */
+/* ─────────────── execution guards: timeout/abort/unmount (D16/D23) ─────────────── */
 
 type ExecutionOutcome =
   | { ok: true; value: unknown }
@@ -896,6 +1052,8 @@ function executeWithGuards(
     idempotent: boolean;
     run: (signal: AbortSignal) => unknown;
     procedureErrors?: boolean;
+    /** D23: unregistration aborts the signal but never settles the invocation. */
+    navigationSettlement?: boolean;
   },
 ): Promise<ExecutionOutcome> {
   return new Promise((resolve) => {
@@ -904,9 +1062,20 @@ function executeWithGuards(
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const entry: InFlightEntry = {
-      settle(payload) {
+      onUnregister() {
         controller.abort();
-        finish({ ok: false, payload });
+        if (!opts.navigationSettlement) {
+          finish({ ok: false, payload: unmounted("mid-flight") });
+        }
+        // Navigation invocations settle on handler settlement/timeout/cancel
+        // only — a committed transition must not be overwritten (AS-NAV-001).
+      },
+      onDispose() {
+        controller.abort();
+        finish({
+          ok: false,
+          payload: { code: "CANCELLED", message: "The registry was disposed.", retry: "no" },
+        });
       },
     };
 
@@ -914,11 +1083,7 @@ function executeWithGuards(
       controller.abort();
       finish({
         ok: false,
-        payload: {
-          code: "CANCELLED",
-          message: "The invocation was cancelled by the host.",
-          retry: "yes",
-        },
+        payload: cancelled("The invocation was cancelled by the host."),
       });
     };
 
@@ -943,6 +1108,11 @@ function executeWithGuards(
 
     const handlerError = (err: unknown): ExecutionOutcome => {
       if (isAgentSurfaceError(err)) return { ok: false, payload: err.payload };
+      // D23: a navigation handler rejecting after its signal was aborted
+      // abandoned the transition — that is a cancellation, not a failure.
+      if (opts.navigationSettlement && controller.signal.aborted) {
+        return { ok: false, payload: cancelled("The navigation was abandoned after its owner unmounted.") };
+      }
       internals.devError(`[agent-surface] handler failed for ${opts.capabilityId}`, err);
       return {
         ok: false,
@@ -972,11 +1142,7 @@ function executeWithGuards(
     if (opts.externalSignal?.aborted) {
       resolve({
         ok: false,
-        payload: {
-          code: "CANCELLED",
-          message: "The invocation was cancelled by the host.",
-          retry: "yes",
-        },
+        payload: cancelled("The invocation was cancelled by the host."),
       });
       return;
     }
@@ -1048,4 +1214,66 @@ function releaseActionSlot(reg: InternalRegistration): void {
   const next = reg.actionQueue.waiting.shift();
   if (next) next();
   else reg.actionQueue.running = false;
+}
+
+/* ─────────────── bounded observation admission per consumer (D24) ─────────────── */
+
+function acquireObservationSlot(
+  internals: RegistryInternals,
+  consumerKey: string,
+): Promise<"ok" | "overflow" | "cancelled"> {
+  const adm = internals.observationAdmission;
+  const perCap = internals.limits.maxConcurrentObservationsPerConsumer;
+  const totalCap = internals.limits.maxConcurrentObservationsTotal;
+  const held = adm.perConsumer.get(consumerKey) ?? 0;
+  if (held < perCap && adm.total < totalCap) {
+    adm.perConsumer.set(consumerKey, held + 1);
+    adm.total += 1;
+    return Promise.resolve("ok");
+  }
+  let queued = 0;
+  for (const waiter of adm.waiting) {
+    if (waiter.consumerKey === consumerKey) queued += 1;
+  }
+  if (queued >= internals.limits.maxQueuedObservationsPerConsumer) {
+    return Promise.resolve("overflow");
+  }
+  return new Promise((resolve) => {
+    adm.waiting.push({
+      consumerKey,
+      admit: (admitted) => resolve(admitted ? "ok" : "cancelled"),
+    });
+  });
+}
+
+function releaseObservationSlot(internals: RegistryInternals, consumerKey: string): void {
+  const adm = internals.observationAdmission;
+  adm.total = Math.max(0, adm.total - 1);
+  const held = adm.perConsumer.get(consumerKey) ?? 0;
+  if (held <= 1) adm.perConsumer.delete(consumerKey);
+  else adm.perConsumer.set(consumerKey, held - 1);
+
+  // Wake the first arrival-ordered waiter whose consumer is under its cap:
+  // FIFO within a consumer, no cross-consumer starvation (AS-OBS-002).
+  const perCap = internals.limits.maxConcurrentObservationsPerConsumer;
+  const totalCap = internals.limits.maxConcurrentObservationsTotal;
+  for (let i = 0; i < adm.waiting.length; i++) {
+    const waiter = adm.waiting[i];
+    if (!waiter) continue;
+    const waiterHeld = adm.perConsumer.get(waiter.consumerKey) ?? 0;
+    if (waiterHeld < perCap && adm.total < totalCap) {
+      adm.waiting.splice(i, 1);
+      adm.perConsumer.set(waiter.consumerKey, waiterHeld + 1);
+      adm.total += 1;
+      waiter.admit(true);
+      return;
+    }
+  }
+}
+
+/** Dispose path: drain queued observation waiters as cancelled (leak-free). */
+export function drainObservationQueues(internals: RegistryInternals): void {
+  const adm = internals.observationAdmission;
+  const waiting = adm.waiting.splice(0);
+  for (const waiter of waiting) waiter.admit(false);
 }

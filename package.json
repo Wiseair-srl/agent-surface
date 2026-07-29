@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" build",
     "test": "vitest run",
+    "check:conformance": "node scripts/check-conformance.mjs",
     "typecheck": "pnpm -r typecheck",
     "size": "pnpm -r --filter \"./packages/*\" --no-bail size",
     "publint": "pnpm -r --filter \"./packages/*\" exec publint",

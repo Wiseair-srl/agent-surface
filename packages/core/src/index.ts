@@ -21,6 +21,7 @@ export {
   AgentSurfaceError,
   AgentSurfaceDefinitionError,
   isAgentSurfaceError,
+  AGENT_CAPABILITY_ERROR_CODES,
 } from "./errors.js";
 export type {
   AgentCapabilityErrorCode,
@@ -89,7 +90,8 @@ export {
 export type {
   AgentPolicy,
   AgentPolicyContext,
-  AgentPolicyInvokeContext,
+  AgentAuthorizationContext,
+  AgentInvocationPolicyContext,
   DiscoveryDecision,
   ConfirmationEscalation,
 } from "./policy.js";

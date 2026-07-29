@@ -1,0 +1,210 @@
+{
+  "$schema": "./conformance.schema.json",
+  "$comment": "Traceability manifest (directive §4.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs — every 'implemented' requirement must reference ≥1 existing test file that mentions the ID; 'specified' requires a justification.",
+  "requirements": {
+    "AS-INVOKE-001": {
+      "title": "Pre-input authority policies (onAuthorize) cannot observe agent input",
+      "source": "02-architecture.md#invocation-pipeline-normative-order",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "status": "implemented"
+    },
+    "AS-INVOKE-002": {
+      "title": "onInvoke policies receive only the validated effective input",
+      "source": "06-policies-and-security.md#policy-pipeline",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "status": "implemented"
+    },
+    "AS-INVOKE-003": {
+      "title": "A malformed binding fails before a confirmation record is created",
+      "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "status": "implemented"
+    },
+    "AS-INVOKE-004": {
+      "title": "A supplied locked field fails before a confirmation record is created",
+      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "status": "implemented"
+    },
+    "AS-INVOKE-005": {
+      "title": "Confirmation summary/input reflect bound (effective) values, including bindings that changed after discovery",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-001": {
+      "title": "Same consumer + same invocationId + same request joins in-flight exactly once / returns cached terminal",
+      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-002": {
+      "title": "Same consumer + same invocationId + different input fails INVOCATION_CONFLICT",
+      "source": "07-errors.md#invocation_conflict",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-003": {
+      "title": "Same consumer + same invocationId + different capability fails INVOCATION_CONFLICT",
+      "source": "07-errors.md#invocation_conflict",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-004": {
+      "title": "Different consumers may reuse the same provider tool-call id safely",
+      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-005": {
+      "title": "Expired dedupe key is a new attempt (bounded idempotency window, LRU + TTL, deterministic under fake clocks)",
+      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-IDENT-006": {
+      "title": "Confirmation retry reuses same invocationId + confirmationId and executes once; CONFIRMATION_REQUIRED / RATE_LIMITED / INVOCATION_CONFLICT are never cached as terminal",
+      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "decision": "D22",
+      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-001": {
+      "title": "Approval binds to the canonical request digest; input changed after approval fails CONFIRMATION_INVALID(mismatch), never executes",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-002": {
+      "title": "Digest uses canonical JSON (key order irrelevant; -0 = 0; undefined omitted) and evidence matching is exact-value, never hash-only",
+      "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts", "packages/core/test/canonical-json.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-003": {
+      "title": "Confirmation evidence is single-use; replay fails CONFIRMATION_INVALID(consumed)",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D21",
+      "tests": ["packages/core/test/confirmation.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-004": {
+      "title": "Approval cannot be replayed across consumer, registration, or capability",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-005": {
+      "title": "Pending confirmations are bounded (maxPendingConfirmations); overflow fails RATE_LIMITED without creating a record",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D24",
+      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "status": "implemented"
+    },
+    "AS-NAV-001": {
+      "title": "Navigation commit + owner unmount in the same task settles ok (navigation-commit-then-owner-unmount)",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D23",
+      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "status": "implemented"
+    },
+    "AS-NAV-002": {
+      "title": "Navigation rejected before commit settles a typed failure (CANCELLED when aborted, else EXECUTION_FAILED)",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D23",
+      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "status": "implemented"
+    },
+    "AS-NAV-003": {
+      "title": "Owner unmounted before dispatch still fails COMPONENT_UNMOUNTED for navigation actions",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D23",
+      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "status": "implemented"
+    },
+    "AS-NAV-004": {
+      "title": "A timeout cannot overwrite an already-resolved navigation (no failure after router acceptance)",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D23",
+      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "status": "implemented"
+    },
+    "AS-OBS-001": {
+      "title": "Observation admission enforces independent per-consumer and global concurrency limits with a bounded FIFO queue; overflow fails RATE_LIMITED(queue-full)",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D24",
+      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "status": "implemented"
+    },
+    "AS-OBS-002": {
+      "title": "One saturated consumer cannot starve another consumer's observations",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D24",
+      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "status": "implemented"
+    },
+    "AS-OBS-003": {
+      "title": "Observation slots are released on settlement/cancellation/timeout and queues drain FIFO; disposal drains queues as CANCELLED",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D24",
+      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "status": "implemented"
+    },
+    "AS-TOPO-001": {
+      "title": "createAgentToolset throws when neither topology nor confirmations is provided (no ambiguous global default)",
+      "source": "09-adapters.md#confirmation-topology",
+      "decision": "D26",
+      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "status": "implemented"
+    },
+    "AS-TOPO-002": {
+      "title": "Topology defaults: embedded → wait, remote → two-phase; explicit confirmations overrides",
+      "source": "09-adapters.md#confirmation-topology",
+      "decision": "D26",
+      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "status": "implemented"
+    },
+    "AS-TOPO-003": {
+      "title": "toolset.dispose() deterministically settles in-flight wait-mode confirmation waits",
+      "source": "09-adapters.md#confirmation-topology",
+      "decision": "D26",
+      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "status": "implemented"
+    },
+    "AS-POLICY-001": {
+      "title": "Policy contexts expose the injectable clock (now()); built-in policies are deterministic under fake timers",
+      "source": "06-policies-and-security.md#policy-pipeline",
+      "decision": "D21",
+      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "status": "implemented"
+    },
+    "AS-ERR-001": {
+      "title": "The agent-facing error enum, retry categories, and cacheability are cross-validated against spec/error-matrix.json from one source",
+      "source": "07-errors.md#principles",
+      "decision": "D22",
+      "tests": ["packages/core/test/error-matrix.test.ts"],
+      "status": "implemented"
+    },
+    "AS-CONC-001": {
+      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — shape reserved, default instance",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D25",
+      "tests": [],
+      "status": "specified",
+      "justification": "Directive §3.5: hardening step, deliberately not implemented before base-queue race tests are stable in CI (Phase C). Shape specified so adapters/apps do not invent their own."
+    }
+  }
+}

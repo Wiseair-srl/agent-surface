@@ -22,13 +22,14 @@ export interface AdapterHost {
 
 Normative duties of every adapter:
 
-1. MUST attach a stable `consumer` to every snapshot and invocation (policies are per-consumer).
+1. MUST attach a stable `consumer` to every snapshot and invocation (policies are per-consumer). The consumer's `(kind, id)` pair is the invocation-identity namespace (D22): when more than one adapter/consumer instance can address the same registry, each MUST use a distinct, stable `consumer.id` (e.g. suffix an adapter-instance nonce) — provider tool-call ids are only unique *within* a consumer.
 2. MUST subscribe to `surface-changed` and refresh whatever catalog it exported; MUST NOT cache descriptors across versions.
 3. MUST pass through `registrationId` (and SHOULD pass `surfaceVersion`) from the catalog entry it is executing, enabling staleness enforcement.
-4. MUST supply a stable `invocationId` per external call attempt (e.g. the provider's tool-call id) so transport retries dedupe.
+4. MUST supply a stable `invocationId` per external call attempt (e.g. the provider's tool-call id) so transport retries dedupe. Retries of the *same* attempt reuse the id verbatim; a **new** request MUST get a new id — reusing an id for a different request fails `INVOCATION_CONFLICT` ([07](07-errors.md#invocation_conflict)) and MUST NOT be retried by stripping or rotating identity tokens.
 5. MUST map results per [07 §adapter mapping](07-errors.md#adapter-mapping-guidance), preserving `code`/`retry`/`details`.
 6. MUST NOT invent capabilities, merge planes into one namespace without labeling, or strip effect/confirmation metadata from descriptions.
 7. SHOULD translate ids to wire-safe names via the codec below, keeping the id↔name map per catalog version.
+8. MUST declare its confirmation topology (below): `topology: "embedded" | "remote"` or an explicit `confirmations` mode. There is no global default (D26).
 
 ## Wire names
 
@@ -57,7 +58,7 @@ Example wiring (Anthropic SDK-style, illustrative host code — not part of the 
 ```ts
 const toolset = createAgentToolset(registry, {
   consumer: { id: "copilot-panel", kind: "embedded" },
-  confirmations: "wait",
+  topology: "embedded",              // ⇒ confirmations default to "wait" (D26)
 });
 
 function providerTools() {
@@ -74,6 +75,17 @@ const result = await tool.execute(block.input, { toolCallId: block.id });
 ```
 
 Mid-conversation surface changes: tools are re-listed **between turns**; a call targeting a removed capability inside a turn fails with the appropriate staleness error, which the model handles via `retry: "after-refresh"` — by design there is no attempt to mutate a provider's tool list mid-turn.
+
+### Confirmation topology
+
+`createAgentToolset` requires a declared topology (or an explicit `confirmations` mode); omitting both throws. The mapping and its consequences (D26, [18 §correction 6](18-spec-corrections-rfc.md#correction-6--confirmation-mode-is-declared-by-topology-never-defaulted-globally-d26)):
+
+| Topology | Default mode | Why |
+|---|---|---|
+| `embedded` (loop in/next to the page) | `wait` | The run can block on the user cheaply; the model sees one call → one result. |
+| `remote` (server-side loop, per-turn frontend tools) | `two-phase` | Wait-mode would hold the provider run open across a human approval: transport/stream timeouts, broken reconnects, billed idle time. The model receives `CONFIRMATION_REQUIRED` and retries next turn with the `confirmationId`. |
+
+A remote adapter MAY opt into `wait` explicitly — it then owns its transport-timeout story and MUST bound the wait below the transport's own timeout. Recovery after reconnect: re-snapshot; a confirmation approved while disconnected is retried by id within its TTL, an expired one restarts the cycle (`CONFIRMATION_INVALID {reason:"expired"}` → fresh `CONFIRMATION_REQUIRED`). Shutdown is deterministic: `toolset.dispose()` aborts in-flight wait-mode waits (the pending `CONFIRMATION_REQUIRED` result is returned as-is); `registry.dispose()` expires all pending records.
 
 ### Meta-tools mode (Experimental)
 
@@ -103,7 +115,7 @@ export function createWebMcpAdapter(options?: {
 Mapping rules:
 
 - one WebMCP tool per available capability, wire-named, schemas passed through; `registerTool`/context re-provided on every `surface-changed` (coalescing makes this cheap);
-- consumer = `{ kind: "webmcp" }`; the user agent is the peer — treat it as the *least* trusted consumer: apps SHOULD scope this adapter (`snapshotContext.scope`) and SHOULD keep `confirmations: "two-phase"` semantics (the browser/agent retries; the page still renders its own confirmation UI);
+- consumer = `{ kind: "webmcp" }`; the user agent is the peer — treat it as the *least* trusted consumer: apps SHOULD scope this adapter (`snapshotContext.scope`); its topology is `remote` by definition and its confirmation mode is fixed `two-phase` (the browser/agent retries; the page still renders its own confirmation UI);
 - unavailable capabilities are not registered as WebMCP tools (WebMCP has no disabled state today); the availability reason is lost on this transport — accepted limitation, revisit as the spec evolves;
 - if `navigator.modelContext` is absent, `start()` resolves and does nothing (feature-detect, never polyfill).
 
@@ -123,11 +135,11 @@ Explicitly **not** part of the core or of v0.x. If ever built, it would be a sep
 
 ## Custom adapter checklist
 
-- [ ] Stable `consumer` identity; scoped `snapshotContext` if the peer is less trusted.
+- [ ] Stable `consumer` identity, unique per adapter instance (invocation-id namespace, D22); scoped `snapshotContext` if the peer is less trusted.
 - [ ] Subscribes to `surface-changed`; never serves stale catalogs.
 - [ ] Sends `registrationId` (+ `surfaceVersion` for dangerous calls) on invoke.
-- [ ] Stable per-attempt `invocationId` (transport retries dedupe).
-- [ ] Error mapping preserves `code`/`retry`/`details`; confirmation flow chosen (`wait` vs `two-phase`) and wired to host UI.
+- [ ] Stable per-attempt `invocationId` (transport retries dedupe); never reused for a different request; `INVOCATION_CONFLICT` treated as a bug signal, not retried by token-stripping.
+- [ ] Error mapping preserves `code`/`retry`/`details`; confirmation topology declared (`embedded`/`remote` or explicit mode, D26) and wired to host UI; dispose settles pending waits.
 - [ ] Wire-name codec + per-version id map.
 - [ ] `stop()` fully unsubscribes; safe to start/stop repeatedly (HMR).
 - [ ] Covered by tests via `createTestSurface` with your consumer kind.

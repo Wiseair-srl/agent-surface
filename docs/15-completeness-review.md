@@ -1,11 +1,15 @@
 # 15 — Documentation Completeness Review
 
 > [!NOTE]
-> Self-review of this specification as of its initial authoring (2026-07-29; framework-integration example and orpc-agent alignment added the same day). Purpose: give the implementing agent an honest map of what is settled, what is open, where the spec might bite itself, and what must be proven by code before being trusted.
+> Self-review of this specification as of its initial authoring (2026-07-29; framework-integration example and orpc-agent alignment added the same day; **P0 corrections applied the same day via [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md)** following the [maintainer directive](17-maintainer-directive.md)). Purpose: give the implementing agent an honest map of what is settled, what is open, where the spec might bite itself, and what must be proven by code before being trusted.
+
+## P0 corrections (resolved, code-proven)
+
+The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21–D26) and — unlike the rest of this review's "must be validated" items — each landed **with** its implementation and named conformance tests in the same change: pipeline order (effective input before input-aware policy/confirmation), consumer-scoped conflict-safe invocation identity (`INVOCATION_CONFLICT`), navigation settlement under owner unmount, bounded observation concurrency + bounded pending confirmations, topology-declared confirmation modes. The action-concurrency contract (D25) is *specified, deliberately unimplemented* until Phase C — the one intentional spec-ahead-of-code item, tracked as `specified` in `spec/conformance.json`.
 
 ## Decisions defined
 
-- All 20 mandated decisions (D1–D20) plus the effect-taxonomy question (D-eff) are resolved with recommended v0.1 behavior, alternatives, and trade-offs — indexed in [13 Part A](13-open-questions.md#part-a--decision-log), normative text in the linked sections.
+- All 20 mandated decisions (D1–D20), the effect-taxonomy question (D-eff), and the six P0-correction decisions (D21–D26) are resolved with recommended v0.1 behavior, alternatives, and trade-offs — indexed in [13 Part A](13-open-questions.md#part-a--decision-log), normative text in the linked sections.
 - Additionally settled beyond the mandate: ID grammar and parsing rule ([01](01-concepts.md#canonical-id-grammar-draft)); tombstones for `COMPONENT_UNMOUNTED` vs `CAPABILITY_NOT_FOUND`; confirmation evidence binding by deep-equal input match; wire-name codec; procedure descriptors at snapshot top level; error `retry` semantics per code; limits table with concrete defaults; adapter duties checklist; milestone plan with acceptance criteria.
 
 ## Decisions still open
@@ -45,7 +49,7 @@ Top items with mitigations in [14 §risk register](14-implementation-plan.md#ris
 ## Must be validated by the implementation prototype (not yet provable on paper)
 
 1. React commit-phase registration under Strict Mode + Suspense + React 19, especially availability-push ordering vs adapters' re-snapshot (M7).
-2. The 9-phase pipeline's race behavior: unmount-mid-flight, dedupe joining, late settlement audit (M4).
+2. The 10-phase pipeline's remaining race behavior beyond the named P0 suite: high-cardinality interleavings under property tests (Phase C fuzzing; the deterministic races — unmount-mid-flight, dedupe join/conflict, navigation-commit-then-unmount, late settlement audit — are covered by named tests).
 3. Schema surgery for partial bindings against real Zod-generated JSON Schemas, including `required` handling and `$defs` (M9).
 4. Whether `wait`-mode confirmations feel right in a real embedded loop, and whether models actually follow `retry` hints (M8/M10 scripted-model harness first, then a manual session).
 5. Catalog sizes and model behavior in `direct` vs `meta` mode on a page with tens of capabilities (v0.3 measurements, OQ-4/OQ-9).

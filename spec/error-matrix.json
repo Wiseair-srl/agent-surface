@@ -1,0 +1,101 @@
+{
+  "$comment": "Executable error matrix (directive §4.4). One row per closed agent-facing code: production phases (10-phase pipeline of docs/02), allowed retry categories, whether a terminal result may be cached in the dedupe window, and the agent-safe details keys. Cross-validated against packages/core/src/errors.ts by packages/core/test/error-matrix.test.ts and scripts/check-conformance.mjs.",
+  "codes": {
+    "CAPABILITY_NOT_FOUND": {
+      "phases": [2, 4],
+      "retry": ["after-refresh"],
+      "cacheable": true,
+      "details": []
+    },
+    "CAPABILITY_NOT_AVAILABLE": {
+      "phases": [3, 4],
+      "retry": ["after-refresh"],
+      "cacheable": true,
+      "details": ["reason"]
+    },
+    "AMBIGUOUS_INSTANCE": {
+      "phases": [2],
+      "retry": ["with-changes"],
+      "cacheable": true,
+      "details": ["instances"]
+    },
+    "COMPONENT_UNMOUNTED": {
+      "phases": [2, 9],
+      "retry": ["after-refresh"],
+      "cacheable": true,
+      "details": ["phase"]
+    },
+    "STALE_CAPABILITY": {
+      "phases": [2],
+      "retry": ["after-refresh"],
+      "cacheable": true,
+      "details": ["reason", "liveRegistrationId"]
+    },
+    "INVOCATION_CONFLICT": {
+      "phases": [1],
+      "retry": ["with-changes"],
+      "cacheable": false,
+      "details": ["reason"]
+    },
+    "INVALID_INPUT": {
+      "phases": [5],
+      "retry": ["with-changes"],
+      "cacheable": true,
+      "details": ["issues", "lockedFields"]
+    },
+    "NOT_AUTHENTICATED": {
+      "phases": [4],
+      "retry": ["no"],
+      "cacheable": true,
+      "details": []
+    },
+    "NOT_AUTHORIZED": {
+      "phases": [4, 9],
+      "retry": ["no"],
+      "cacheable": true,
+      "details": ["origin"]
+    },
+    "PRECONDITION_FAILED": {
+      "phases": [5, 7],
+      "retry": ["with-changes", "after-refresh"],
+      "cacheable": true,
+      "details": ["reason"]
+    },
+    "CONFIRMATION_REQUIRED": {
+      "phases": [6],
+      "retry": ["with-confirmation"],
+      "cacheable": false,
+      "details": ["confirmationId", "summary", "expiresAt", "effect", "origin"]
+    },
+    "CONFIRMATION_INVALID": {
+      "phases": [6],
+      "retry": ["no", "with-confirmation"],
+      "cacheable": true,
+      "details": ["reason"]
+    },
+    "RATE_LIMITED": {
+      "phases": [4, 6, 8],
+      "retry": ["after-delay"],
+      "cacheable": false,
+      "details": ["reason", "retryAfterMs"]
+    },
+    "TIMEOUT": {
+      "phases": [9],
+      "retry": ["no", "yes"],
+      "cacheable": true,
+      "details": ["timeoutMs", "idempotent"]
+    },
+    "CANCELLED": {
+      "phases": [8, 9],
+      "retry": ["yes", "no"],
+      "cacheable": true,
+      "details": []
+    },
+    "EXECUTION_FAILED": {
+      "phases": [9, 10],
+      "retry": ["no", "after-delay"],
+      "cacheable": true,
+      "details": ["reason", "transient", "retryAfterMs"]
+    }
+  }
+}

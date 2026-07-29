@@ -61,6 +61,8 @@ export default withMermaid(
             { text: "Decisions & Open Questions", link: "/13-open-questions" },
             { text: "Implementation Plan", link: "/14-implementation-plan" },
             { text: "Completeness Review", link: "/15-completeness-review" },
+            { text: "Maintainer Directive (10/10)", link: "/17-maintainer-directive" },
+            { text: "Spec Corrections RFC (P0)", link: "/18-spec-corrections-rfc" },
           ],
         },
       ],

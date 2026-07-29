@@ -182,7 +182,7 @@ Let `B` = keys produced by `bind()` (statically: `keyof TBound`).
 1. **Agent-facing input schema** = manifest input schema minus locked keys of `B`: removed from `properties` and `required`. All-bound ⇒ `{type:"object", properties:{}, additionalProperties:false}` and the agent calls with `{}`. This is how partially-bound inputs are *represented*: the agent never sees fields it must not supply.
 2. **Locked by default (D8).** Agent-supplied values for locked fields ⇒ `INVALID_INPUT` with `details.lockedFields`. Rationale: a bound value is an authoritative statement of the app's UI state ("the selection *is* these ids"); letting the model override it silently reintroduces guessing. Locking is enforced *before* merge, so a locked field cannot be smuggled past validation.
 3. **`overridableFields`** flips specific fields to defaults: the field stays in the agent-facing schema (annotated `default` = "current UI value at execution"); an agent-supplied value wins, otherwise `bind()`'s value applies. Discouraged; remember the server authorizes whatever ids arrive regardless.
-4. **Evaluation time.** `bind()` runs during invocation phase 5 (input), on the live UI state — never a cached discovery-time value. Discovery-time snapshots include binding *metadata*, not binding *values* (values may be sensitive and would go stale).
+4. **Evaluation time.** `bind()` runs during invocation phase 5 (effective input), on the live UI state — never a cached discovery-time value; a binding value that changed after discovery is therefore what the confirmation shows and what executes (D21). Discovery-time snapshots include binding *metadata*, not binding *values* (values may be sensitive and would go stale).
 5. **Effective input** = `parse(manifestSchema, merge(agentInput restricted to unlocked, bind()))` — the merged object is validated against the **full original schema** before forwarding, so a binding bug cannot ship an invalid call.
 6. **Static typing.** `TBound extends Partial<TIn>` makes wrong-typed bindings a compile error; `overridableFields` is constrained to `keyof TBound`. Top-level fields only in v0.1; deep-path binding is an open question (OQ-6).
 
@@ -218,10 +218,10 @@ Two mounted components may reference the same procedure with different bindings 
 
 `invoke({capabilityId: "domain:devices.disable", …})` runs the standard pipeline ([02](02-architecture.md#invocation-pipeline-normative-order)) with these specifics:
 
-1. Resolution targets the procedure *reference* registration (staleness applies to the reference: a reference from a dead snapshot ⇒ `STALE_CAPABILITY`).
-2. Frontend policies run: reference policies, then confirmation. `destructive`/`external-side-effect` + `surfaceVersion` mismatch ⇒ `STALE_CAPABILITY` ([03 §versioning](03-core-api.md#versioning)).
-3. Input phase applies binding semantics above.
-4. The registry calls the installed executor:
+1. Resolution targets the procedure *reference* registration (staleness applies to the reference: a reference from a dead snapshot ⇒ `STALE_CAPABILITY`). `destructive`/`external-side-effect` + `surfaceVersion` mismatch ⇒ `STALE_CAPABILITY` ([03 §versioning](03-core-api.md#versioning)).
+2. Pre-input authority policies run (`onAuthorize`: authn/authz/tenant/environment — phase 4; no agent input visible).
+3. The input phase applies the binding semantics above and produces the validated **effective input** (phase 5).
+4. Post-input policies and the confirmation decision run over the effective input (phase 6, D21) — a confirmation summary therefore always shows the bound values the server will receive; then the registry calls the installed executor (phase 9):
 
 ```ts
 export interface AgentProcedureExecutor {

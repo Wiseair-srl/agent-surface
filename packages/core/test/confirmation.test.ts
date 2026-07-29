@@ -76,6 +76,7 @@ describe("confirmation protocol (docs/06 §confirmation)", () => {
     expect(executorCalls).toHaveLength(1);
   });
 
+  // AS-CONFIRM-003
   it("single use: replaying consumed evidence fails CONFIRMATION_INVALID {consumed}", async () => {
     const { registry } = setup();
     const first = await registry.invoke({ capabilityId: "domain:devices.disable", input: {} });
@@ -254,9 +255,9 @@ describe("requireConfirmation policy escalation", () => {
     const def = devicesTableDefinition(state);
     def.actions!.selectRows!.policies = [
       requireConfirmation({
-        if: ({ input }) =>
-          Array.isArray((input as { ids?: unknown[] } | undefined)?.ids) &&
-          ((input as { ids: unknown[] }).ids.length ?? 0) > 1,
+        if: ({ effectiveInput }) =>
+          Array.isArray((effectiveInput as { ids?: unknown[] } | undefined)?.ids) &&
+          ((effectiveInput as { ids: unknown[] }).ids.length ?? 0) > 1,
         summary: (input) => `Select ${(input as { ids: string[] }).ids.length} devices?`,
       }),
     ];

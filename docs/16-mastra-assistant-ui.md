@@ -183,8 +183,9 @@ export function AgentSurfaceChatBridge() {
   useEffect(() => {
     const toolset = createAgentToolset(registry, {
       consumer: { id: "device-chat", kind: "embedded" },
-      confirmations: "wait",   // dialog resolves before the tool result returns
-    });
+      topology: "remote",       // server-side loop, per-turn frontend tools (D26)
+      confirmations: "wait",    // explicit opt-in: dialog resolves before the
+    });                         // tool result returns — see the note below
     const unregister = aui.modelContext().register({
       getModelContext: () => ({
         tools: Object.fromEntries(
@@ -214,9 +215,9 @@ export function AgentSurfaceChatBridge() {
 
 Three details worth noticing:
 
-- **`toolCallId` becomes the `invocationId`**, so a retried stream never double-executes an action ([03 §idempotency](03-core-api.md#idempotency--double-execution-prevention-d14)).
+- **`toolCallId` becomes the `invocationId`**, scoped to this bridge's consumer, so a retried stream never double-executes an action — and an id accidentally reused for a *different* request fails closed with `INVOCATION_CONFLICT` ([03 §identity](03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22)).
 - **Errors are returned, not thrown.** A `CAPABILITY_NOT_AVAILABLE` payload with its `reason` goes back to the model as tool output — that reason ("Select at least one device first") is exactly what the model needs to self-correct.
-- **`confirmations: "wait"`** keeps the chat UX simple: the run pauses on the dialog and resumes with the final result. Prefer `"two-phase"` if you don't want a user dialog to hold a streaming run open.
+- **This is a `remote` topology** (the loop streams from a server), so its default confirmation mode is `two-phase` (D26, [09 §confirmation-topology](09-adapters.md#confirmation-topology)). The example opts into `"wait"` explicitly for the simplest chat UX — one call, one final result — which holds the streaming run open across the dialog: acceptable only when your transport timeout comfortably exceeds the confirmation TTL. Drop the `confirmations` line to get the safer two-phase default, where the model receives `CONFIRMATION_REQUIRED` and retries next turn.
 
 The page itself composes pieces you have already seen:
 

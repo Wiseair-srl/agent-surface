@@ -26,6 +26,7 @@ jobs:
       - run: pnpm size
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm check:conformance
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

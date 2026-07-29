@@ -209,7 +209,8 @@ export function AgentConsole(props: { app: App }) {
     () =>
       createAgentToolset(props.app.registry, {
         consumer: CONSUMER,
-        confirmations: "wait",
+        // Embedded loop topology ⇒ confirmations default to "wait" (D26).
+        topology: "embedded",
       }),
     [props.app],
   );

@@ -78,8 +78,9 @@ src/
                     helpers + definition validation (caps, plane rules)
   registry.ts       registrations, availability, versioning, events
   snapshot.ts       descriptor projection, filtering, budgets
-  invoke.ts         invocation pipeline: resolve → policy → validate →
-                    concurrency → execute → settle; dedupe cache; tombstones
+  invoke.ts         invocation pipeline: dedupe/conflict → resolve → authorize →
+                    effective input → invoke policies → precondition →
+                    concurrency → execute → settle; tombstones
   policy.ts         policy types, composition, built-in policies
   confirmation.ts   pending-confirmation store, evidence lifecycle
   audit.ts          AuditSink, memory + console sinks
@@ -106,7 +107,7 @@ sequenceDiagram
     A-->>M: tools / context
     M->>A: call view:devices.table.selectRows {ids}
     A->>R: invoke({capabilityId, input, registrationId, invocationId})
-    R->>R: resolve target → policies → validate input → concurrency slot
+    R->>R: resolve → authorize → effective input → invoke policies → slot
     R->>C: execute(input, ctx) via latest handler ref
     C-->>R: result
     R-->>A: {status:"ok", output, surfaceVersion}
@@ -117,24 +118,37 @@ sequenceDiagram
 
 ### Invocation pipeline (normative order)
 
-For every `invoke`, the registry MUST execute exactly these phases in order; the first failing phase produces the typed error shown:
+For every `invoke`, the registry MUST execute exactly these phases in order; the first failing phase produces the typed error shown. The order is a protocol guarantee, corrected by [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md) (D21): **the validated effective input exists before any input-aware policy or confirmation decision runs** — a confirmation can only bind to an input that has been fully constructed and validated.
 
 ```text
- 1. dedupe          known invocationId → return cached/in-flight result
- 2. resolve         capabilityId (+instanceId) → live registration
-                    └─ miss: STALE_CAPABILITY | COMPONENT_UNMOUNTED | CAPABILITY_NOT_FOUND | AMBIGUOUS_INSTANCE
- 3. availability    enabled + when() re-evaluated → CAPABILITY_NOT_AVAILABLE
- 4. policy chain    registry → component → capability (onInvoke, async)
-                    └─ NOT_AUTHENTICATED | NOT_AUTHORIZED | RATE_LIMITED | CONFIRMATION_REQUIRED | ...
- 5. input           schema parse (+ locked-binding enforcement) → INVALID_INPUT
- 6. precondition    capability precondition(input) → PRECONDITION_FAILED
- 7. concurrency     per-instance serial queue → RATE_LIMITED(queue-full) or wait
- 8. execute         handler / procedure executor, with AbortSignal + timeout
-                    └─ TIMEOUT | CANCELLED | COMPONENT_UNMOUNTED (mid-flight) | EXECUTION_FAILED
- 9. settle          validate/serialize output, cache terminal result, audit, emit events
+ 1. dedupe + conflict   key (consumerKey, invocationId): join in-flight / return
+                        cached terminal; same key with a different request
+                        fingerprint → INVOCATION_CONFLICT (fail closed, D22)
+ 2. resolve             capabilityId (+instanceId) → live registration; staleness tokens
+                        └─ STALE_CAPABILITY | COMPONENT_UNMOUNTED | CAPABILITY_NOT_FOUND | AMBIGUOUS_INSTANCE
+ 3. availability        enabled + when() re-evaluated → CAPABILITY_NOT_AVAILABLE
+ 4. authorize           pre-input authority policies: onAuthorize onion + onDiscovery
+                        re-check (registry → component → capability); NO agent input
+                        is available to this phase, by type construction
+                        └─ NOT_AUTHENTICATED | NOT_AUTHORIZED | RATE_LIMITED | CAPABILITY_NOT_FOUND (hide) | ...
+ 5. effective input     reject supplied locked fields → parse agent-facing input →
+                        evaluate live bind() → merge per overridable-field rules →
+                        validate against the FULL original schema
+                        └─ INVALID_INPUT | PRECONDITION_FAILED(binding-failed)
+ 6. invoke policies     post-input policies: onInvoke onion over the validated
+                        effective input; input-aware rate decisions; the
+                        confirmation decision + evidence validation (digest over
+                        effective input); audit enrichment
+                        └─ CONFIRMATION_REQUIRED | CONFIRMATION_INVALID | RATE_LIMITED | ...
+ 7. precondition        capability precondition(effectiveInput, live state) → PRECONDITION_FAILED
+ 8. concurrency         action queue slot / observation admission → RATE_LIMITED(queue-full) or wait
+ 9. execute             handler / procedure executor, with AbortSignal + timeout
+                        └─ TIMEOUT | CANCELLED | COMPONENT_UNMOUNTED (mid-flight) | EXECUTION_FAILED
+10. settle              validate/serialize output, classify, update dedupe record,
+                        audit, ordered events
 ```
 
-Availability and policies are evaluated **at invocation time**, never trusted from discovery time (a capability may have been discovered when valid and invoked after the state changed).
+Availability and policies are evaluated **at invocation time**, never trusted from discovery time (a capability may have been discovered when valid and invoked after the state changed). Phases 5–6 are the reason `PendingConfirmation.input` always shows the **bound** values the operation will actually run with — never a raw agent guess (AS-INVOKE-001…005).
 
 ## Concurrency and ordering guarantees
 
@@ -143,9 +157,9 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 1. **Single-threaded determinism.** The registry assumes a JS event loop; all state transitions are atomic within a task.
 2. **Total order of surface mutations.** Every register/unregister/availability-change is assigned the next `surfaceVersion`. Observers can reconstruct the exact sequence from events.
 3. **Event delivery.** Events are dispatched in mutation order, after the mutation completes. Listener exceptions are caught and reported; they never corrupt registry state or skip other listeners. Registry methods called *from* listeners are queued and run after the current dispatch completes (no re-entrant dispatch). `surface-changed` MAY coalesce multiple mutations within one microtask; the event always carries the latest version.
-4. **Action serialization.** Actions targeting the same component instance run serially (FIFO), with a bounded wait queue. Observations run concurrently. (D13)
-5. **At-most-once execution per invocationId.** Terminal results are cached; retries with the same `invocationId` return the cached result or join the in-flight execution. (D14)
-6. **Bounded memory.** Dedupe cache, tombstones (recently unmounted registrations, used to distinguish `COMPONENT_UNMOUNTED` from `CAPABILITY_NOT_FOUND`), and pending confirmations are bounded LRU/TTL structures with documented defaults.
+4. **Action serialization; bounded observation concurrency.** Actions targeting the same component instance run serially (FIFO), with a bounded wait queue. Observations run concurrently up to per-consumer and global limits with a bounded per-consumer FIFO queue; overflow is `RATE_LIMITED`, and observations never consume the action queue. (D13, amended by D24)
+5. **At-most-once execution per invocation key.** The dedupe key is `(consumerKey, invocationId)` scoped to the registry (`surfaceId`). Terminal results are cached; a retry with the same key **and the same request fingerprint** returns the cached result or joins the in-flight execution; the same key with a **different** fingerprint fails closed with `INVOCATION_CONFLICT`. The window is bounded (LRU + TTL). (D14, corrected by D22)
+6. **Bounded memory.** Dedupe cache, tombstones (recently unmounted registrations, used to distinguish `COMPONENT_UNMOUNTED` from `CAPABILITY_NOT_FOUND`), pending confirmations (`maxPendingConfirmations`), and observation queues are bounded LRU/TTL/cap structures with documented defaults. No runtime collection is unbounded.
 
 ## SSR, hydration, and environments
 

@@ -147,6 +147,8 @@ type AgentEffect =
 
 **Decision (Draft, stable intent):** `server-query`, `server-mutation`, `external-side-effect`, and `destructive` are **reserved for procedure references**. View actions MUST declare `local-state` or `navigation`; registering a view action with a server effect fails with `PLANE_VIOLATION`. Rationale and alternatives in D-effects, [13-open-questions.md](13-open-questions.md). A "destructive but local" case (e.g. clearing an unsaved draft) is modeled as `local-state` with `reversible: false` and `confirmation: "required"` — the orthogonal properties below carry that weight.
 
+**Navigation completion (D23, normative).** A `navigation` action's success is defined by its **handler settlement**, never by its owner's unmount timing: the handler resolves when the host router accepts or commits the transition (synchronous routers resolve trivially), and a successful navigation that unmounts its own registering component still reports `ok`. Unregistration never overwrites an in-flight navigation result; it only aborts the cooperative signal. Full rules in [03 §concurrency](03-core-api.md#concurrency-timeouts-cancellation).
+
 ### Orthogonal properties and defaults
 
 Every capability additionally declares:
@@ -227,7 +229,7 @@ Composable middleware attached at registry, component, or capability level, eval
 
 ## Confirmation
 
-A confirmation dialog is a *representation* of policy, not the policy. The runtime returns a typed `CONFIRMATION_REQUIRED` outcome with a single-use, expiring confirmation record bound to the exact invocation (capability, registration, input). The host renders UI; the user resolves; the agent (or the adapter on its behalf) retries with the confirmation evidence; for domain procedures the server MAY additionally require its own approval. Protocol in [06-policies-and-security.md](06-policies-and-security.md#confirmation).
+A confirmation dialog is a *representation* of policy, not the policy. The runtime returns a typed `CONFIRMATION_REQUIRED` outcome with a single-use, expiring confirmation record bound to a canonical digest of the exact request — surface, registration, capability, consumer, **validated effective input**, and effect — so what the user approves is what executes, bound values included (D21). The host renders UI; the user resolves; the agent (or the adapter on its behalf) retries with the confirmation evidence; for domain procedures the server MAY additionally require its own approval. Protocol in [06-policies-and-security.md](06-policies-and-security.md#confirmation).
 
 ## Trust of registrants
 

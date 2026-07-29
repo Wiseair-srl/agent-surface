@@ -15,9 +15,17 @@ export interface AgentToolsetOptions {
   /** "direct": one tool per capability. "meta": 3 generic tools. [meta: Experimental] */
   mode?: "direct" | "meta";
   /**
+   * Loop topology (D26). Sets the confirmation-mode default: "embedded" →
+   * "wait", "remote" → "two-phase". One of `topology` or `confirmations`
+   * MUST be provided — there is no ambiguous global default.
+   */
+  topology?: "embedded" | "remote";
+  /**
    * "wait": on CONFIRMATION_REQUIRED, await user resolution (up to TTL) and
-   * auto-retry, so the model sees one tool call → one final result. Default.
+   * auto-retry, so the model sees one tool call → one final result.
    * "two-phase": surface CONFIRMATION_REQUIRED to the model, which retries.
+   * Overrides the topology default (a remote loop opting into "wait" owns
+   * its transport-timeout story, docs/09 §confirmation-topology).
    */
   confirmations?: "wait" | "two-phase";
   scope?: string[];
@@ -73,12 +81,34 @@ export function createAgentToolset(
   options: AgentToolsetOptions,
 ): AgentToolset {
   const mode = options.mode ?? "direct";
-  const confirmationsMode = options.confirmations ?? "wait";
+  if (options.confirmations === undefined && options.topology === undefined) {
+    // D26: no ambiguous global default — programmer misuse, every environment.
+    throw new Error(
+      "createAgentToolset: declare a topology ('embedded' | 'remote') or an explicit confirmations mode ('wait' | 'two-phase'). Embedded loops default to 'wait', remote loops to 'two-phase' (docs/09 §confirmation-topology).",
+    );
+  }
+  const confirmationsMode =
+    options.confirmations ?? (options.topology === "remote" ? "two-phase" : "wait");
   const listeners = new Set<(tools: AgentTool[]) => void>();
+  const pendingWaits = new Set<AbortController>();
   let disposed = false;
   let cachedVersion: string | undefined;
   let cachedTools: AgentTool[] | undefined;
   let cachedSignature: string | undefined;
+
+  /** Wait for a confirmation, abortable by dispose (AS-TOPO-003, D26).
+   * The disposed guard covers the window where dispose lands between the
+   * CONFIRMATION_REQUIRED result and this wait's registration. */
+  async function waitForConfirmation(confirmationId: string): Promise<void> {
+    if (disposed) return;
+    const controller = new AbortController();
+    pendingWaits.add(controller);
+    try {
+      await registry.confirmations.waitFor(confirmationId, { signal: controller.signal });
+    } finally {
+      pendingWaits.delete(controller);
+    }
+  }
 
   async function invokeThroughSurface(
     entry: CatalogEntry,
@@ -102,7 +132,10 @@ export function createAgentToolset(
     ) {
       const confirmationId = result.error.details?.confirmationId;
       if (typeof confirmationId === "string") {
-        await registry.confirmations.waitFor(confirmationId);
+        await waitForConfirmation(confirmationId);
+        // Deterministic shutdown: a dispose mid-wait returns the pending
+        // CONFIRMATION_REQUIRED result as-is (D26).
+        if (disposed) return result;
         // Retry reuses the SAME invocationId + confirmationId (docs/03 D14):
         // CONFIRMATION_REQUIRED was not cached as terminal, so this executes.
         result = await registry.invoke(
@@ -299,7 +332,8 @@ export function createAgentToolset(
             typeof result.error.details?.confirmationId === "string"
           ) {
             const confirmationId = result.error.details.confirmationId;
-            await registry.confirmations.waitFor(confirmationId);
+            await waitForConfirmation(confirmationId);
+            if (disposed) return result;
             result = await registry.invoke(
               {
                 invocationId,
@@ -368,6 +402,9 @@ export function createAgentToolset(
       disposed = true;
       unsubscribe();
       listeners.clear();
+      // Settle in-flight wait-mode waits deterministically (D26).
+      for (const controller of [...pendingWaits]) controller.abort();
+      pendingWaits.clear();
     },
   };
 }

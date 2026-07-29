@@ -171,7 +171,7 @@ export const registry: AgentSurfaceRegistry =
 - **Recursive components** (tree nodes) → `instanceId: node.id`, `parent: { type, instanceId: node.parentId }`. Depth is irrelevant; identity comes from data.
 - **Portals** → irrelevant. Identity is explicit; where the DOM lands does not matter.
 - **Multiple browser tabs / windows** → one registry per tab; surfaces are independent. Cross-window aggregation is Future ([12-roadmap.md](12-roadmap.md)).
-- **Route transitions** → unmount unregisters; in-flight invocations settle `COMPONENT_UNMOUNTED` ([03 §concurrency](03-core-api.md#concurrency-timeouts-cancellation)). A `navigation` action's result carries `surfaceChanged: true` when the version moved during execution, cueing the agent to re-discover before its next step.
+- **Route transitions** → unmount unregisters; in-flight invocations settle `COMPONENT_UNMOUNTED` — **except `navigation`-effect actions**, which settle on handler settlement so a successful transition that unmounts its own component still reports `ok` (D23, [03 §concurrency](03-core-api.md#concurrency-timeouts-cancellation)). Author navigation handlers to resolve when the router accepts the transition — `await router.navigate(...)` where available, or plain `router.push(); return;` for synchronous routers. A `navigation` action's result carries `surfaceChanged: true` when the version moved during execution, cueing the agent to re-discover before its next step.
 
 ## Granular hooks — Experimental
 

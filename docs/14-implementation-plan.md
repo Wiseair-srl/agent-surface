@@ -50,15 +50,15 @@ Milestones are strictly ordered by dependency; within one milestone, tasks paral
 
 ### M4 — Invocation pipeline + error model
 
-- **Scope:** the 9-phase pipeline ([02](02-architecture.md#invocation-pipeline-normative-order)) minus policy phase (stub pass-through); resolution incl. tombstones, `AMBIGUOUS_INSTANCE`, staleness rules (D1); input parse; preconditions; concurrency (D13), dedupe (D14), timeout/cancel (D15), unmount-mid-flight (D16); result envelopes; full `AgentCapabilityErrorPayload` serialization + sanitization.
+- **Scope:** the 10-phase pipeline ([02](02-architecture.md#invocation-pipeline-normative-order), as corrected by [18](18-spec-corrections-rfc.md)) minus policy phases (stub pass-through); resolution incl. tombstones, `AMBIGUOUS_INSTANCE`, staleness rules (D1); effective-input construction; preconditions; concurrency (D13/D24: action queue + bounded observation admission); consumer-scoped conflict-safe dedupe (D22); timeout/cancel (D15); unmount-mid-flight (D16) + navigation settlement (D23); result envelopes; full `AgentCapabilityErrorPayload` serialization + sanitization.
 - **Files:** `core/src/{invoke,errors}.ts` (+ harness `invoke/observe/captureRef`).
-- **Tests:** one suite per error code reproducing its [07](07-errors.md) "produced when" conditions; dedupe join + terminal-cache exclusions; fake-timer timeout with late-settlement audit; abort propagation; stale matrix (replaced / reloaded / version-mismatch-on-destructive).
-- **Acceptance:** [08 recipes](08-testing.md#recipes-normative-test-list) that don't involve React/policies/confirmation all pass.
+- **Tests:** one suite per error code reproducing its [07](07-errors.md) "produced when" conditions; dedupe join + terminal-cache exclusions; **`invocation-id-conflict-fails-closed` (same key, different fingerprint) and cross-consumer id reuse**; navigation-commit-then-owner-unmount; observation-bound overflow/starvation; fake-timer timeout with late-settlement audit; abort propagation; stale matrix (replaced / reloaded / version-mismatch-on-destructive).
+- **Acceptance:** [08 recipes](08-testing.md#recipes-normative-test-list) that don't involve React/policies/confirmation all pass; `INVOCATION_CONFLICT` behavior (join vs conflict vs expiry) is an explicit acceptance criterion.
 - **Depends:** M3. **Risks:** the largest milestone — split into resolution/execution/dedupe PRs; race tests are the deliverable, not an afterthought.
 
 ### M5 — Policy pipeline
 
-- **Scope:** `AgentPolicy`, chain composition (registry→component→capability), sync `onDiscovery` in snapshot + re-check at invoke, async `onInvoke` onion; built-ins: `authenticated`, `hasPermission`, `tenantBoundary`, `environment`, `rateLimit`, `audit`; hide-vs-disable semantics (D11/D12).
+- **Scope:** `AgentPolicy` two-stage API (D21): sync `onDiscovery` in snapshot + re-check at invoke, async `onAuthorize` onion (phase 4, no input) and `onInvoke` onion (phase 6, effective input only); chain composition (registry→component→capability); injectable clock in policy contexts; built-ins: `authenticated`, `hasPermission`, `tenantBoundary`, `environment`, `rateLimit` (authorize-stage), `audit` (invoke-stage); hide-vs-disable semantics (D11/D12).
 - **Files:** `core/src/policy.ts`.
 - **Tests:** most-restrictive-wins; discovery/invocation consistency (hidden ⇒ NOT_FOUND, disabled ⇒ NOT_AVAILABLE); per-consumer filtering (requirement 12); each built-in.
 - **Acceptance:** requirement-by-requirement checklist of [06 §mapped](06-policies-and-security.md#the-deny-by-default-requirements-mapped) items 1–12 (minus confirmation, next).
@@ -66,7 +66,7 @@ Milestones are strictly ordered by dependency; within one milestone, tasks paral
 
 ### M6 — Confirmation + audit sinks
 
-- **Scope:** pending store, evidence lifecycle (bind/approve/deny/expire/consume, deep-equal input match), `ConfirmationController`, `requireConfirmation` policy, TTL via injectable clock; `AuditSink` + memory/console sinks; audit levels + redaction hook; harness `confirmations.{approve,deny,expire}`.
+- **Scope:** pending store (bounded, D24), evidence lifecycle (bind/approve/deny/expire/consume; canonical request-digest binding with exact-value input match, D21), `ConfirmationController`, `requireConfirmation` policy, TTL via injectable clock; `AuditSink` + memory/console sinks; audit levels + redaction hook; harness `confirmations.{approve,deny,expire}`.
 - **Files:** `core/src/{confirmation,audit}.ts`.
 - **Tests:** the full [06 §rules](06-policies-and-security.md#normative-rules) list — replay, mismatch (bait-and-switch), expiry, denial no-retry, staleness-beats-confirmation, pending re-request returns same id; audit event completeness.
 - **Acceptance:** confirmation recipes in [08](08-testing.md) pass verbatim.
@@ -83,7 +83,7 @@ Milestones are strictly ordered by dependency; within one milestone, tasks paral
 
 ### M8 — Embedded toolset adapter
 
-- **Scope:** `createAgentToolset` (direct mode), description templating (plane/effect prefixes), wire naming + per-version map, `wait`/`two-phase` confirmation modes, `subscribe` on version change, tool-call-id → invocationId.
+- **Scope:** `createAgentToolset` (direct mode), description templating (plane/effect prefixes), wire naming + per-version map, **required topology declaration** (D26: embedded→wait, remote→two-phase, neither→throw) + deterministic dispose of pending waits, `subscribe` on version change, tool-call-id → invocationId (consumer-namespaced, D22).
 - **Files:** `core/src/toolset.ts`.
 - **Tests:** catalog refresh on version bump; wait-mode single-call confirmation round-trip (fake timers); two-phase relay; dedupe via toolCallId; wire-name overflow.
 - **Acceptance:** a scripted fake "model" (list tools → call → handle error → retry per `retry` hints) completes the devices scenario against a synthetic registry — no LLM.

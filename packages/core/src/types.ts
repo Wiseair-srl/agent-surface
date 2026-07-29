@@ -50,11 +50,15 @@ export interface AgentSurfaceLimits {
   actionTimeoutMs: number; // 10_000
   procedureTimeoutMs: number; // 30_000
   actionQueueDepth: number; // 2
+  maxConcurrentObservationsPerConsumer: number; // 8 (D24)
+  maxConcurrentObservationsTotal: number; // 32 (D24)
+  maxQueuedObservationsPerConsumer: number; // 8 (D24)
   dedupeCacheSize: number; // 200 entries
   dedupeCacheTtlMs: number; // 600_000
   tombstoneSize: number; // 100 entries
   tombstoneTtlMs: number; // 300_000
-  confirmationTtlMs: number; // 120_000
+  confirmationTtlMs: number;
+  maxPendingConfirmations: number; // 32 (D24; overflow fails RATE_LIMITED, no record) // 120_000
 }
 
 export const DEFAULT_LIMITS: AgentSurfaceLimits = {
@@ -68,11 +72,15 @@ export const DEFAULT_LIMITS: AgentSurfaceLimits = {
   actionTimeoutMs: 10_000,
   procedureTimeoutMs: 30_000,
   actionQueueDepth: 2,
+  maxConcurrentObservationsPerConsumer: 8,
+  maxConcurrentObservationsTotal: 32,
+  maxQueuedObservationsPerConsumer: 8,
   dedupeCacheSize: 200,
   dedupeCacheTtlMs: 600_000,
   tombstoneSize: 100,
   tombstoneTtlMs: 300_000,
   confirmationTtlMs: 120_000,
+  maxPendingConfirmations: 32,
 };
 
 export type Unsubscribe = () => void;

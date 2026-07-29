@@ -1,4 +1,4 @@
-import type { JsonValue, Unsubscribe } from "./types.js";
+import type { AgentEffect, JsonValue, Unsubscribe } from "./types.js";
 import { jsonDeepEqual, randomBase62 } from "./utils.js";
 import type { AgentSurfaceEvent } from "./events.js";
 import type { AuditEvent } from "./audit.js";
@@ -7,7 +7,10 @@ export interface PendingConfirmation {
   confirmationId: string; // "cnf_" + random
   capabilityId: string;
   registrationId: string;
-  consumerId: string;
+  /** Normalized consumer identity `kind:id` (D22). */
+  consumerKey: string;
+  /** Effect of the operation being approved. */
+  effect: AgentEffect;
   /** Human-readable summary composed from description + effective input. */
   summary: string;
   /** The exact effective input (bound + agent-supplied) being approved. */
@@ -34,6 +37,9 @@ type RecordState = "pending" | "approved" | "denied" | "expired" | "consumed";
 
 interface ConfirmationRecord extends PendingConfirmation {
   state: RecordState;
+  /** Canonical request digest (D21): {surfaceId, registrationId,
+   * capabilityId, consumerKey, effectiveInput, effect}. */
+  digest: string;
   approvedAt?: string;
   denyReason?: string;
   timer?: ReturnType<typeof setTimeout>;
@@ -54,39 +60,41 @@ export class ConfirmationStore {
   constructor(
     private readonly opts: {
       ttlMs: number;
+      maxPending: number;
       now: () => number;
       emit: (event: AgentSurfaceEvent) => void;
       audit: (event: Omit<AuditEvent, "at">) => void;
     },
   ) {}
 
-  /** Creates (or re-uses a matching pending) confirmation record. */
+  /** Creates (or re-uses a matching pending) confirmation record.
+   * Returns "overflow" when the bounded pending store is full (D24):
+   * the caller fails RATE_LIMITED and no record is created. */
   request(request: {
     capabilityId: string;
     registrationId: string;
-    consumerId: string;
+    consumerKey: string;
+    effect: AgentEffect;
     input: JsonValue;
     summary: string;
-  }): PendingConfirmation {
+    digest: string;
+  }): PendingConfirmation | "overflow" {
     for (const record of this.records.values()) {
-      if (
-        record.state === "pending" &&
-        record.capabilityId === request.capabilityId &&
-        record.registrationId === request.registrationId &&
-        record.consumerId === request.consumerId &&
-        jsonDeepEqual(record.input, request.input)
-      ) {
+      if (record.state === "pending" && record.digest === request.digest) {
         return this.view(record);
       }
     }
+    if (this.pendingCount() >= this.opts.maxPending) return "overflow";
     const now = this.opts.now();
     const record: ConfirmationRecord = {
       confirmationId: `cnf_${randomBase62(12)}`,
       capabilityId: request.capabilityId,
       registrationId: request.registrationId,
-      consumerId: request.consumerId,
+      consumerKey: request.consumerKey,
+      effect: request.effect,
       summary: request.summary,
       input: request.input,
+      digest: request.digest,
       requestedAt: new Date(now).toISOString(),
       expiresAt: new Date(now + this.opts.ttlMs).toISOString(),
       state: "pending",
@@ -105,11 +113,19 @@ export class ConfirmationStore {
       type: "confirmation-requested",
       capabilityId: record.capabilityId,
       registrationId: record.registrationId,
-      consumerId: record.consumerId,
+      consumerId: record.consumerKey,
       invocationId: undefined,
     });
     this.notify();
     return this.view(record);
+  }
+
+  private pendingCount(): number {
+    let count = 0;
+    for (const record of this.records.values()) {
+      if (record.state === "pending") count += 1;
+    }
+    return count;
   }
 
   resolve(confirmationId: string, resolution: { approved: boolean; reason?: string }): void {
@@ -124,7 +140,7 @@ export class ConfirmationStore {
         type: "confirmation-approved",
         capabilityId: record.capabilityId,
         registrationId: record.registrationId,
-        consumerId: record.consumerId,
+        consumerId: record.consumerKey,
       });
       this.settleWaiters(record, "approved");
     } else {
@@ -135,7 +151,7 @@ export class ConfirmationStore {
         type: "confirmation-denied",
         capabilityId: record.capabilityId,
         registrationId: record.registrationId,
-        consumerId: record.consumerId,
+        consumerId: record.consumerKey,
       });
       this.settleWaiters(record, "denied");
     }
@@ -153,27 +169,24 @@ export class ConfirmationStore {
       type: "confirmation-expired",
       capabilityId: record.capabilityId,
       registrationId: record.registrationId,
-      consumerId: record.consumerId,
+      consumerId: record.consumerKey,
     });
     this.settleWaiters(record, "expired");
     this.notify();
   }
 
-  /** Evidence validation + single-use consumption (docs/06 rules 2–5). */
+  /** Evidence validation + single-use consumption (docs/06 rules 2–5).
+   * Matching is digest-first AND exact-value on the effective input —
+   * never hash-only (AS-CONFIRM-002). */
   consume(evidence: {
     confirmationId: string;
-    capabilityId: string;
-    registrationId: string;
-    consumerId: string;
+    digest: string;
     input: JsonValue;
   }): ConsumeResult {
     const record = this.records.get(evidence.confirmationId);
     if (!record) return { ok: false, kind: "invalid", reason: "mismatch" };
     const matches =
-      record.capabilityId === evidence.capabilityId &&
-      record.registrationId === evidence.registrationId &&
-      record.consumerId === evidence.consumerId &&
-      jsonDeepEqual(record.input, evidence.input);
+      record.digest === evidence.digest && jsonDeepEqual(record.input, evidence.input);
     switch (record.state) {
       case "pending":
         return matches
@@ -196,7 +209,7 @@ export class ConfirmationStore {
           type: "confirmation-consumed",
           capabilityId: record.capabilityId,
           registrationId: record.registrationId,
-          consumerId: record.consumerId,
+          consumerId: record.consumerKey,
         });
         return { ok: true, approvedAt: record.approvedAt ?? record.requestedAt };
       }
@@ -263,7 +276,8 @@ export class ConfirmationStore {
       confirmationId: record.confirmationId,
       capabilityId: record.capabilityId,
       registrationId: record.registrationId,
-      consumerId: record.consumerId,
+      consumerKey: record.consumerKey,
+      effect: record.effect,
       summary: record.summary,
       input: record.input,
       requestedAt: record.requestedAt,

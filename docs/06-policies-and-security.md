@@ -69,23 +69,47 @@ export interface AgentPolicy {
    */
   onDiscovery?(ctx: AgentPolicyContext): DiscoveryDecision;
   /**
-   * Invocation-time gate (pipeline phase 4). MAY be async. Runs in onion
-   * order; call next() to proceed. Throw AgentSurfaceError (or return an
-   * error outcome) to deny. This — not onDiscovery — is the client-side gate.
+   * Pre-input authority gate (pipeline phase 4): authentication,
+   * authorization, tenant, environment, input-independent rate limits.
+   * NO agent input is available here — by type construction (D21).
+   * MAY be async. Onion order; call next() to proceed; throw
+   * AgentSurfaceError to deny.
+   */
+  onAuthorize?(
+    ctx: AgentAuthorizationContext,
+    next: () => Promise<AgentInvocationResult>,
+  ): Promise<AgentInvocationResult>;
+  /**
+   * Post-input invocation gate (pipeline phase 6). Receives ONLY the
+   * validated effective input (locked fields enforced, bindings applied,
+   * full-schema validated). Input-aware rate decisions, audit enrichment,
+   * and the confirmation decision live at this phase.
    */
   onInvoke?(
-    ctx: AgentPolicyContext & { invocationId: string; input?: JsonValue },
+    ctx: AgentInvocationPolicyContext,
     next: () => Promise<AgentInvocationResult>,
   ): Promise<AgentInvocationResult>;
 }
+
+export type AgentAuthorizationContext = AgentPolicyContext;
+
+export interface AgentInvocationPolicyContext extends AgentAuthorizationContext {
+  invocationId: string;
+  /** The validated effective input — never raw agent input. */
+  effectiveInput: JsonValue;
+}
 ```
+
+Policy contexts also expose `now(): number` — the registry's injectable clock. Built-in policies MUST use it; a policy reading `Date.now()` directly cannot be tested under fake timers and is a determinism defect ([08](08-testing.md#core-harness)).
 
 ### Composition and evaluation (normative)
 
-- Attachment points: registry (`RegistryOptions.policies`) → component (`definition.policies`) → capability (`def.policies`). Chains concatenate in that order; `onInvoke` wraps onion-style (registry outermost), `onDiscovery` runs in order with **most-restrictive-wins**: any `hide` ⇒ hidden; else any `disable` ⇒ disabled (first reason kept); else exposed.
-- **Re-evaluation at invocation is mandatory.** Discovery decisions are never cached into invocation: a capability discovered when valid and invoked after state changed hits the full chain again (plus `onDiscovery` re-run in phase 4 preamble — a policy that now says `hide` yields `CAPABILITY_NOT_FOUND`, `disable` yields `CAPABILITY_NOT_AVAILABLE`).
-- The sync/async split is deliberate: discovery filtering must be computable from already-loaded client state (auth store, feature flags); anything requiring I/O is not a discovery concern — enforce it in `onInvoke` or (authoritatively) on the server.
+- Attachment points: registry (`RegistryOptions.policies`) → component (`definition.policies`) → capability (`def.policies`). Chains concatenate in that order; `onAuthorize` (phase 4) and `onInvoke` (phase 6) each wrap onion-style (registry outermost), `onDiscovery` runs in order with **most-restrictive-wins**: any `hide` ⇒ hidden; else any `disable` ⇒ disabled (first reason kept); else exposed.
+- **Two stages, one boundary (D21).** Phase 4 (`onAuthorize`) runs before the input phase and cannot observe agent input; phase 6 (`onInvoke`) runs after the effective input is constructed and validated, and observes *only* that. Confirmation is decided at phase 6 — over the effective input, never earlier ([18-spec-corrections-rfc.md](18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21)).
+- **Re-evaluation at invocation is mandatory.** Discovery decisions are never cached into invocation: a capability discovered when valid and invoked after state changed hits the full chain again (plus `onDiscovery` re-run in the phase-4 preamble — a policy that now says `hide` yields `CAPABILITY_NOT_FOUND`, `disable` yields `CAPABILITY_NOT_AVAILABLE`).
+- The sync/async split is deliberate: discovery filtering must be computable from already-loaded client state (auth store, feature flags); anything requiring I/O is not a discovery concern — enforce it in `onAuthorize`/`onInvoke` or (authoritatively) on the server.
 - Policies MUST NOT mutate input. Input transformation is not a policy concern in v0.1 (no rewriting middleware; keeps the audit trail truthful).
+- Built-in placement: `authenticated`, `hasPermission`, `tenantBoundary`, `environment`, `rateLimit` gate at `onAuthorize`; `audit` enriches at `onInvoke`; `requireConfirmation` contributes the phase-6 confirmation decision. An input-aware rate policy is authored as `onInvoke`.
 
 ### Hide vs disable (D11/D12, restated as the policy author's rule)
 
@@ -157,14 +181,16 @@ sequenceDiagram
     participant S as Server (domain only)
 
     M->>R: invoke(devices.disable, input, invocationId: inv_1)
-    R->>R: policies ⇒ confirmation required, no evidence
-    R->>R: create pending cnf_9 {capability, registrationId, input, expiresAt}
+    R->>R: phases 1–5: authorize, construct + validate EFFECTIVE input
+    R->>R: phase 6 ⇒ confirmation required, no evidence
+    R->>R: create pending cnf_9 {digest(surfaceId, registrationId,\ncapability, consumerKey, effectiveInput, effect), expiresAt}
     R-->>M: error CONFIRMATION_REQUIRED {confirmationId: cnf_9, summary, expiresAt}
-    R-->>U: confirmation-requested → host renders dialog
+    R-->>U: confirmation-requested → host renders dialog (bound values!)
     U->>R: confirmations.resolve(cnf_9, {approved: true})
     M->>R: invoke(same capability, same input, invocationId: inv_1, confirmationId: cnf_9)
+    R->>R: phases 1–5 re-run → fresh effective input
     R->>R: validate evidence: pending→approved, unexpired, unused,
-    R->>R: same registrationId + same capability + deep-equal input
+    R->>R: request digest identical (exact-value match, not hash-only)
     R->>R: mark cnf_9 consumed (single use)
     R->>S: execute (evidence forwarded via callContext)
     S-->>R: result (server may still demand its own approval)
@@ -173,15 +199,16 @@ sequenceDiagram
 
 ### Normative rules
 
-1. **Representation.** `CONFIRMATION_REQUIRED` is a typed error result (`retry: "with-confirmation"`) carrying `details: { confirmationId, summary, expiresAt, effect }`. It is a protocol step, not a failure.
-2. **Correlation.** The pending record stores `capabilityId`, `registrationId`, `consumerId`, and the exact effective input (post-binding, post-parse). The retry MUST match all of them — input by deep equality — else `CONFIRMATION_INVALID` (`details.reason: "mismatch"`). This kills bait-and-switch: the user approves *these ids*, not "whatever the next call says".
+1. **Representation.** `CONFIRMATION_REQUIRED` is a typed error result (`retry: "with-confirmation"`) carrying `details: { confirmationId, summary, expiresAt, effect }`. It is a protocol step, not a failure. It is produced at pipeline phase 6 — **after** the effective input exists and validated; a malformed binding or supplied locked field fails at phase 5 before any record is created (D21).
+2. **Correlation (digest binding).** The pending record binds to the canonical request digest over `{ surfaceId, registrationId, capabilityId, consumerKey, effectiveInput, effect }`, using the canonical JSON encoding of [18 §correction 1](18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21) (sorted keys, arrays ordered, `undefined` omitted, finite numbers, `-0` → `0`). The retry MUST produce the identical digest — with the effective-input comparison exact-value, never hash-only — else `CONFIRMATION_INVALID` (`details.reason: "mismatch"`). This kills bait-and-switch (the user approves *these ids*, not "whatever the next call says") and replay across consumer, registration, capability, or page reload (the store is per-registry; a reload mints a new `surfaceId` and an empty store).
 3. **Single use.** Evidence is consumed atomically by the first successful validating retry; a second use ⇒ `CONFIRMATION_INVALID` (`reason: "consumed"`).
 4. **Expiry.** Default TTL 120 s (`limits.confirmationTtlMs`); expiry emits `confirmation-resolved {outcome:"expired"}`; late retry ⇒ `CONFIRMATION_INVALID` (`reason: "expired"`). Retry while still pending (user hasn't decided) ⇒ `CONFIRMATION_REQUIRED` again with the *same* `confirmationId` (no new dialog spam).
 5. **Denial.** User denial ⇒ retry fails `CONFIRMATION_INVALID` (`reason: "denied"`, `retry: "no"`). Adapters MUST NOT auto-retry a denial.
 6. **Staleness beats confirmation.** If the owning registration died while pending, the retry fails `COMPONENT_UNMOUNTED`/`STALE_CAPABILITY` regardless of approval — an approval cannot resurrect a dead context.
 7. **Server revalidation.** For domain procedures, evidence is forwarded (via `callContext`) as *information*; the server MUST NOT treat it as authorization. orpc-agent-level approvals are an independent layer; the executor maps a server approval demand to `CONFIRMATION_REQUIRED` with `details.origin: "server"`.
 8. **Audit.** Requested/approved/denied/expired/consumed each produce an audit event with actor (`user` for resolutions), timestamps, and capability identity; `audit: "full"` capabilities include the input payload.
-9. **UX modes.** The two-phase flow above is canonical (transport-friendly, auditable). The embedded toolset's `confirmations: "wait"` mode is sugar: it performs the wait-and-retry internally so the model sees one call → one result ([03 §toolset](03-core-api.md#toolset)). Semantics and audit are identical.
+9. **UX modes.** The two-phase flow above is canonical (transport-friendly, auditable). The embedded toolset's `confirmations: "wait"` mode is sugar: it performs the wait-and-retry internally so the model sees one call → one result ([03 §toolset](03-core-api.md#toolset)). Semantics and audit are identical. Mode selection is declared by topology, never defaulted globally (D26, [09 §confirmation-topology](09-adapters.md#confirmation-topology)).
+10. **Bounded store (D24).** At most `limits.maxPendingConfirmations` (32) records may be pending; an invocation that would exceed it fails `RATE_LIMITED {reason: "queue-full"}` **without creating a record** — failing closed beats silently expiring an approval the user may be reading.
 
 Extension interfaces (kept deliberately small in v0.1): custom `summary` composition, a host hook to *veto* confirmations programmatically (`confirmations.resolve(..., {approved:false, reason})` from any host logic), and per-capability TTL. A full enterprise approval workflow (roles, queues, escalation) is a non-goal ([11](11-non-goals.md)); the seam for it is the server side.
 

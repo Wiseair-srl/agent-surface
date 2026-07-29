@@ -1,21 +1,27 @@
 import type { JsonValue } from "./types.js";
 
-export type AgentCapabilityErrorCode =
-  | "CAPABILITY_NOT_FOUND"
-  | "CAPABILITY_NOT_AVAILABLE"
-  | "AMBIGUOUS_INSTANCE"
-  | "COMPONENT_UNMOUNTED"
-  | "STALE_CAPABILITY"
-  | "INVALID_INPUT"
-  | "NOT_AUTHENTICATED"
-  | "NOT_AUTHORIZED"
-  | "PRECONDITION_FAILED"
-  | "CONFIRMATION_REQUIRED"
-  | "CONFIRMATION_INVALID"
-  | "RATE_LIMITED"
-  | "TIMEOUT"
-  | "CANCELLED"
-  | "EXECUTION_FAILED";
+/** The closed agent-facing error enum — one runtime source, cross-validated
+ * against spec/error-matrix.json (docs/07 §principles, AS-ERR-001). */
+export const AGENT_CAPABILITY_ERROR_CODES = [
+  "CAPABILITY_NOT_FOUND",
+  "CAPABILITY_NOT_AVAILABLE",
+  "AMBIGUOUS_INSTANCE",
+  "COMPONENT_UNMOUNTED",
+  "STALE_CAPABILITY",
+  "INVOCATION_CONFLICT",
+  "INVALID_INPUT",
+  "NOT_AUTHENTICATED",
+  "NOT_AUTHORIZED",
+  "PRECONDITION_FAILED",
+  "CONFIRMATION_REQUIRED",
+  "CONFIRMATION_INVALID",
+  "RATE_LIMITED",
+  "TIMEOUT",
+  "CANCELLED",
+  "EXECUTION_FAILED",
+] as const;
+
+export type AgentCapabilityErrorCode = (typeof AGENT_CAPABILITY_ERROR_CODES)[number];
 
 export type AgentErrorRetry =
   | "no"

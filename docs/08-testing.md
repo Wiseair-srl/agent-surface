@@ -178,7 +178,15 @@ expect(r).toFailWith("INVALID_INPUT", { lockedFields: ["deviceIds"] });
 
 **Collisions** — render two same-`(type, instanceId)` components: second gets rejected, `surface.events()` contains `component-rejected`, and only one is exposed.
 
-**Concurrency & dedupe** — fire two invokes with the same `invocationId`: handler executed once, both promises resolve with the identical result. Fire N>queue actions: overflow fails `RATE_LIMITED {reason: "queue-full"}`.
+**Concurrency & dedupe** — fire two invokes with the same consumer + `invocationId` + request: handler executed once, both promises resolve with the identical result (`duplicate-call-joins-inflight`). Fire N>queue actions: overflow fails `RATE_LIMITED {reason: "queue-full"}`.
+
+**Invocation-id conflict (D22)** — same consumer + same `invocationId` + *different* input (or capability): `INVOCATION_CONFLICT {reason: "id-reused-with-different-request"}`, original record untouched (`invocation-id-conflict-fails-closed`). Two *different* consumers reusing one provider tool-call id: both succeed independently.
+
+**Confirmation binds effective input (D21)** — with a live binding, the pending confirmation's `input` contains the **bound** values (not just agent-visible ones); a binding value changed after discovery shows up in the confirmation; a binding value changed **after approval** fails `CONFIRMATION_INVALID {reason: "mismatch"}`, not execution (`confirmation-approved-input-changed`). A malformed binding (`binding-throws-before-confirmation`) or a supplied locked field fails at phase 5 with **no confirmation record created**. Approval for input A can never execute input B; approval does not validate for another consumer or registration.
+
+**Navigation settlement (D23)** — a navigation handler that commits the route and triggers its own unmount in the same task settles `ok` (`navigation-commit-then-owner-unmount`); a handler rejecting before commit settles typed failure; unmount before dispatch is `COMPONENT_UNMOUNTED`; a timeout cannot fire after the handler already resolved.
+
+**Observation bounds (D24)** — saturate one consumer beyond `maxConcurrentObservationsPerConsumer` + queue: overflow fails `RATE_LIMITED {reason: "queue-full"}` while a second consumer still executes (fake timers; slots released on settle/cancel/timeout).
 
 **Timeout/cancellation** — fake timers; a hanging handler settles `TIMEOUT`, its `signal` is aborted, a late resolve is ignored and shows up as `late-settlement` in `auditLog()`.
 
@@ -191,3 +199,4 @@ expect(r).toFailWith("INVALID_INPUT", { lockedFields: ["deviceIds"] });
 - All of the above runs in jsdom/node, no browser, no network, no model.
 - Recommended app-level gate: commit the semantic surface snapshot; any diff to "what agents can see" becomes a reviewable artifact in PRs.
 - Library CI additionally runs the core suite under both `environment: "test"` and `"development"` (to keep dev-only diagnostics from drifting), and the React suite under Strict Mode and React 18 + 19 matrices.
+- CI also runs `scripts/check-conformance.mjs`: every requirement ID in `spec/conformance.json` must reference existing test files that mention the ID, `spec/error-matrix.json` must stay in lockstep with the implemented error enum, and a `status: "implemented"` requirement with no test fails the build (directive §4.2).

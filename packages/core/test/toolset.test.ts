@@ -104,6 +104,7 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     const h1 = registry.register(devicesTableDefinition(makeDevicesState()));
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
     });
     const tool = toolByName(toolset.tools(), "view_devices__table__selectRows");
     registry.register(devicesTableDefinition(makeDevicesState())); // replaces h1
@@ -163,6 +164,7 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     registry.register(devicesTableDefinition(stateComparison, { instanceId: "comparison" }));
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
     });
     const names = toolset.tools().map((t) => t.name);
     expect(new Set(names).size).toBe(names.length); // providers reject duplicates
@@ -183,6 +185,7 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     registry.register(devicesTableDefinition(state));
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
       mode: "meta",
     });
     const names = toolset.tools().map((t) => t.name);

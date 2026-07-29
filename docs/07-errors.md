@@ -9,7 +9,7 @@
 ## Principles
 
 1. **Results, not exceptions, at the boundary.** `invoke` returns a discriminated union ([03 §invocation](03-core-api.md#invocation)); `status: "error"` carries a serializable payload. JS exceptions are reserved for programmer misuse (structural definition defects, use-after-dispose).
-2. **Typed and closed.** Agent-facing codes come from one closed enum. Adding a code is a spec change.
+2. **Typed and closed.** Agent-facing codes come from one closed enum. Adding a code is a spec change (`INVOCATION_CONFLICT` was added by [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md)). The enum, per-code production phase, retry category, and cacheability are cross-validated against the implementation from one machine-readable source: `spec/error-matrix.json` (directive §4.4).
 3. **Two audiences, two channels.** Every error has an *agent-safe* projection (code, message, retry, details) and an *operator* channel (cause, stack, internal context → audit/logs). The two never mix.
 4. **Actionable.** Each code defines retry semantics an agent loop can act on mechanically.
 
@@ -22,6 +22,7 @@ export type AgentCapabilityErrorCode =
   | "AMBIGUOUS_INSTANCE"
   | "COMPONENT_UNMOUNTED"
   | "STALE_CAPABILITY"
+  | "INVOCATION_CONFLICT"
   | "INVALID_INPUT"
   | "NOT_AUTHENTICATED"
   | "NOT_AUTHORIZED"
@@ -90,6 +91,11 @@ For each: meaning · produced when · `retry` · agent-visible `details` · log-
 ### `STALE_CAPABILITY`
 - **Meaning:** the invocation references a superseded snapshot: `registrationId` mismatch with a live replacement, `surfaceId` from another page load, or version mismatch on a `destructive`/`external-side-effect` call.
 - **Retry:** `after-refresh`. **Details:** `{ reason: "registration-replaced" | "surface-reloaded" | "surface-version-mismatch", liveRegistrationId? }`. **Adapter:** MUST refresh and re-resolve; MUST NOT strip the staleness tokens to force the call through.
+
+### `INVOCATION_CONFLICT`
+- **Meaning:** the `invocationId` was already used by this consumer for a *different* request (different capability, target, input, or evidence) within the idempotency window. Reuse never silently returns another request's result (D22).
+- **When:** phase 1, comparing the request fingerprint against the stored in-flight/terminal record for `(consumerKey, invocationId)`.
+- **Retry:** `with-changes` (use a fresh `invocationId` if the new request is intentional). **Details:** `{ reason: "id-reused-with-different-request" }` — never the prior request's capability, input, or fingerprint material. **Log-only:** both fingerprints. **Adapter:** treat as an adapter/provider id-collision bug signal; mint a namespaced id and retry the *new* request. Never cached as terminal.
 
 ### `INVALID_INPUT`
 - **Meaning:** schema parse failed, or a locked bound field was supplied ([05 §binding](05-orpc-integration.md#binding-semantics-d7-d8--draft)).

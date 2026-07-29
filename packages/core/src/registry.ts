@@ -15,7 +15,7 @@ import { consoleAuditSink, memoryAuditSink, safeRecord } from "./audit.js";
 import { EventDispatcher, type AgentSurfaceEvent } from "./events.js";
 import { ConfirmationStore, type ConfirmationController } from "./confirmation.js";
 import type { AgentInvocation, AgentInvocationResult, InvokeOptions } from "./invocation-types.js";
-import { performInvoke } from "./invoke.js";
+import { drainObservationQueues, performInvoke } from "./invoke.js";
 import { createSnapshot, type AgentSurfaceSnapshot, type SnapshotContext } from "./snapshot.js";
 import {
   addTombstone,
@@ -111,6 +111,7 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
     byKey: new Map(),
     tombstones: new Map(),
     dedupe: new Map(),
+    observationAdmission: { total: 0, perConsumer: new Map(), waiting: [] },
     dispatcher,
     confirmations: undefined as unknown as ConfirmationStore, // set below
     executor: undefined,
@@ -161,6 +162,7 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
 
   internals.confirmations = new ConfirmationStore({
     ttlMs: limits.confirmationTtlMs,
+    maxPending: limits.maxPendingConfirmations,
     now,
     emit: (event) => internals.emit(event),
     audit: (event) => internals.recordAudit(event),
@@ -192,16 +194,12 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
     internals.registrations.delete(reg.id);
     if (internals.byKey.get(reg.key) === reg.id) internals.byKey.delete(reg.key);
     addTombstone(internals, reg);
-    // Abort in-flight invocations: they settle COMPONENT_UNMOUNTED unless the
-    // handler already settled (first settle wins, D16).
+    // Abort in-flight invocations: non-navigation ones settle
+    // COMPONENT_UNMOUNTED unless the handler already settled (first settle
+    // wins, D16); navigation ones only lose their signal and settle on
+    // handler settlement (D23).
     for (const entry of [...reg.inFlight]) {
-      entry.settle({
-        code: "COMPONENT_UNMOUNTED",
-        message:
-          "The owning view unmounted while this capability was executing. Verify state before repeating a non-idempotent action.",
-        retry: "after-refresh",
-        details: { phase: "mid-flight" },
-      });
+      entry.onUnregister();
     }
     internals.bumpVersion();
     internals.emit({
@@ -402,14 +400,11 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
       if (internals.disposed) return;
       for (const reg of [...internals.registrations.values()]) {
         for (const entry of [...reg.inFlight]) {
-          entry.settle({
-            code: "CANCELLED",
-            message: "The registry was disposed.",
-            retry: "no",
-          });
+          entry.onDispose();
         }
         reg.status = "unregistered";
       }
+      drainObservationQueues(internals);
       internals.registrations.clear();
       internals.byKey.clear();
       internals.confirmations.disposeAll();

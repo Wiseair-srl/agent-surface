@@ -83,3 +83,41 @@ export function randomBase62(length: number): string {
 export function truncate(s: string, max: number): string {
   return s.length <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…";
 }
+
+/**
+ * Canonical JSON encoding (docs/18 §correction 1, D21/D22): object keys
+ * sorted by UTF-16 code unit, array order significant, `undefined`
+ * properties omitted, `-0` encodes as `0`, non-finite numbers are defects.
+ */
+export function canonicalJson(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) return "null";
+  const t = typeof value;
+  if (t === "number") {
+    if (!Number.isFinite(value)) {
+      throw new Error("canonicalJson: non-finite numbers are not JsonValues");
+    }
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (t === "string" || t === "boolean") return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((v) => canonicalJson(v ?? null)).join(",")}]`;
+  }
+  const entries = Object.keys(value as Record<string, JsonValue>)
+    .sort()
+    .filter((k) => (value as Record<string, JsonValue | undefined>)[k] !== undefined)
+    .map((k) => `${JSON.stringify(k)}:${canonicalJson((value as Record<string, JsonValue>)[k])}`);
+  return `{${entries.join(",")}}`;
+}
+
+/** FNV-1a 64-bit over a string, hex-encoded. Non-cryptographic: used for
+ * dedupe fingerprints only — confirmation evidence matches exact values,
+ * never hash-only (docs/06 rule 2). */
+export function fnv1a64(input: string): string {
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= BigInt(input.charCodeAt(i));
+    hash = (hash * prime) & 0xffffffffffffffffn;
+  }
+  return hash.toString(16).padStart(16, "0");
+}

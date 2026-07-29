@@ -3,3 +3,4 @@ docs/.vitepress/cache/
 docs/.vitepress/dist/
 packages/*/dist/
 .env.local
+.DS_Store

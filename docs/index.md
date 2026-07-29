@@ -36,7 +36,7 @@ Pick the path that matches why you're here:
 
 - **"Give me the idea in 10 minutes"** — [Vision](/00-vision), then the five-sentence summary at the top of [Concepts](/01-concepts), then skim the [devices-page walkthrough](/10-examples).
 - **"I'm building an app with this"** — [Concepts](/01-concepts) → [React API](/04-react-api) → [oRPC Integration](/05-orpc-integration) → the two worked examples ([in-page](/10-examples), [full-stack chat with Mastra + assistant-ui](/16-mastra-assistant-ui)).
-- **"I'm implementing the library"** — [Architecture](/02-architecture) → [Core API](/03-core-api) → [Errors](/07-errors) → [Testing](/08-testing) → [Implementation Plan](/14-implementation-plan). The [decision log](/13-open-questions) explains every non-obvious choice.
+- **"I'm implementing the library"** — [Architecture](/02-architecture) → [Core API](/03-core-api) → [Errors](/07-errors) → [Testing](/08-testing) → [Implementation Plan](/14-implementation-plan). The [decision log](/13-open-questions) explains every non-obvious choice; the [Spec Corrections RFC](/18-spec-corrections-rfc) records the P0 protocol corrections (D21–D26) and the [Maintainer Directive](/17-maintainer-directive) is the standing execution contract.
 - **"I'm reviewing this for security"** — [Policies & Security](/06-policies-and-security) end to end, then [Non-Goals](/11-non-goals) and the honest-limits notes in the [Completeness Review](/15-completeness-review).
 
 Everything is written with RFC-style **MUST/SHOULD/MAY** where behavior is normative, and labeled **Draft / Experimental / Future** — nothing here is implemented yet, and the docs never pretend otherwise.
