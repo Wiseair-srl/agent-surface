@@ -1,6 +1,6 @@
 # Security policy
 
-agent-surface is a **deny-by-default control plane for frontend agent capabilities**: v0.1 is implemented in-repo but **not yet published to npm**. Reports may target the design (the normative specification in `docs/`) or the code under `packages/` — we want both.
+agent-surface is a **deny-by-default control plane for frontend agent capabilities**: v0.1 is implemented and published on npm as 0.x. Reports may target the design (the normative specification in `docs/`) or the code under `packages/` — we want both.
 
 ## Reporting
 
@@ -24,9 +24,9 @@ Read before reporting, to calibrate expectations:
 
 ## Supported versions
 
-Pre-1.0: only the latest published minor receives fixes. Post-1.0, the policy in [12-roadmap.md](docs/12-roadmap.md) applies: latest minor receives fixes; the previous minor receives critical fixes for 6 months.
+Pre-1.0 (current): only the latest published 0.x minor receives fixes. Post-1.0, the policy in [12-roadmap.md](docs/12-roadmap.md) applies: latest minor receives fixes; the previous minor receives critical fixes for 6 months.
 
-## Design-phase security review
+## Security review is wanted
 
 Structured review is actively wanted. Highest-value targets: the [threat model](docs/06-policies-and-security.md#threat-model), the [10-phase invocation pipeline](docs/02-architecture.md#invocation-pipeline-normative-order), and the [confirmation protocol](docs/06-policies-and-security.md#confirmation) — the three places where a subtle ordering mistake becomes an authority mistake (see [18-spec-corrections-rfc.md](docs/18-spec-corrections-rfc.md) for the P0 corrections already found this way). Non-exploitable design critique is welcome as a public issue labeled `security-design`.
 

@@ -3,7 +3,7 @@
 > [!NOTE]
 > **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [01-concepts.md](01-concepts.md); APIs in [03](03-core-api.md)–[05](05-orpc-integration.md).
 
-Read this page to learn three things: **where code lives** (packages and their dependency rules), **how a call flows** (registration → discovery → the nine-phase invocation pipeline), and **what the runtime guarantees** (ordering, concurrency, memory bounds). If you're deciding whether the library fits your app, the [responsibilities table](#where-responsibilities-live) at the bottom is the fastest answer to "what would be mine to build".
+Read this page to learn three things: **where code lives** (packages and their dependency rules), **how a call flows** (registration → discovery → the ten-phase invocation pipeline), and **what the runtime guarantees** (ordering, concurrency, memory bounds). If you're deciding whether the library fits your app, the [responsibilities table](#where-responsibilities-live) at the bottom is the fastest answer to "what would be mine to build".
 
 ## Package layout
 

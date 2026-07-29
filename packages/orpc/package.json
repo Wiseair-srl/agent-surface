@@ -60,7 +60,7 @@
     "url": "git+https://github.com/Wiseair-srl/agent-surface.git",
     "directory": "packages/orpc"
   },
-  "homepage": "https://github.com/Wiseair-srl/agent-surface/tree/main/packages/orpc",
+  "homepage": "https://agent-surface-docs.vercel.app",
   "bugs": {
     "url": "https://github.com/Wiseair-srl/agent-surface/issues"
   },

@@ -2,6 +2,8 @@
 
 Deterministic testing toolkit for [agent-surface](https://github.com/Wiseair-srl/agent-surface). The surface is a typed contract; contracts are tested deterministically — **no test in this ecosystem requires an LLM**.
 
+Docs: https://agent-surface-docs.vercel.app
+
 ## Install
 
 ```bash

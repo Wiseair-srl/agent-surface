@@ -4,7 +4,7 @@ layout: home
 hero:
   name: agent-surface
   text: An explicit agent surface for your frontend
-  tagline: If a component or capability is not explicitly annotated, it does not exist for the agent. Semantic, typed, lifecycle-aware, deny-by-default. Currently a design-phase specification.
+  tagline: If a component or capability is not explicitly annotated, it does not exist for the agent. Semantic, typed, lifecycle-aware, deny-by-default. Specification and v0.1 implementation, published as 0.x.
   actions:
     - theme: brand
       text: Start with the Vision
@@ -39,4 +39,4 @@ Pick the path that matches why you're here:
 - **"I'm implementing the library"** — [Architecture](/02-architecture) → [Core API](/03-core-api) → [Errors](/07-errors) → [Testing](/08-testing) → [Implementation Plan](/14-implementation-plan). The [decision log](/13-open-questions) explains every non-obvious choice; the [Spec Corrections RFC](/18-spec-corrections-rfc) records the P0 protocol corrections (D21–D26) and the [Maintainer Directive](/17-maintainer-directive) is the standing execution contract.
 - **"I'm reviewing this for security"** — [Policies & Security](/06-policies-and-security) end to end, then [Non-Goals](/11-non-goals) and the honest-limits notes in the [Completeness Review](/15-completeness-review).
 
-Everything is written with RFC-style **MUST/SHOULD/MAY** where behavior is normative, and labeled **Draft / Experimental / Future** — nothing here is implemented yet, and the docs never pretend otherwise.
+Everything is written with RFC-style **MUST/SHOULD/MAY** where behavior is normative, and labeled **Draft / Experimental / Future**. v0.1 is implemented and published as 0.x; where the docs describe something that is *not* built — a deferred decision, a topology without a runnable example — they say so in place rather than implying coverage.

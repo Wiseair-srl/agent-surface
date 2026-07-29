@@ -2,6 +2,8 @@
 
 Contextual references to oRPC domain procedures for [agent-surface](https://github.com/Wiseair-srl/agent-surface). A frontend never redefines a domain operation: it **references** one exposed via [orpc-agent](https://orpc-agent.dev) — same identity, same server authority — and adds the three things only the frontend can know: whether it is relevant right now, which inputs come from UI state, and what the user must confirm before it runs.
 
+Docs: https://agent-surface-docs.vercel.app
+
 ## Install
 
 ```bash

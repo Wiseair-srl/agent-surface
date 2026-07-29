@@ -2,7 +2,9 @@
 
 Framework-agnostic core of [agent-surface](https://github.com/Wiseair-srl/agent-surface): a registry for declaring an explicit, semantic, typed, policy-governed *agent surface* over a frontend — and nothing more. If a component or capability is not explicitly annotated, it does not exist for the agent.
 
-Zero runtime dependencies. Provides: canonical capability ids, the `AgentSchema` layer (Standard Schema + built-in JSON Schema subset validator), component/capability definitions, the registry (registration lifecycle, availability, versioning, staleness), synchronous snapshots, the 9-phase invocation pipeline, composable policies, single-use confirmation evidence, audit sinks, and a provider-neutral toolset projection for embedded agent loops.
+Zero runtime dependencies. Provides: canonical capability ids, the `AgentSchema` layer (Standard Schema + built-in JSON Schema subset validator), component/capability definitions, the registry (registration lifecycle, availability, versioning, staleness), synchronous snapshots, the 10-phase invocation pipeline, composable policies, single-use confirmation evidence, audit sinks, and a provider-neutral toolset projection for embedded agent loops.
+
+Docs: https://agent-surface-docs.vercel.app
 
 ## Install
 

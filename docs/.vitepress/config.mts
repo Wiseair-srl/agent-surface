@@ -6,7 +6,7 @@ export default withMermaid(
   defineConfig({
     title: "agent-surface",
     description:
-      "An explicit, semantic, typed, governable agent surface for frontend applications — design-phase specification.",
+      "An explicit, semantic, typed, governable agent surface for frontend applications — specification and v0.1 implementation.",
     lang: "en-US",
     markdown: {
       // Match GitHub's slugger so the cross-doc anchors written for GitHub
@@ -75,7 +75,7 @@ export default withMermaid(
       outline: { level: [2, 3], label: "On this page" },
       search: { provider: "local" },
       footer: {
-        message: "Design-phase specification — nothing is implemented or published yet.",
+        message: "Specification + v0.1 implementation, published on npm as 0.x. Nothing is Stable yet.",
       },
     },
   }),

@@ -2,6 +2,8 @@
 
 React bindings for [agent-surface](https://github.com/Wiseair-srl/agent-surface): lifecycle-correct hooks that tie capability registrations to component mounts. Registration happens once per mount in an effect; handlers are read through a ref at invocation time — no dependency arrays, no `useCallback`, no stale closures. Strict Mode, Suspense, SSR and concurrent rendering all work without special cases.
 
+Docs: https://agent-surface-docs.vercel.app
+
 ## Install
 
 ```bash

@@ -13,7 +13,7 @@
   - **Draft** — intended for v0.1; expected to stabilize with at most minor changes.
   - **Experimental** — may change incompatibly or be removed; opt-in.
   - **Future** — described for orientation; not part of the initial implementation.
-- Nothing is labeled *Stable* yet, because nothing is implemented.
+- Nothing is labeled *Stable* yet: v0.1 is implemented and published as 0.x, and no API earns *Stable* before it survives a release cycle unchanged (see the graduation criteria in [12-roadmap.md](12-roadmap.md)).
 
 ## The two planes
 

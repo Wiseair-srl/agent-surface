@@ -106,11 +106,15 @@ The [devices-app example](examples/devices-app) is the spec's acceptance artifac
 
 There is deliberately **no per-framework agent package**: any stack that accepts JSON-Schema tools — Vercel AI SDK, Mastra, LangGraph, assistant-ui — consumes the provider-neutral toolset directly. The runnable example is `examples/devices-app` ([docs/10](docs/10-examples.md)); the server-side topology (Mastra loop + orpc-agent governance) is sketched as a wiring guide in [docs/16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) — hand-written snippets, not a package.
 
-Future installation (not yet published):
+**Documentation: https://agent-surface-docs.vercel.app**
+
+Installation:
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
 ```
+
+Published as 0.x: usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md).
 
 ## Documentation
 

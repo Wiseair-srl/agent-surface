@@ -1,6 +1,6 @@
 # Contributing to agent-surface
 
-Thanks for your interest. v0.1 is **implemented in-repo but unpublished**: the normative specification in `docs/` is the source of truth, and the code under `packages/` is built from it. The most valuable contributions right now are security analysis, review of the as-built code against the documented invariants, and adoption feedback from a real application.
+Thanks for your interest. v0.1 is **implemented and published on npm as 0.x**, with nothing yet labeled *Stable*: the normative specification in `docs/` is the source of truth, and the code under `packages/` is built from it. The most valuable contributions right now are security analysis, review of the as-built code against the documented invariants, and adoption feedback from a real application.
 
 ## Ground rules
 

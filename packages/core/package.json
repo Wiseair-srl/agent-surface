@@ -35,7 +35,7 @@
     "url": "git+https://github.com/Wiseair-srl/agent-surface.git",
     "directory": "packages/core"
   },
-  "homepage": "https://github.com/Wiseair-srl/agent-surface/tree/main/packages/core",
+  "homepage": "https://agent-surface-docs.vercel.app",
   "bugs": {
     "url": "https://github.com/Wiseair-srl/agent-surface/issues"
   },
