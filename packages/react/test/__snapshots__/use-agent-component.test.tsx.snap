@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`semantic surface snapshot as a PR artifact > matches the committed surface snapshot 1`] = `
+{
+  "components": [
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.table.selectRows",
+          "confirmation": "never",
+          "description": "Replace, extend or reduce the row selection",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {
+              "ids": {
+                "items": {
+                  "type": "string",
+                },
+                "minItems": 1,
+                "type": "array",
+              },
+              "mode": {
+                "enum": [
+                  "replace",
+                  "add",
+                  "remove",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "ids",
+            ],
+            "type": "object",
+          },
+          "name": "selectRows",
+          "reversible": true,
+        },
+        {
+          "available": false,
+          "capabilityId": "view:devices.table.clearSelection",
+          "confirmation": "never",
+          "description": "Clear the selection",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "additionalProperties": false,
+            "properties": {},
+            "type": "object",
+          },
+          "name": "clearSelection",
+          "reversible": true,
+          "unavailableReason": "No rows are selected",
+        },
+      ],
+      "description": "Table of devices matching the active filters",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:devices.table.readState",
+          "description": "Visible rows and current selection",
+          "name": "readState",
+          "outputSchema": {
+            "properties": {
+              "selectedIds": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "visibleRows": {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object",
+                },
+                "type": "array",
+              },
+            },
+            "required": [
+              "visibleRows",
+              "selectedIds",
+            ],
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#1>",
+      "type": "devices.table",
+    },
+  ],
+  "procedures": [],
+}
+`;

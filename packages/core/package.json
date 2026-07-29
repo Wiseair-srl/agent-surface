@@ -1,0 +1,64 @@
+{
+  "name": "@agent-surface/core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic registry, types, policies, errors, snapshot, invocation for frontend agent surfaces",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "node ../../scripts/copy-license.cjs",
+    "size": "size-limit"
+  },
+  "devDependencies": {
+    "zod": "^4.1.5"
+  },
+  "author": "Paolo Barbato",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wiseair-srl/agent-surface.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/Wiseair-srl/agent-surface/tree/main/packages/core",
+  "bugs": {
+    "url": "https://github.com/Wiseair-srl/agent-surface/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agent-surface",
+    "agent",
+    "ai",
+    "llm",
+    "frontend",
+    "capabilities",
+    "typescript",
+    "registry",
+    "policies",
+    "tools",
+    "mcp"
+  ],
+  "size-limit": [
+    {
+      "path": "dist/index.js",
+      "limit": "18 kB"
+    }
+  ]
+}

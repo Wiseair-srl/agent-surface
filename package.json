@@ -1,22 +1,44 @@
 {
-  "name": "agent-surface",
+  "name": "agent-surface-monorepo",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "packageManager": "pnpm@10.15.0",
   "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck",
+    "size": "pnpm -r --filter \"./packages/*\" --no-bail size",
+    "publint": "pnpm -r --filter \"./packages/*\" exec publint",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "pnpm build && changeset publish"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   },
   "devDependencies": {
     "@braintree/sanitize-url": "^7.1.2",
+    "@changesets/cli": "^2.29.5",
+    "@size-limit/preset-small-lib": "^11.2.0",
     "cytoscape": "^3.34.0",
     "cytoscape-cose-bilkent": "^4.1.0",
     "dayjs": "^1.11.21",
     "debug": "^4.4.3",
     "github-slugger": "^2.0.0",
+    "jsdom": "^26.1.0",
     "mermaid": "^11.16.0",
+    "publint": "^0.3.12",
+    "size-limit": "^11.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2",
     "vitepress": "^1.6.4",
-    "vitepress-plugin-mermaid": "^2.0.17"
+    "vitepress-plugin-mermaid": "^2.0.17",
+    "vitest": "^3.2.4"
   }
 }

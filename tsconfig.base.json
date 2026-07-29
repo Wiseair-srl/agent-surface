@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "jsx": "react-jsx",
+    "declaration": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@agent-surface/core": ["packages/core/src/index.ts"],
+      "@agent-surface/react": ["packages/react/src/index.ts"],
+      "@agent-surface/orpc": ["packages/orpc/src/index.ts"],
+      "@agent-surface/orpc/react": ["packages/orpc/src/react.ts"],
+      "@agent-surface/testing": ["packages/testing/src/index.ts"],
+      "@agent-surface/testing/react": ["packages/testing/src/react.ts"],
+      "@agent-surface/testing/matchers": ["packages/testing/src/matchers.ts"],
+      "@agent-surface/webmcp": ["packages/webmcp/src/index.ts"]
+    }
+  }
+}

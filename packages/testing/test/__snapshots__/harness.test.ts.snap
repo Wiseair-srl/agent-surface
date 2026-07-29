@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`semantic snapshots (docs/08) > toMatchSurfaceSnapshot records a reviewable artifact 1`] = `
+{
+  "components": [
+    {
+      "actions": [
+        {
+          "available": true,
+          "capabilityId": "view:widget.counter.increment",
+          "confirmation": "never",
+          "description": "Increment",
+          "effect": "local-state",
+          "idempotent": false,
+          "inputSchema": {
+            "additionalProperties": true,
+            "type": "object",
+          },
+          "name": "increment",
+          "reversible": true,
+        },
+      ],
+      "description": "A counter",
+      "instanceId": "default",
+      "observations": [
+        {
+          "available": true,
+          "capabilityId": "view:widget.counter.value",
+          "description": "Current value",
+          "name": "value",
+          "outputSchema": {
+            "additionalProperties": true,
+            "type": "object",
+          },
+        },
+      ],
+      "registrationId": "<reg#1>",
+      "type": "widget.counter",
+    },
+  ],
+  "procedures": [],
+}
+`;
