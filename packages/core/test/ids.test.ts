@@ -1,3 +1,4 @@
+// Conformance: AS-ID-001 (grammar accept/reject), AS-ID-002 (wire codec + truncation)
 import { describe, expect, it } from "vitest";
 import {
   decodeWireName,

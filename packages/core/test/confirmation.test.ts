@@ -1,3 +1,4 @@
+// Conformance: AS-CONFIRM-006 (pending same-id re-request, denial no-retry, expiry cycle)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   action,

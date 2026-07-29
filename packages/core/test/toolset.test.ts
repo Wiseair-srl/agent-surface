@@ -1,3 +1,4 @@
+// Conformance: AS-ADAPTER-001 (staleness tokens + toolCallId->invocationId + per-version refresh + unique wire names), AS-ADAPTER-002 (result envelope relayed losslessly)
 import { describe, expect, it } from "vitest";
 import {
   createAgentSurfaceRegistry,

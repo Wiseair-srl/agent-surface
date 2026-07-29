@@ -1,3 +1,4 @@
+// Conformance: AS-EXAMPLE-001 (docs/10 scenario end-to-end, no LLM)
 import { act, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createAgentToolset } from "@agent-surface/core";

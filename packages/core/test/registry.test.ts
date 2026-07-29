@@ -1,3 +1,4 @@
+// Conformance: AS-LIFE-001 (register/unregister lifecycle), AS-LIFE-002 (structural immutability, update surface), AS-LIFE-003 (collisions D4), AS-VER-001 (version bump matrix D1), AS-EVT-001 (ordering guarantees D17)
 import { describe, expect, it, vi } from "vitest";
 import {
   createAgentSurfaceRegistry,

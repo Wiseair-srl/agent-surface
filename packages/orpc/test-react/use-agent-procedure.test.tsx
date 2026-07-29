@@ -1,3 +1,4 @@
+// Conformance: AS-BIND-004 (useAgentProcedure lifecycle + context link)
 import { useState } from "react";
 import { act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm -r --filter \"./packages/*\" build",
     "test": "vitest run",
+    "bench": "vitest bench --run packages/core/bench",
     "check:conformance": "node scripts/check-conformance.mjs",
     "typecheck": "pnpm -r typecheck",
     "size": "pnpm -r --filter \"./packages/*\" --no-bail size",
@@ -21,7 +22,9 @@
     "release": "pnpm build && changeset publish"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@braintree/sanitize-url": "^7.1.2",
@@ -31,6 +34,7 @@
     "cytoscape-cose-bilkent": "^4.1.0",
     "dayjs": "^1.11.21",
     "debug": "^4.4.3",
+    "fast-check": "^4.9.0",
     "github-slugger": "^2.0.0",
     "jsdom": "^26.1.0",
     "mermaid": "^11.16.0",

@@ -1,3 +1,4 @@
+// Conformance: AS-TEST-001 (harness as reference consumer: invoke/observe/captureRef/as, matchers hidden!=disabled, semantic snapshots)
 import { describe, expect, it } from "vitest";
 import {
   action,

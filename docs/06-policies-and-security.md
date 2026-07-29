@@ -242,6 +242,10 @@ export interface AuditEvent {
   status?: "ok" | "error";
   code?: AgentCapabilityErrorCode;
   durationMs?: number;
+  /** Queue wait and execution duration are distinct (§7.1 observability):
+   * time waiting for a concurrency slot vs time inside the handler guards. */
+  queueWaitMs?: number;
+  executionMs?: number;
   /** Present only for capabilities with audit: "full"; size-capped. */
   payload?: { input?: JsonValue; output?: JsonValue };
   /** Redaction hook applied before payload storage. */

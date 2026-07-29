@@ -284,6 +284,9 @@ async function runPipeline(
   let resolvedRegistrationId: string | undefined;
   let inputForAudit: JsonValue | undefined;
   let outputForAudit: JsonValue | undefined;
+  // §7.1 observability: queue wait and execution duration are distinct.
+  let queueWaitMsForAudit: number | undefined;
+  let executionMsForAudit: number | undefined;
 
   const finalize = (
     body:
@@ -329,6 +332,8 @@ async function runPipeline(
         status: result.status,
         ...(result.status === "error" ? { code: result.error.code } : {}),
         durationMs,
+        ...(queueWaitMsForAudit !== undefined ? { queueWaitMs: queueWaitMsForAudit } : {}),
+        ...(executionMsForAudit !== undefined ? { executionMs: executionMsForAudit } : {}),
         ...(resolvedAuditLevel === "full"
           ? {
               payload: {
@@ -415,6 +420,10 @@ async function runPipeline(
           if (input !== undefined) inputForAudit = input;
           if (output !== undefined) outputForAudit = output;
         },
+        setTimings: (timings) => {
+          if (timings.queueWaitMs !== undefined) queueWaitMsForAudit = timings.queueWaitMs;
+          if (timings.executionMs !== undefined) executionMsForAudit = timings.executionMs;
+        },
       });
 
     try {
@@ -476,13 +485,16 @@ function resolveTarget(
   if (request.registrationId !== undefined) {
     const live = candidates.find((c) => c.reg.id === request.registrationId);
     if (live) return live;
+    // Tombstones are TTL-bound: an expired one no longer proves recency.
+    const tombstone = internals.tombstones.get(request.registrationId);
+    const tombstoned = tombstone !== undefined && tombstone.expiresAt > internals.now();
     if (candidates.length > 0) {
-      const reason = internals.tombstones.has(request.registrationId)
+      const reason = tombstoned
         ? ("registration-replaced" as const)
         : ("surface-reloaded" as const);
       return { error: stale(reason, candidates[0]?.reg.id) };
     }
-    if (internals.tombstones.has(request.registrationId)) {
+    if (tombstoned) {
       return { error: unmounted("resolve") };
     }
     return { error: notFound() };
@@ -543,6 +555,7 @@ interface CoreArgs {
       | { status: "error"; error: AgentCapabilityErrorPayload },
   ) => AgentInvocationResult;
   setAuditPayload: (input?: JsonValue, output?: JsonValue) => void;
+  setTimings: (timings: { queueWaitMs?: number; executionMs?: number }) => void;
 }
 
 async function executeCore(
@@ -585,7 +598,9 @@ async function executeObservation(
   };
   const run = async (): Promise<AgentInvocationResult> => {
     /* phase 8 — bounded observation admission (D24) */
+    const queueStart = internals.now();
     const slot = await acquireObservationSlot(internals, consumerKey);
+    args.setTimings({ queueWaitMs: internals.now() - queueStart });
     if (slot === "overflow") {
       return finalize({ status: "error", error: queueFull(250) });
     }
@@ -598,6 +613,7 @@ async function executeObservation(
     try {
       const timeoutMs =
         options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.observationTimeoutMs;
+      const executeStart = internals.now();
       const outcome = await executeWithGuards(internals, reg, {
         invocationId,
         capabilityId: cap.capabilityId,
@@ -610,6 +626,7 @@ async function executeObservation(
           return live.read(readCtx);
         },
       });
+      args.setTimings({ executionMs: internals.now() - executeStart });
       if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
       const output = settleOutput(internals, outcome.value, cap.outputSchema);
       if ("error" in output) return finalize({ status: "error", error: output.error });
@@ -686,7 +703,9 @@ async function executeAction(
     }
 
     /* phase 8 — concurrency: actions serialize per component instance (D13) */
+    const queueStart = internals.now();
     const slot = await acquireActionSlot(internals, reg);
+    args.setTimings({ queueWaitMs: internals.now() - queueStart });
     if (slot === "overflow") {
       return finalize({ status: "error", error: queueFull(250) });
     }
@@ -694,6 +713,7 @@ async function executeAction(
     try {
       /* phase 9 — execute; navigation actions settle on handler settlement (D23) */
       const timeoutMs = options?.timeoutMs ?? cap.timeoutMs ?? internals.limits.actionTimeoutMs;
+      const executeStart = internals.now();
       const outcome = await executeWithGuards(internals, reg, {
         invocationId,
         capabilityId: cap.capabilityId,
@@ -713,6 +733,7 @@ async function executeAction(
           return live.execute(parsedInput, actionCtx);
         },
       });
+      args.setTimings({ executionMs: internals.now() - executeStart });
       if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
 
       /* phase 10 — settle */
@@ -813,6 +834,7 @@ async function executeProcedure(
       return finalize({ status: "error", error: executionFailed("transport") });
     }
     const timeoutMs = options?.timeoutMs ?? internals.limits.procedureTimeoutMs;
+    const executeStart = internals.now();
     const outcome = await executeWithGuards(internals, reg, {
       invocationId,
       capabilityId: cap.capabilityId,
@@ -832,6 +854,7 @@ async function executeProcedure(
         }),
       procedureErrors: true,
     });
+    args.setTimings({ executionMs: internals.now() - executeStart });
     if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
 
     /* phase 10 — settle */

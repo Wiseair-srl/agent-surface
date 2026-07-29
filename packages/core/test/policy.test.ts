@@ -1,3 +1,4 @@
+// Conformance: AS-AVAIL-002 (hide vs disable D11/D12), AS-POLICY-002 (most-restrictive-wins), AS-POLICY-003 (per-consumer requirement 12), AS-POLICY-004 (built-ins)
 import { describe, expect, it, vi } from "vitest";
 import {
   authenticated,

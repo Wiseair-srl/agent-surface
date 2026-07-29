@@ -23,6 +23,11 @@ export interface AuditEvent {
   status?: "ok" | "error";
   code?: AgentCapabilityErrorCode;
   durationMs?: number;
+  /** Time spent waiting for a concurrency slot (docs/06 §audit; distinct
+   * from execution — §7.1 observability). Settled invocations only. */
+  queueWaitMs?: number;
+  /** Time spent inside the handler/executor guards, excluding queue wait. */
+  executionMs?: number;
   /** Present only for capabilities with audit: "full"; size-capped. */
   payload?: { input?: JsonValue; output?: JsonValue };
 }

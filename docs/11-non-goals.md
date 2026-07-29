@@ -40,3 +40,16 @@ This is the founding non-goal. There is deliberately no "expose everything" swit
 - **In scope:** registry, identity, schemas, snapshot, invocation, policies, confirmation evidence, errors, audit events, React lifecycle bindings, oRPC references, testing harness, adapter contract.
 - **Out of scope but adjacent (host's job):** the model/agent loop, auth systems, routers, data fetching, design systems, audit *persistence*, server approvals.
 - **Deferred, not refused (see [12-roadmap.md](12-roadmap.md)):** cross-tab/multi-window surfaces, MCP bridge, relevance ranking, iframe/worker isolation for third-party registrants, deep binding paths, binary payloads.
+
+## Known limitations (honest, normative — directive §9.4)
+
+Things the current design *cannot* do, stated so nobody discovers them in production:
+
+1. **No same-realm isolation.** Malicious JavaScript in the page can call the registry like any other code. Trust labels and guards segment *honest* registrants; containment requires an out-of-realm boundary that does not exist in 0.x ([06 §trust](06-policies-and-security.md#trust-model-for-registrants)).
+2. **Bounded idempotency window.** Dedupe is LRU + TTL (`dedupeCacheSize`/`dedupeCacheTtlMs`), not a forever guarantee: a retry after eviction re-executes (D22). Handlers with hard exactly-once needs enforce it server-side.
+3. **Cooperative cancellation only.** JS cannot force-kill a handler; timeout/cancel/unmount abort `ctx.signal` and classify the result, but a non-cooperative handler keeps running (its late settlement is only logged).
+4. **No contextual gating for autonomous server-side agents in 0.x.** Frontend `when`/bindings gate agents that reach the surface through a live page (embedded, per-turn frontend tools). An agent with no page open sees whatever the server exposes — syncing frontend context to it is OQ-5, unbuilt.
+5. **No automatic relevance ranking.** Snapshot size is governed by manual `scope`/`priority`/budgets; nothing guarantees the model sees "what matters now" (OQ-4).
+6. **No cross-tab semantics.** One registry per JS realm; two tabs are two unrelated surfaces (OQ-3).
+7. **Schema subset limits (D19).** Only the allowlisted JSON Schema keywords cross the boundary; some Zod/Valibot features won't convert and fail at registration by design.
+8. **Third-party drift.** Provider tool APIs, WebMCP, and orpc-agent evolve independently; adapters absorb drift but can lag. The registry contract is the stable part, adapters are the weather.

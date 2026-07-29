@@ -1,3 +1,4 @@
+// Conformance: AS-SCHEMA-001 (registration-time rejection), AS-LIFE-002 (structural defects thrown)
 import { describe, expect, it } from "vitest";
 import {
   AgentSurfaceDefinitionError,

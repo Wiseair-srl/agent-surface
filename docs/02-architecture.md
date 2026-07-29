@@ -183,9 +183,23 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 | Agent loop / model calls | ❌ never | ✅ (or external agent) | ✅ (orpc-agent) |
 | Router, data fetching, design system | ❌ never | ✅ | — |
 
-## Bundle and performance budgets (targets, not yet measured)
+## Bundle and performance budgets (first measured baselines)
 
-- `core` ≤ ~10 kB min+gzip; `react` ≤ ~4 kB; zero dependencies in core.
+Bundle sizes are enforced by `size-limit` in CI: `core` **16.45 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+
+Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30 — machine-local reference points, not CI thresholds yet; directive §7.2 sets thresholds after stable CI baselines):
+
+| Operation | mean |
+|---|---|
+| `createAgentSurfaceRegistry()` | ~1.4 µs |
+| register + unregister, 10 / 100 / 1000 components | ~0.16 ms / ~1.5 ms / ~17 ms |
+| `snapshot()` at 100 components (warm descriptor cache) | ~0.16 ms |
+| action invoke end-to-end, no-op handler | ~0.05 ms |
+| action invoke + 2-policy authorize chain | ~0.13 ms |
+| observation invoke end-to-end | ~0.03 ms |
+| canonical digest (fingerprint) at ~32 kB input | ~2.1 ms |
+
+Reading the numbers: registration stays allocation-light through a route transition (100 registrations ≈ 1.5 ms, spread across commits); pipeline overhead without handler work is tens of microseconds; the request fingerprint is O(input size) — negligible for typical tool inputs, ~2 ms at the 32 kB ceiling (it runs once per invoke, phase 1).
+
 - `snapshot()` is O(registrations) with cheap descriptor projection; descriptors are cached per registration and invalidated on version bump.
 - No polling anywhere: everything is event-driven.
-- Registration/unregistration on route transitions must be allocation-light (target: no measurable frame impact at 100 registrations).

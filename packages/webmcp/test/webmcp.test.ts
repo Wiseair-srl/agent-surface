@@ -1,3 +1,4 @@
+// Conformance: AS-ADAPTER-003 (feature-detect, unavailable-not-registered, refresh on version)
 import { describe, expect, it } from "vitest";
 import {
   action,

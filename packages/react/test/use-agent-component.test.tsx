@@ -1,3 +1,4 @@
+// Conformance: AS-REACT-001 (commit-phase registration + Strict Mode symmetry), AS-REACT-002 (latest-ref handler freshness D3), AS-REACT-003 (availability push on when() flip), AS-REACT-004 (usePendingConfirmations)
 import { StrictMode, useState } from "react";
 import { act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

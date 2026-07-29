@@ -1,3 +1,4 @@
+// Conformance: AS-AVAIL-001 (invoke-time availability), AS-STALE-001 (staleness matrix + tombstones + AMBIGUOUS_INSTANCE), AS-STALE-002 (version gate on destructive), AS-CONC-002 (FIFO + bounded action queue D13), AS-SER-001 (JsonValue-only outputs, loud caps D18)
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   action,

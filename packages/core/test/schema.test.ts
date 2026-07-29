@@ -1,3 +1,4 @@
+// Conformance: AS-SCHEMA-001 (D19 subset validator), AS-SCHEMA-002 (Standard Schema, D20)
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {

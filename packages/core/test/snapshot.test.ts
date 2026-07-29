@@ -1,3 +1,4 @@
+// Conformance: AS-SNAP-001 (pure sync snapshot D5), AS-SNAP-002 (internal never serialized D9), AS-SNAP-003 (deterministic ordering + budget marker D6)
 import { describe, expect, it, vi } from "vitest";
 import {
   createAgentSurfaceRegistry,

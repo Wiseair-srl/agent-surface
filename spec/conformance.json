@@ -6,196 +6,253 @@
       "title": "Pre-input authority policies (onAuthorize) cannot observe agent input",
       "source": "02-architecture.md#invocation-pipeline-normative-order",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/pipeline-order.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-INVOKE-002": {
       "title": "onInvoke policies receive only the validated effective input",
       "source": "06-policies-and-security.md#policy-pipeline",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/pipeline-order.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-INVOKE-003": {
       "title": "A malformed binding fails before a confirmation record is created",
       "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/pipeline-order.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-INVOKE-004": {
       "title": "A supplied locked field fails before a confirmation record is created",
       "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/pipeline-order.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-INVOKE-005": {
       "title": "Confirmation summary/input reflect bound (effective) values, including bindings that changed after discovery",
       "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/confirmation-binding.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-001": {
       "title": "Same consumer + same invocationId + same request joins in-flight exactly once / returns cached terminal",
       "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-002": {
       "title": "Same consumer + same invocationId + different input fails INVOCATION_CONFLICT",
       "source": "07-errors.md#invocation_conflict",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-003": {
       "title": "Same consumer + same invocationId + different capability fails INVOCATION_CONFLICT",
       "source": "07-errors.md#invocation_conflict",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-004": {
       "title": "Different consumers may reuse the same provider tool-call id safely",
       "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-005": {
       "title": "Expired dedupe key is a new attempt (bounded idempotency window, LRU + TTL, deterministic under fake clocks)",
       "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-IDENT-006": {
       "title": "Confirmation retry reuses same invocationId + confirmationId and executes once; CONFIRMATION_REQUIRED / RATE_LIMITED / INVOCATION_CONFLICT are never cached as terminal",
       "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
       "decision": "D22",
-      "tests": ["packages/core/test/conformance/invocation-identity.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/invocation-identity.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONFIRM-001": {
       "title": "Approval binds to the canonical request digest; input changed after approval fails CONFIRMATION_INVALID(mismatch), never executes",
       "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/confirmation-binding.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONFIRM-002": {
       "title": "Digest uses canonical JSON (key order irrelevant; -0 = 0; undefined omitted) and evidence matching is exact-value, never hash-only",
       "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts", "packages/core/test/canonical-json.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/confirmation-binding.test.ts",
+        "packages/core/test/canonical-json.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONFIRM-003": {
       "title": "Confirmation evidence is single-use; replay fails CONFIRMATION_INVALID(consumed)",
       "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
-      "tests": ["packages/core/test/confirmation.test.ts"],
+      "tests": [
+        "packages/core/test/confirmation.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONFIRM-004": {
       "title": "Approval cannot be replayed across consumer, registration, or capability",
       "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/confirmation-binding.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONFIRM-005": {
       "title": "Pending confirmations are bounded (maxPendingConfirmations); overflow fails RATE_LIMITED without creating a record",
       "source": "06-policies-and-security.md#confirmation",
       "decision": "D24",
-      "tests": ["packages/core/test/conformance/confirmation-binding.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/confirmation-binding.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-NAV-001": {
       "title": "Navigation commit + owner unmount in the same task settles ok (navigation-commit-then-owner-unmount)",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D23",
-      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/navigation.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-NAV-002": {
       "title": "Navigation rejected before commit settles a typed failure (CANCELLED when aborted, else EXECUTION_FAILED)",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D23",
-      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/navigation.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-NAV-003": {
       "title": "Owner unmounted before dispatch still fails COMPONENT_UNMOUNTED for navigation actions",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D23",
-      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/navigation.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-NAV-004": {
       "title": "A timeout cannot overwrite an already-resolved navigation (no failure after router acceptance)",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D23",
-      "tests": ["packages/core/test/conformance/navigation.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/navigation.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-OBS-001": {
       "title": "Observation admission enforces independent per-consumer and global concurrency limits with a bounded FIFO queue; overflow fails RATE_LIMITED(queue-full)",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D24",
-      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/observation-bounds.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-OBS-002": {
       "title": "One saturated consumer cannot starve another consumer's observations",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D24",
-      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/observation-bounds.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-OBS-003": {
       "title": "Observation slots are released on settlement/cancellation/timeout and queues drain FIFO; disposal drains queues as CANCELLED",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D24",
-      "tests": ["packages/core/test/conformance/observation-bounds.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/observation-bounds.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-TOPO-001": {
       "title": "createAgentToolset throws when neither topology nor confirmations is provided (no ambiguous global default)",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
-      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/topology.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-TOPO-002": {
       "title": "Topology defaults: embedded → wait, remote → two-phase; explicit confirmations overrides",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
-      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/topology.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-TOPO-003": {
       "title": "toolset.dispose() deterministically settles in-flight wait-mode confirmation waits",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
-      "tests": ["packages/core/test/conformance/topology.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/topology.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-POLICY-001": {
       "title": "Policy contexts expose the injectable clock (now()); built-in policies are deterministic under fake timers",
       "source": "06-policies-and-security.md#policy-pipeline",
       "decision": "D21",
-      "tests": ["packages/core/test/conformance/pipeline-order.test.ts"],
+      "tests": [
+        "packages/core/test/conformance/pipeline-order.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-ERR-001": {
       "title": "The agent-facing error enum, retry categories, and cacheability are cross-validated against spec/error-matrix.json from one source",
       "source": "07-errors.md#principles",
       "decision": "D22",
-      "tests": ["packages/core/test/error-matrix.test.ts"],
+      "tests": [
+        "packages/core/test/error-matrix.test.ts"
+      ],
       "status": "implemented"
     },
     "AS-CONC-001": {
@@ -205,6 +262,422 @@
       "tests": [],
       "status": "specified",
       "justification": "Directive §3.5: hardening step, deliberately not implemented before base-queue race tests are stable in CI (Phase C). Shape specified so adapters/apps do not invent their own."
+    },
+    "AS-ID-001": {
+      "title": "Canonical id grammar: accept/reject table for component types, capability names, instance ids; parsing unambiguous",
+      "source": "01-concepts.md#canonical-id-grammar-draft",
+      "decision": "D-grammar",
+      "tests": [
+        "packages/core/test/ids.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ID-002": {
+      "title": "Wire-name codec: reversible encoding, provider-safe alphabet, 56+hash truncation at 64 chars, per-instance disambiguation",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D-grammar",
+      "tests": [
+        "packages/core/test/ids.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ID-003": {
+      "title": "Property: id parser/formatter round-trips for arbitrary grammar-valid ids",
+      "source": "08-testing.md#recipes-normative-test-list",
+      "decision": "D-grammar",
+      "tests": [
+        "packages/core/test/property/invariants.property.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ID-004": {
+      "title": "Property: wire-name codec round-trips within provider limits, stays in safe alphabet",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D-grammar",
+      "tests": [
+        "packages/core/test/property/invariants.property.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SCHEMA-001": {
+      "title": "D19 subset enforced at registration: allowlisted keywords only, depth/size caps, UNSUPPORTED_SCHEMA otherwise",
+      "source": "03-core-api.md#supported-json-schema-subset-d19-draft",
+      "decision": "D19",
+      "tests": [
+        "packages/core/test/schema.test.ts",
+        "packages/core/test/definition.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SCHEMA-002": {
+      "title": "Standard Schema integration (Zod/Valibot) via fromStandardSchema with caller-supplied JSON Schema",
+      "source": "03-core-api.md#schemas",
+      "decision": "D20",
+      "tests": [
+        "packages/core/test/schema.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SCHEMA-003": {
+      "title": "Property: random allowlist schemas accepted; any forbidden keyword or excess depth rejected",
+      "source": "03-core-api.md#supported-json-schema-subset-d19-draft",
+      "decision": "D19",
+      "tests": [
+        "packages/core/test/property/invariants.property.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-LIFE-001": {
+      "title": "Register/unregister lifecycle: live immediately, capabilities disappear on unregister, in-flight aborted",
+      "source": "03-core-api.md#registration-lifecycle",
+      "decision": "D2",
+      "tests": [
+        "packages/core/test/registry.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-LIFE-002": {
+      "title": "Structural immutability per registration: only enabled/availability updatable; structural defects always thrown",
+      "source": "03-core-api.md#registration-lifecycle",
+      "decision": "D2",
+      "tests": [
+        "packages/core/test/registry.test.ts",
+        "packages/core/test/definition.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-LIFE-003": {
+      "title": "Collision handling: first-wins dead handle by default, replace mode aborts predecessor, capability dupes structural",
+      "source": "03-core-api.md#collisions-d4",
+      "decision": "D4",
+      "tests": [
+        "packages/core/test/registry.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-LIFE-004": {
+      "title": "Property: arbitrary register/unregister sequences preserve unique live identities and monotone versions",
+      "source": "02-architecture.md#concurrency-and-ordering-guarantees",
+      "decision": "D2",
+      "tests": [
+        "packages/core/test/property/invariants.property.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-LIFE-005": {
+      "title": "strict-mode-register-cleanup-register: remount yields new registrationId; stale id reports registration-replaced",
+      "source": "08-testing.md#recipes-normative-test-list",
+      "decision": "D2",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-VER-001": {
+      "title": "surfaceVersion bump matrix: structural + pushed availability bump; handler swaps and lazy when() drift do not",
+      "source": "03-core-api.md#versioning",
+      "decision": "D1",
+      "tests": [
+        "packages/core/test/registry.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EVT-001": {
+      "title": "Event ordering (D17): total mutation order, post-mutation dispatch, listener isolation, queued non-reentrant nested mutations",
+      "source": "02-architecture.md#concurrency-and-ordering-guarantees",
+      "decision": "D17",
+      "tests": [
+        "packages/core/test/registry.test.ts",
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SNAP-001": {
+      "title": "snapshot() is synchronous, side-effect free, never runs read()",
+      "source": "03-core-api.md#snapshot",
+      "decision": "D5",
+      "tests": [
+        "packages/core/test/snapshot.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SNAP-002": {
+      "title": "internal metadata never serialized into snapshots or agent-facing payloads",
+      "source": "03-core-api.md#definitions",
+      "decision": "D9",
+      "tests": [
+        "packages/core/test/snapshot.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SNAP-003": {
+      "title": "Deterministic snapshot ordering (priority, type, instanceId) and explicit budget truncation marker",
+      "source": "03-core-api.md#snapshot",
+      "decision": "D6",
+      "tests": [
+        "packages/core/test/snapshot.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AVAIL-001": {
+      "title": "Availability recomputed at invocation (phase 3); enabling-state errors carry the descriptor reason",
+      "source": "03-core-api.md#availability",
+      "decision": "D11",
+      "tests": [
+        "packages/core/test/invoke.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AVAIL-002": {
+      "title": "Authority hides, state discloses: hidden is indistinguishable from nonexistent, disabled carries a reason",
+      "source": "06-policies-and-security.md#hide-vs-disable-d11d12-restated-as-the-policy-authors-rule",
+      "decision": "D12",
+      "tests": [
+        "packages/core/test/policy.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-POLICY-002": {
+      "title": "Discovery composition is most-restrictive-wins across registry -> component -> capability chains",
+      "source": "06-policies-and-security.md#composition-and-evaluation-normative",
+      "decision": "D21",
+      "tests": [
+        "packages/core/test/policy.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-POLICY-003": {
+      "title": "Requirement 12: invocation re-runs the same per-consumer filter that shaped the snapshot (hidden => NOT_FOUND)",
+      "source": "06-policies-and-security.md#the-deny-by-default-requirements-mapped",
+      "decision": "D12",
+      "tests": [
+        "packages/core/test/policy.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-POLICY-004": {
+      "title": "Built-in policies behave per docs/06: authenticated, hasPermission, tenantBoundary, environment, rateLimit, audit",
+      "source": "06-policies-and-security.md#built-in-policies",
+      "decision": "D21",
+      "tests": [
+        "packages/core/test/policy.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-STALE-001": {
+      "title": "Staleness matrix: registrationId mismatch => replaced/reloaded, tombstone => COMPONENT_UNMOUNTED, multi-instance => AMBIGUOUS_INSTANCE",
+      "source": "03-core-api.md#versioning",
+      "decision": "D1",
+      "tests": [
+        "packages/core/test/invoke.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-STALE-002": {
+      "title": "surface-version-changes-before-destructive-call: version hint enforced only for destructive/external effects",
+      "source": "03-core-api.md#versioning",
+      "decision": "D1",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts",
+        "packages/core/test/invoke.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONC-002": {
+      "title": "Actions serialize FIFO per component instance with bounded queue; overflow RATE_LIMITED(queue-full)",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D13",
+      "tests": [
+        "packages/core/test/invoke.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONC-010": {
+      "title": "unmount-before-execute / unmount-during-execute-handler-wins / unmount-during-execute-unmount-wins",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D16",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONC-011": {
+      "title": "timeout-with-late-resolution: TIMEOUT settles, late handler settlement audited, never overwrites",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D15",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONC-012": {
+      "title": "external-cancel-before-queue-entry / external-cancel-while-queued settle CANCELLED without executing",
+      "source": "03-core-api.md#concurrency-timeouts-cancellation",
+      "decision": "D15",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-SER-001": {
+      "title": "JsonValue-only payloads: non-JSON outputs are defects (dev throw / prod EXECUTION_FAILED); size caps fail loudly",
+      "source": "03-core-api.md#serialization-rules-d18-draft",
+      "decision": "D18",
+      "tests": [
+        "packages/core/test/invoke.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONFIRM-006": {
+      "title": "Pending re-request returns the same confirmationId; denial is never auto-retried; expiry restarts the cycle",
+      "source": "06-policies-and-security.md#confirmation",
+      "decision": "D21",
+      "tests": [
+        "packages/core/test/confirmation.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-OBSV-001": {
+      "title": "Audit distinguishes queueWaitMs from executionMs on settled invocations",
+      "source": "06-policies-and-security.md#audit",
+      "decision": "D24",
+      "tests": [
+        "packages/core/test/conformance/observability.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-BOUND-001": {
+      "title": "Tombstones are TTL- and size-bounded; expiry decays COMPONENT_UNMOUNTED to CAPABILITY_NOT_FOUND deterministically",
+      "source": "03-core-api.md#registration-lifecycle",
+      "decision": "D24",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-BOUND-002": {
+      "title": "Dedupe cache evicts deterministically (LRU size + TTL) under a fake clock",
+      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "decision": "D22",
+      "tests": [
+        "packages/core/test/conformance/races.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-001": {
+      "title": "Toolset attaches registrationId+surfaceVersion, maps toolCallId to invocationId, refreshes per version, unique wire names",
+      "source": "09-adapters.md#adapter-contract",
+      "decision": "D26",
+      "tests": [
+        "packages/core/test/toolset.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-002": {
+      "title": "Result envelopes relayed losslessly (code/retry/details preserved) through the toolset",
+      "source": "07-errors.md#adapter-mapping-guidance",
+      "decision": "D26",
+      "tests": [
+        "packages/core/test/toolset.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-003": {
+      "title": "WebMCP adapter: feature-detects, registers only available capabilities, refreshes on surface-changed",
+      "source": "09-adapters.md#webmcp-adapter-experimental",
+      "decision": "D26",
+      "tests": [
+        "packages/webmcp/test/webmcp.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-REACT-001": {
+      "title": "Commit-phase registration with Strict Mode symmetry (register/cleanup/register)",
+      "source": "04-react-api.md",
+      "decision": "D3",
+      "tests": [
+        "packages/react/test/use-agent-component.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-REACT-002": {
+      "title": "Latest-ref handler freshness: handlers read current state at invocation without re-registration",
+      "source": "04-react-api.md#handler-freshness-d3--why-there-is-no-dependency-array",
+      "decision": "D3",
+      "tests": [
+        "packages/react/test/use-agent-component.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-REACT-003": {
+      "title": "Availability pushed on when() flip so React surfaces stay event-driven",
+      "source": "03-core-api.md#availability",
+      "decision": "D1",
+      "tests": [
+        "packages/react/test/use-agent-component.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-REACT-004": {
+      "title": "usePendingConfirmations reflects the live pending set for host dialogs",
+      "source": "04-react-api.md",
+      "decision": "D21",
+      "tests": [
+        "packages/react/test/use-agent-component.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-BIND-001": {
+      "title": "Schema surgery: agent-facing schema = original minus locked keys (partial/all/none bound, required handling)",
+      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "decision": "D7",
+      "tests": [
+        "packages/orpc/test/orpc.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-BIND-002": {
+      "title": "Locked-by-default binding: supplied locked fields INVALID_INPUT; overridable fields act as defaults; merged input revalidated against the full schema",
+      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "decision": "D8",
+      "tests": [
+        "packages/orpc/test/orpc.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-BIND-003": {
+      "title": "Exposure gating: refs absent from the manifest register nothing; the manifest is the ceiling",
+      "source": "05-orpc-integration.md#exposure-gating",
+      "decision": "D10",
+      "tests": [
+        "packages/orpc/test/orpc.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-BIND-004": {
+      "title": "useAgentProcedure lifecycle mirrors useAgentComponent; bind/when/describe read through the latest ref",
+      "source": "05-orpc-integration.md#react-agent-surfaceorpcreact",
+      "decision": "D7",
+      "tests": [
+        "packages/orpc/test-react/use-agent-procedure.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-TEST-001": {
+      "title": "The testing package is the reference consumer: invoke/observe/captureRef/as, hidden-vs-disabled matchers, normalized semantic snapshots",
+      "source": "08-testing.md#core-harness",
+      "tests": [
+        "packages/testing/test/harness.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXAMPLE-001": {
+      "title": "The devices scenario runs end to end, scripted, without an LLM (behavioral acceptance artifact)",
+      "source": "10-examples.md",
+      "tests": [
+        "examples/devices-app/test/devices-app.test.tsx"
+      ],
+      "status": "implemented"
     }
   }
 }
