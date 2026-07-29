@@ -3,7 +3,7 @@
 > [!NOTE]
 > **Status: illustrative but normative for behavior** — every payload and transition shown here follows [03](03-core-api.md)–[07](07-errors.md), and the test suite in [08](08-testing.md) asserts them. Code marked *host app* is application code, not library code.
 
-This walkthrough is deliberately transport-agnostic: the "agent" here could be any consumer behind any adapter. To see the same page wired into a real full-stack chat — Mastra running the loop, assistant-ui rendering it, orpc-agent governing the domain — read [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md) after this one.
+This walkthrough is deliberately transport-agnostic: the "agent" here could be any consumer behind any adapter. It is also the repository's **only executable example** — `examples/devices-app`, runnable and covered by tests (`AS-EXAMPLE-001`). For the shape of the same page behind a server-side loop — Mastra running the loop, assistant-ui rendering it, orpc-agent governing the domain — read the wiring guide in [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md) afterwards, remembering its code is a sketch rather than a package.
 
 The page: status/city filters, a devices table with multi-select and sorting, a detail drawer, a "Disable" flow backed by the existing oRPC procedure `devices.disable` (exposed via `orpc-agent`).
 

@@ -47,10 +47,16 @@ export default withMermaid(
           ],
         },
         {
-          text: "Worked Examples",
+          text: "Worked Example",
+          items: [{ text: "Devices Page, End to End", link: "/10-examples" }],
+        },
+        {
+          text: "Integration Notes",
           items: [
-            { text: "Devices Page, End to End", link: "/10-examples" },
-            { text: "Mastra + assistant-ui Chat", link: "/16-mastra-assistant-ui" },
+            {
+              text: "Mastra + assistant-ui (wiring guide)",
+              link: "/16-mastra-assistant-ui",
+            },
           ],
         },
         {

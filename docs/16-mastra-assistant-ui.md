@@ -1,7 +1,14 @@
-# 16 — Worked Example: Mastra + assistant-ui + orpc-agent
+# 16 — Integration Guide: Mastra + assistant-ui + orpc-agent
+
+> [!WARNING]
+> **Status: wiring guide — NOT an executable example.** Every snippet on this page is hand-written prose-adjacent code: none of it exists in `examples/`, none is compiled, none is covered by a test. There is no Mastra server, no `AgentSurfaceChatBridge.tsx`, no orpc-agent runtime in this repository. Treat the code as a *shape to follow*, not a file to copy-run.
+>
+> The repository's one executable example is [10-examples.md](10-examples.md) → `examples/devices-app` (runnable, 13 tests, the scripted end-to-end scenario, requirement `AS-EXAMPLE-001`). That app *does* use assistant-ui for its chat thread, with a local scripted loop — the server-side half described here (Mastra loop, per-turn frontend-tool transport, orpc-agent governance) is unbuilt.
+>
+> Consequence to respect: because these snippets are not type-checked, they can drift silently when `@agent-surface/*` APIs change (they already needed a manual patch when D26 made toolset topology explicit). Directive [§9.3](17-maintainer-directive.md) asks for executable examples; promoting this page into a real package is tracked as future work in [15-completeness-review.md](15-completeness-review.md).
 
 > [!NOTE]
-> **Status: illustrative example against real third-party APIs.** The `@agent-surface/*` code follows this spec (design phase, not yet published); the `orpc-agent`, Mastra, and assistant-ui APIs are quoted from their current documentation ([orpc-agent.dev](https://orpc-agent.dev), as of mid-2026) and may drift. Where a third-party API is load-bearing, the text says which one and why.
+> **Third-party APIs.** The `@agent-surface/*` code follows this spec (design phase, not yet published); the `orpc-agent`, Mastra, and assistant-ui APIs are quoted from their current documentation ([orpc-agent.dev](https://orpc-agent.dev), as of mid-2026) and may drift. Where a third-party API is load-bearing, the text says which one and why.
 
 **The question this page answers:** *does agent-surface work with an agent framework like Mastra?*
 

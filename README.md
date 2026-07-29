@@ -104,7 +104,7 @@ agent-surface never duplicates a domain procedure as a frontend tool. It can onl
 
 The [devices-app example](examples/devices-app) is the spec's acceptance artifact: the full [docs/10](docs/10-examples.md) page driven end to end by a scripted agent (no LLM), with the semantic surface snapshot committed as a reviewable artifact. Releases go through [Changesets](.changeset/README.md) (`pnpm changeset` → release PR → npm publish from CI).
 
-There is deliberately **no per-framework agent package**: any stack that accepts JSON-Schema tools — Vercel AI SDK, Mastra, LangGraph, assistant-ui — consumes the provider-neutral toolset directly. A full worked example (Mastra loop + assistant-ui chat + orpc-agent governance) is in [docs/16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md).
+There is deliberately **no per-framework agent package**: any stack that accepts JSON-Schema tools — Vercel AI SDK, Mastra, LangGraph, assistant-ui — consumes the provider-neutral toolset directly. The runnable example is `examples/devices-app` ([docs/10](docs/10-examples.md)); the server-side topology (Mastra loop + orpc-agent governance) is sketched as a wiring guide in [docs/16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) — hand-written snippets, not a package.
 
 Future installation (not yet published):
 
@@ -132,7 +132,9 @@ pnpm add @agent-surface/core @agent-surface/react
 | [13-open-questions.md](docs/13-open-questions.md) | Decision log + genuinely open questions |
 | [14-implementation-plan.md](docs/14-implementation-plan.md) | Milestones for implementing this spec |
 | [15-completeness-review.md](docs/15-completeness-review.md) | Self-review of this specification |
-| [16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) | Full-stack worked example: Mastra loop, assistant-ui chat, orpc-agent domain governance |
+| [16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) | Integration notes: wiring a Mastra loop + assistant-ui chat + orpc-agent governance (guide, not executable) |
+| [17-maintainer-directive.md](docs/17-maintainer-directive.md) | Standing execution directive: what "10/10" requires, phase gates, PR procedure |
+| [18-spec-corrections-rfc.md](docs/18-spec-corrections-rfc.md) | Accepted RFC closing the P0 protocol bugs (decisions D21–D26) |
 
 ## Roadmap (short form)
 

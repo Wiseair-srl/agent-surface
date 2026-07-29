@@ -46,7 +46,7 @@ decode(name): first "_" not part of "__" splits the plane; "__" → "."
 
 ## Embedded toolset adapter (Draft)
 
-The primary v0.1 consumer: an agent loop running in the host app (any provider). Core's `createAgentToolset` ([03 §toolset](03-core-api.md#toolset)) does the projection; the host maps `AgentTool[]` to its SDK. This is deliberately framework-neutral — the same catalog plugs into Vercel AI SDK `streamText`, a Mastra agent (forwarded per turn as client tools), LangGraph, or assistant-ui's model context. There is no `@agent-surface/mastra` package because none is needed; the full worked example is [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md). The description template prepends plane/effect so models can tell reads from view changes from authoritative mutations:
+The primary v0.1 consumer: an agent loop running in the host app (any provider). Core's `createAgentToolset` ([03 §toolset](03-core-api.md#toolset)) does the projection; the host maps `AgentTool[]` to its SDK. This is deliberately framework-neutral — the same catalog plugs into Vercel AI SDK `streamText`, a Mastra agent (forwarded per turn as client tools), LangGraph, or assistant-ui's model context. There is no `@agent-surface/mastra` package because none is needed; the wiring for that stack is sketched in [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md) (hand-written snippets — the executable example is the embedded loop in `examples/devices-app`). The description template prepends plane/effect so models can tell reads from view changes from authoritative mutations:
 
 ```text
 [view · local-state] Replace, extend or reduce the row selection …
