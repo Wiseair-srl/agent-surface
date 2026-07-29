@@ -210,15 +210,20 @@ describe("presentation capabilities", () => {
 
   it("the human path disables through the app's own client (no agent, no evidence)", async () => {
     const { wiring, surface } = await renderApp();
-    const confirmSpy = vi.spyOn(globalThis, "confirm").mockReturnValue(true);
     try {
       // Select two rows the way a person would: clicking checkboxes.
       act(() => {
         surface.view.getByLabelText("Select Duomo Nord").click();
         surface.view.getByLabelText("Select Navigli Est").click();
       });
+      // The app shows its OWN confirm for the human path — a plain dialog it
+      // owns, not the agent approval host, which is never involved here.
       act(() => {
         surface.view.getByTestId("disable-selected").click();
+      });
+      expect(surface.view.getByTestId("human-confirm-dialog")).toBeTruthy();
+      act(() => {
+        surface.view.getByTestId("human-confirm").click();
       });
       await waitFor(() => {
         expect(wiring.backend.devices.find((d) => d.id === "dev_1")?.status).toBe("disabled");
@@ -231,7 +236,6 @@ describe("presentation capabilities", () => {
       expect(call.context).toBeUndefined();
       expect(surface.events().some((e) => e.type === "confirmation-requested")).toBe(false);
     } finally {
-      confirmSpy.mockRestore();
       surface.dispose();
     }
   });

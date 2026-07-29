@@ -2,6 +2,7 @@ import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 import type { App } from "../agent/setup.js";
 import { DrawerStateSchema, EmptyInputSchema, OpenDrawerSchema } from "../schemas.js";
+import { X } from "./Icons.js";
 
 export function DeviceDrawer(props: {
   app: App;
@@ -69,8 +70,8 @@ export function DeviceDrawer(props: {
           <dd>{device.city}</dd>
         </div>
       </dl>
-      <button className="rowbtn" onClick={() => props.onClose()}>
-        close
+      <button className="iconbtn" onClick={() => props.onClose()} aria-label="Close the details">
+        <X size={14} />
       </button>
     </div>
   );

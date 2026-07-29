@@ -8,11 +8,32 @@ import { ConfirmationHost } from "./ConfirmationHost.js";
 import { DeviceDrawer } from "./DeviceDrawer.js";
 import { DeviceFilters } from "./DeviceFilters.js";
 import { DevicesTable } from "./DevicesTable.js";
+import { Layers } from "./Icons.js";
 
-const PAGE_TITLES: Record<PageT, string> = {
-  devices: "Devices",
-  comparison: "Milano vs Roma",
-  reports: "Reports",
+const PAGES: Record<PageT, { title: string; sub: React.ReactNode }> = {
+  devices: {
+    title: "Devices",
+    sub: (
+      <>
+        Filters, a sortable multi-select table, a detail drawer, and one authoritative{" "}
+        <code>domain:devices.disable</code>. Every capability an agent can use here was
+        explicitly registered — open the console's surface readout to see the list.
+      </>
+    ),
+  },
+  comparison: {
+    title: "Milano vs Roma",
+    sub: (
+      <>
+        The same two components mounted twice. Instances are disambiguated by id, so an agent
+        has to say which table it means: <code>…_at_main</code> or <code>…_at_comparison</code>.
+      </>
+    ),
+  },
+  reports: {
+    title: "Reports",
+    sub: "Nothing on this page is annotated, so the agent surface here is empty except navigation.",
+  },
 };
 
 function DevicesPage(props: { app: AppWiring }) {
@@ -44,20 +65,26 @@ function ComparisonPage(props: { app: AppWiring }) {
   });
   return (
     <div className="compare">
-      <div>
-        <h3>Milano</h3>
+      <section>
+        <div className="compare-head">
+          <h2>Milano</h2>
+          <span className="u-kicker">instance main</span>
+        </div>
         <DeviceFilters filters={filtersMain} onChange={setFiltersMain} instance="main" />
         <DevicesTable app={props.app} filters={filtersMain} instance="main" />
-      </div>
-      <div>
-        <h3>Roma</h3>
+      </section>
+      <section>
+        <div className="compare-head">
+          <h2>Roma</h2>
+          <span className="u-kicker">instance comparison</span>
+        </div>
         <DeviceFilters
           filters={filtersComparison}
           onChange={setFiltersComparison}
           instance="comparison"
         />
         <DevicesTable app={props.app} filters={filtersComparison} instance="comparison" />
-      </div>
+      </section>
     </div>
   );
 }
@@ -79,32 +106,45 @@ export function App(props: { app: AppWiring; agentConsole?: boolean }) {
           <span className="brand-title">Fleet</span>
         </div>
         <AgentNavigation page={page} onNavigate={setPage} />
-        <span className="topbar-meta">example app · mock backend</span>
+        <span className="topbar-meta">
+          mock backend
+          {showConsole && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>
+                console <kbd className="kbd">⌘I</kbd>
+              </span>
+            </>
+          )}
+        </span>
       </header>
 
       <div className="layout">
         <main>
           <div className="page-head">
-            <h1 className="page-title">{PAGE_TITLES[page]}</h1>
-            <span className="page-sub">
-              every capability an agent can use here is explicitly registered
-            </span>
+            <h1 className="page-title">{PAGES[page].title}</h1>
+            <p className="page-sub">{PAGES[page].sub}</p>
           </div>
           {page === "devices" && <DevicesPage app={props.app} />}
           {page === "comparison" && <ComparisonPage app={props.app} />}
           {page === "reports" && (
-            <div className="table-panel">
-              <p className="empty-state" data-testid="reports-page">
-                Reports coming soon — note the agent surface on this page is empty except
-                navigation: nothing here is annotated, so nothing exists for the agent.
-              </p>
+            <div className="panel">
+              <div className="empty-state" data-testid="reports-page">
+                <Layers size={20} />
+                <span className="empty-title">No agent surface on this page</span>
+                <p className="empty-body">
+                  Reports are coming later. Nothing here is annotated, so nothing here exists for
+                  an agent — which is the default, not an oversight.
+                </p>
+              </div>
             </div>
           )}
         </main>
       </div>
 
       {/* Floats over the app, deliberately: in step mode you watch the surface
-          change underneath between calls. It never reflows the page. */}
+          change underneath between calls. The layout reserves its footprint
+          permanently, so it neither reflows the page nor covers it. */}
       {showConsole && <AgentConsole app={props.app} />}
       <ConfirmationHost />
     </AgentSurfaceProvider>

@@ -6,6 +6,7 @@ import {
   type ThreadMessageLike,
 } from "@assistant-ui/react";
 import type { AgentCapabilityErrorPayload, JsonValue } from "@agent-surface/core";
+import { ArrowUp, Stop } from "./Icons.js";
 import { ToolCallRow } from "./ToolCall.js";
 
 /**
@@ -22,7 +23,7 @@ import { ToolCallRow } from "./ToolCall.js";
 export type TranscriptEntry =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
-  | { kind: "note"; text: string }
+  | { kind: "note"; text: string; tone?: "plain" | "error" }
   | {
       kind: "call";
       tool: string;
@@ -48,7 +49,12 @@ export function convertEntry(entry: StoredEntry): ThreadMessageLike {
     case "assistant":
       return { id: entry.id, role: "assistant", content: [{ type: "text", text: entry.text }] };
     case "note":
-      return { id: entry.id, role: "system", content: [{ type: "text", text: entry.text }] };
+      return {
+        id: entry.id,
+        role: "system",
+        content: [{ type: "text", text: entry.text }],
+        metadata: { custom: { tone: entry.tone ?? "plain" } },
+      };
     case "call":
       return {
         id: entry.id,
@@ -88,30 +94,45 @@ function AssistantMessage() {
   );
 }
 
-/** Run lifecycle ("Finished — disabled 3 device(s)"), not a turn. */
-function NoteMessage() {
+/** Run lifecycle ("Finished — disabled 3 devices"), not a turn. */
+function NoteMessage(props: { tone: string }) {
   return (
-    <MessagePrimitive.Root className="msg msg-note">
+    <MessagePrimitive.Root
+      className={`msg msg-note${props.tone === "error" ? " is-error" : ""}`}
+      role="status"
+    >
       <MessagePrimitive.Parts />
     </MessagePrimitive.Root>
   );
 }
 
-export function AgentThread(props: { empty: string; composer?: React.ReactNode }) {
+export function AgentThread(props: {
+  welcome: React.ReactNode;
+  composer: React.ReactNode;
+  /** Shown while a run is in flight and not parked on a gate. */
+  working: string | null;
+}) {
   return (
     <ThreadPrimitive.Root className="thread">
       <ThreadPrimitive.Viewport className="transcript" data-testid="agent-transcript">
-        <AuiIf condition={(s) => s.thread.isEmpty}>
-          <p className="transcript-empty">{props.empty}</p>
-        </AuiIf>
+        <AuiIf condition={(s) => s.thread.isEmpty}>{props.welcome}</AuiIf>
 
         <ThreadPrimitive.Messages>
           {({ message }) => {
             if (message.role === "user") return <UserMessage />;
-            if (message.role === "system") return <NoteMessage />;
+            if (message.role === "system") {
+              const tone = (message.metadata?.custom as { tone?: string } | undefined)?.tone;
+              return <NoteMessage tone={tone ?? "plain"} />;
+            }
             return <AssistantMessage />;
           }}
         </ThreadPrimitive.Messages>
+
+        {props.working && (
+          <p className="working" role="status">
+            {props.working}
+          </p>
+        )}
       </ThreadPrimitive.Viewport>
 
       {props.composer}
@@ -120,24 +141,53 @@ export function AgentThread(props: { empty: string; composer?: React.ReactNode }
 }
 
 /**
- * The live-model composer: a real chat input. Enter submits, which starts a
- * run through the external store's `onNew`.
+ * The live-model composer. One soft shell holds the input and every control
+ * that governs the next run — driver, connection, send — so there is exactly
+ * one place to look before an agent is allowed to touch the page. Enter
+ * submits, which starts a run through the external store's `onNew`.
  */
-export function AgentComposer(props: { disabled: boolean; running: boolean }) {
+export function AgentComposer(props: {
+  disabled: boolean;
+  running: boolean;
+  placeholder: string;
+  controls: React.ReactNode;
+  onStop: () => void;
+}) {
   return (
-    <ComposerPrimitive.Root className="composer-input">
+    <ComposerPrimitive.Root className="composer">
       <ComposerPrimitive.Input
-        className="console-textarea"
+        className="composer-input"
         aria-label="Task for the model"
-        placeholder={
-          props.disabled ? "Add an API key to send a task…" : "Ask the agent to do something…"
-        }
+        placeholder={props.placeholder}
         rows={1}
+        autoComplete="off"
+        spellCheck={false}
         disabled={props.disabled}
       />
-      <ComposerPrimitive.Send className="btn-accent" data-testid="run-llm" disabled={props.disabled}>
-        {props.running ? "Running…" : "Send"}
-      </ComposerPrimitive.Send>
+      <div className="composer-floor">
+        {props.controls}
+        {props.running ? (
+          <button
+            type="button"
+            className="send is-stop"
+            onClick={props.onStop}
+            aria-label="Stop the run"
+            title="Stop the run"
+          >
+            <Stop size={13} />
+          </button>
+        ) : (
+          <ComposerPrimitive.Send
+            className="send"
+            data-testid="run-llm"
+            disabled={props.disabled}
+            aria-label="Send the task"
+            title="Send"
+          >
+            <ArrowUp size={15} />
+          </ComposerPrimitive.Send>
+        )}
+      </div>
     </ComposerPrimitive.Root>
   );
 }

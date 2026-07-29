@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { Check, ChevronDown } from "./Icons.js";
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -83,9 +84,7 @@ export function Select<T extends string>(props: {
         onKeyDown={onKeyDown}
       >
         <span>{current?.label ?? value}</span>
-        <span className="select-caret" aria-hidden="true">
-          ▾
-        </span>
+        <ChevronDown size={13} className="select-caret" />
       </button>
       {open && (
         <ul className="select-list" role="listbox" id={listId} aria-label={props.label ?? "options"}>
@@ -98,8 +97,8 @@ export function Select<T extends string>(props: {
               onMouseEnter={() => setActive(index)}
               onClick={() => commit(index)}
             >
-              <span className="select-check" aria-hidden="true">
-                {option.value === value ? "✓" : ""}
+              <span className="select-check">
+                {option.value === value && <Check size={13} />}
               </span>
               {option.label}
             </li>

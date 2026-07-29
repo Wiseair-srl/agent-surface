@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 import { useAgentProcedure } from "@agent-surface/orpc/react";
@@ -11,6 +11,7 @@ import {
   type SortT,
   type TableStateT,
 } from "../schemas.js";
+import { AlertTriangle, ChevronRight, Search, Sort } from "./Icons.js";
 
 type Row = TableStateT["visibleRows"][number];
 
@@ -48,9 +49,61 @@ function useDevicesQuery(app: App, filters: FiltersStateT): Row[] {
   return rows;
 }
 
-function sortIndicator(sorting: SortT, column: SortT["by"]): string {
-  if (sorting.by !== column) return "";
-  return sorting.dir === "asc" ? " ↑" : " ↓";
+const ARIA_SORT = { asc: "ascending", desc: "descending" } as const;
+
+/**
+ * The app's own confirm for the human path. It deliberately does NOT look
+ * like the agent's approval dialog: this one is red and says "you", because
+ * you are the one doing it. Confirmation evidence is an agent protocol — a
+ * person clicking a button in their own session has already expressed intent.
+ */
+function DisableDialog(props: { ids: string[]; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => ref.current?.focus(), []);
+  return (
+    <div className="scrim">
+      <div
+        className="dialog is-user"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="disable-title"
+        tabIndex={-1}
+        ref={ref}
+        data-testid="human-confirm-dialog"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") props.onCancel();
+        }}
+      >
+        <div className="dialog-head">
+          <div className="dialog-kicker">
+            <AlertTriangle size={13} />
+            <span>Destructive</span>
+          </div>
+          <h2 className="dialog-title" id="disable-title">
+            Disable {props.ids.length} device{props.ids.length === 1 ? "" : "s"}?
+          </h2>
+          <p className="dialog-summary">
+            They stop reporting until someone re-enables them. The server re-validates the
+            request either way.
+          </p>
+        </div>
+        <pre className="payload">{props.ids.join("\n")}</pre>
+        <div className="dialog-actions">
+          <button className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-danger"
+            data-testid="human-confirm"
+            disabled={props.busy}
+            onClick={props.onConfirm}
+          >
+            {props.busy ? "Disabling…" : "Disable"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function DevicesTable(props: {
@@ -63,6 +116,7 @@ export function DevicesTable(props: {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sorting, setSorting] = useState<SortT>({ by: "name", dir: "asc" });
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const rows = useDevicesQuery(app, filters);
 
   const visibleRows = useMemo(() => {
@@ -148,58 +202,69 @@ export function DevicesTable(props: {
    */
   const disableSelected = async (): Promise<void> => {
     if (selectedIds.length === 0 || busy) return;
-    const ok = globalThis.confirm?.(
-      `Disable ${selectedIds.length} device(s)?\n\n${selectedIds.join(", ")}`,
-    );
-    if (ok === false) return;
     setBusy(true);
     try {
       await app.backend.disable({ deviceIds: selectedIds, reason: "operator-ui" });
       setSelectedIds([]);
       app.notifyDevicesChanged();
+      setConfirming(false);
     } finally {
       setBusy(false);
     }
   };
 
+  const header = (column: SortT["by"], label: string) => (
+    <th
+      scope="col"
+      aria-sort={sorting.by === column ? ARIA_SORT[sorting.dir] : "none"}
+    >
+      <button type="button" className="th-label" onClick={() => toggleSort(column)}>
+        {label}
+        <Sort size={13} dir={sorting.by === column ? sorting.dir : null} />
+      </button>
+    </th>
+  );
+
   return (
-    <div className="table-panel">
+    <div className="panel">
       <table className="devices" data-testid={`devices-table-${props.instance ?? "default"}`}>
         <thead>
           <tr>
-            <th style={{ width: 34 }}>
-              <input
-                type="checkbox"
-                aria-label="Select all visible devices"
-                checked={allVisibleSelected}
-                onChange={() =>
-                  setSelectedIds(allVisibleSelected ? [] : visibleRows.map((r) => r.id))
-                }
-              />
+            <th scope="col" className="cell-check">
+              <span className="th-label">
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible devices"
+                  checked={allVisibleSelected}
+                  onChange={() =>
+                    setSelectedIds(allVisibleSelected ? [] : visibleRows.map((r) => r.id))
+                  }
+                />
+              </span>
             </th>
-            <th onClick={() => toggleSort("name")} style={{ cursor: "pointer" }}>
-              Name{sortIndicator(sorting, "name")}
+            {header("name", "Name")}
+            {header("status", "Status")}
+            {header("city", "City")}
+            <th scope="col" className="row-actions">
+              <span className="sr-only">Actions</span>
             </th>
-            <th onClick={() => toggleSort("status")} style={{ cursor: "pointer" }}>
-              Status{sortIndicator(sorting, "status")}
-            </th>
-            <th onClick={() => toggleSort("city")} style={{ cursor: "pointer" }}>
-              City{sortIndicator(sorting, "city")}
-            </th>
-            <th style={{ width: 70 }}></th>
           </tr>
         </thead>
         <tbody>
           {visibleRows.length === 0 ? (
             <tr>
               <td colSpan={5}>
-                <div className="empty-state">No devices match the active filters.</div>
+                <div className="empty-state">
+                  <Search size={20} />
+                  <span className="empty-title">No devices match the active filters</span>
+                  <p className="empty-body">Widen the status or clear the city to see more.</p>
+                </div>
               </td>
             </tr>
           ) : (
             visibleRows.map((row) => (
               <tr key={row.id} data-selected={selectedIds.includes(row.id)}>
-                <td>
+                <td className="cell-check">
                   <input
                     type="checkbox"
                     aria-label={`Select ${row.name}`}
@@ -215,9 +280,14 @@ export function DevicesTable(props: {
                   <span className={`pill ${row.status}`}>{row.status}</span>
                 </td>
                 <td>{row.city}</td>
-                <td>
-                  <button className="rowbtn" onClick={() => props.onOpenDrawer?.(row.id)}>
-                    details
+                <td className="row-actions">
+                  <button
+                    className="btn btn-soft btn-xs"
+                    onClick={() => props.onOpenDrawer?.(row.id)}
+                    aria-label={`Details for ${row.name}`}
+                  >
+                    Details
+                    <ChevronRight size={12} />
                   </button>
                 </td>
               </tr>
@@ -225,29 +295,44 @@ export function DevicesTable(props: {
           )}
         </tbody>
       </table>
-      <div className="table-foot">
+
+      <div className={`table-foot${selectedIds.length > 0 ? " has-selection" : ""}`}>
         <span>
-          {visibleRows.length} device{visibleRows.length === 1 ? "" : "s"}
-        </span>
-        <span className="table-foot-actions">
-          <span>{selectedIds.length > 0 ? `${selectedIds.length} selected` : "none selected"}</span>
-          {selectedIds.length > 0 && (
+          {selectedIds.length > 0 ? (
             <>
-              <button className="rowbtn" onClick={() => setSelectedIds([])}>
-                clear
-              </button>
-              <button
-                className="btn-danger"
-                data-testid="disable-selected"
-                disabled={busy}
-                onClick={() => void disableSelected()}
-              >
-                {busy ? "Disabling…" : `Disable ${selectedIds.length}`}
-              </button>
+              <strong>{selectedIds.length}</strong> of {visibleRows.length} selected
+            </>
+          ) : (
+            <>
+              {visibleRows.length} device{visibleRows.length === 1 ? "" : "s"}
             </>
           )}
         </span>
+        {selectedIds.length > 0 && (
+          <span className="foot-actions">
+            <button className="btn btn-ghost btn-xs" onClick={() => setSelectedIds([])}>
+              Clear
+            </button>
+            <button
+              className="btn btn-danger btn-sm"
+              data-testid="disable-selected"
+              disabled={busy}
+              onClick={() => setConfirming(true)}
+            >
+              Disable {selectedIds.length}
+            </button>
+          </span>
+        )}
       </div>
+
+      {confirming && (
+        <DisableDialog
+          ids={selectedIds}
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void disableSelected()}
+        />
+      )}
     </div>
   );
 }

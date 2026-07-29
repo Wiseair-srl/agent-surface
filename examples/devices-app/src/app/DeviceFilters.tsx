@@ -1,6 +1,7 @@
 import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 import { FiltersPatchSchema, FiltersStateSchema, type FiltersStateT } from "../schemas.js";
+import { Search, X } from "./Icons.js";
 import { Select } from "./Select.js";
 
 const STATUS_OPTIONS = [
@@ -17,6 +18,7 @@ export function DeviceFilters(props: {
   instance?: string;
 }) {
   const { filters, onChange } = props;
+  const dirty = filters.status !== "all" || Boolean(filters.city);
 
   useAgentComponent({
     type: "devices.filters",
@@ -51,21 +53,26 @@ export function DeviceFilters(props: {
         testId="filter-status"
         onChange={(status) => onChange({ ...filters, status })}
       />
-      <input
-        className="control"
-        data-testid="filter-city"
-        aria-label="City filter"
-        value={filters.city ?? ""}
-        placeholder="All cities"
-        onChange={(e) => onChange({ ...filters, city: e.target.value || null })}
-      />
-      {(filters.status !== "all" || filters.city) && (
+      <label className="field">
+        <Search size={13} />
+        <input
+          data-testid="filter-city"
+          aria-label="City filter"
+          value={filters.city ?? ""}
+          placeholder="All cities"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => onChange({ ...filters, city: e.target.value || null })}
+        />
+      </label>
+      {dirty && (
         <button
-          className="rowbtn"
+          className="btn btn-ghost"
           data-testid="clear-filters"
           onClick={() => onChange({ status: "all", city: null })}
         >
-          clear
+          <X size={12} />
+          Clear
         </button>
       )}
     </div>
