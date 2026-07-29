@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { AgentSurfaceProvider } from "@agent-surface/react";
 import type { App as AppWiring } from "../agent/setup.js";
 import type { FiltersStateT, PageT } from "../schemas.js";
+import { AgentConsole } from "./AgentConsole.js";
 import { AgentNavigation } from "./AgentNavigation.js";
 import { ConfirmationHost } from "./ConfirmationHost.js";
 import { DeviceDrawer } from "./DeviceDrawer.js";
 import { DeviceFilters } from "./DeviceFilters.js";
 import { DevicesTable } from "./DevicesTable.js";
-import { DevPanel } from "./DevPanel.js";
 
 const PAGE_TITLES: Record<PageT, string> = {
   devices: "Devices",
@@ -62,9 +62,9 @@ function ComparisonPage(props: { app: AppWiring }) {
   );
 }
 
-export function App(props: { app: AppWiring; devPanel?: boolean }) {
+export function App(props: { app: AppWiring; agentConsole?: boolean }) {
   const [page, setPage] = useState<PageT>("devices");
-  const showConsole = props.devPanel !== false;
+  const showConsole = props.agentConsole !== false;
 
   // The registry's route() reads this ref (host wiring, docs/03).
   useEffect(() => {
@@ -82,7 +82,7 @@ export function App(props: { app: AppWiring; devPanel?: boolean }) {
         <span className="topbar-meta">example app · mock backend</span>
       </header>
 
-      <div className={`layout${showConsole ? " with-console" : ""}`}>
+      <div className="layout">
         <main>
           <div className="page-head">
             <h1 className="page-title">{PAGE_TITLES[page]}</h1>
@@ -101,9 +101,11 @@ export function App(props: { app: AppWiring; devPanel?: boolean }) {
             </div>
           )}
         </main>
-        {showConsole && <DevPanel app={props.app} />}
       </div>
 
+      {/* Floats over the app, deliberately: in step mode you watch the surface
+          change underneath between calls. It never reflows the page. */}
+      {showConsole && <AgentConsole app={props.app} />}
       <ConfirmationHost />
     </AgentSurfaceProvider>
   );

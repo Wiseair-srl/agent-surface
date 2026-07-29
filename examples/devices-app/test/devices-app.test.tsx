@@ -14,7 +14,7 @@ async function renderApp(options?: Parameters<typeof createApp>[0]): Promise<{
   surface: RenderedAgentSurface;
 }> {
   const wiring = createApp({ environment: "test", ...options });
-  const surface = await renderAgentSurface(<App app={wiring} devPanel={false} />, {
+  const surface = await renderAgentSurface(<App app={wiring} agentConsole={false} />, {
     registry: wiring.registry,
   });
   await act(async () => {}); // initial data fetch settles

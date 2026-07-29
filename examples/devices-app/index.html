@@ -17,6 +17,8 @@
         --accent-weak: #eff6ff;
         --ok: #16a34a;
         --warn: #b45309;
+        --warn-weak: #fffbeb;   /* domain plane / "a human must decide" tint */
+        --warn-line: #fcd9a4;
         --danger: #dc2626;
         --console-bg: #0d1220;
         --console-border: #263349;
@@ -29,6 +31,15 @@
         --radius: 8px;
         --radius-sm: 6px;
         --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+        /* motion: product-UI scale — feedback and continuity only */
+        --dur-fast: 120ms;
+        --dur: 200ms;
+        --dur-slow: 280ms;
+        --ease-out: cubic-bezier(0, 0, 0.2, 1);
+        --ease-in: cubic-bezier(0.4, 0, 1, 1);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        :root { --dur-fast: 0ms; --dur: 0ms; --dur-slow: 0ms; }
       }
       * { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; }
@@ -68,13 +79,15 @@
       .topbar-meta { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
 
       /* ── layout ─────────────────────────────────────────── */
+      /* The console floats ABOVE this and never reflows it: opening or
+         collapsing the console must not move or resize a single element of
+         the app it is pointed at. Only the bottom padding is reserved, and
+         it is constant. */
       .layout {
-        max-width: 1280px; margin: 0 auto; padding: 24px;
+        max-width: 1100px; margin: 0 auto; padding: 24px 24px 104px;
         display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px;
         align-items: start;
       }
-      .layout.with-console { grid-template-columns: minmax(0, 1fr) 430px; }
-      @media (max-width: 1080px) { .layout.with-console { grid-template-columns: minmax(0, 1fr); } }
 
       .page-head { display: flex; align-items: baseline; justify-content: space-between; margin: 2px 0 14px; }
       .page-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
@@ -185,27 +198,118 @@
       }
       .btn-accent:hover { filter: brightness(1.08); }
       .btn-accent:disabled, .btn-primary:disabled { opacity: 0.55; cursor: default; }
+      /* quiet tertiary: an escape hatch that must not compete with the CTA */
+      .btn-quiet {
+        background: transparent; color: var(--text-3); border: 1px solid transparent;
+        border-radius: var(--radius-sm); padding: 5px 9px; font-size: 12px;
+      }
+      .btn-quiet:hover { color: var(--danger); background: rgba(220,38,38,0.06); }
+      .btn-sm { padding: 4px 10px; font-size: 12px; }
+      .btn-accent, .btn-ghost, .btn-primary, .btn-quiet {
+        transition: filter var(--dur-fast) var(--ease-out),
+                    background-color var(--dur-fast) var(--ease-out),
+                    border-color var(--dur-fast) var(--ease-out),
+                    color var(--dur-fast) var(--ease-out),
+                    transform var(--dur-fast) var(--ease-out);
+      }
+      .btn-accent:active, .btn-ghost:active, .btn-primary:active { transform: scale(0.98); }
+      .btn-accent:disabled:active, .btn-primary:disabled:active { transform: none; }
+      .btn-accent:focus-visible, .btn-ghost:focus-visible,
+      .btn-primary:focus-visible, .btn-quiet:focus-visible, .rowbtn:focus-visible {
+        outline: 2px solid var(--accent); outline-offset: 2px;
+      }
 
-      /* ── agent console (light, same surface language as the app) ── */
+      /* ── agent console ──────────────────────────────────────────
+         An instrument pointed at the app, not a column carved out of it:
+         floats bottom-right, non-modal (no backdrop, no focus trap) so the
+         surface stays visible and operable underneath while an agent drives
+         it. Sits below the confirmation dialog (z 50), which IS modal. */
       .console {
+        position: fixed; right: 20px; bottom: 20px; z-index: 40;
+        width: 404px; max-width: calc(100vw - 32px);
+        /* content-driven: opens compact, grows with the thread, then scrolls */
+        height: auto; max-height: min(640px, calc(100vh - 96px));
         background: var(--surface); border: 1px solid var(--border);
-        border-radius: var(--radius); color: var(--text);
-        position: sticky; top: 76px;
-        display: flex; flex-direction: column; max-height: calc(100vh - 100px);
-        overflow: hidden;
+        border-radius: 12px; color: var(--text);
+        box-shadow: 0 1px 2px rgba(9,9,11,0.04), 0 14px 40px rgba(9,9,11,0.14);
+        display: flex; flex-direction: column; overflow: hidden;
+        animation: console-in var(--dur-slow) var(--ease-out);
+      }
+      @keyframes console-in {
+        from { opacity: 0; transform: translateY(10px) scale(0.985); }
+        to   { opacity: 1; transform: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        @keyframes console-in { from { opacity: 0; } to { opacity: 1; } }
+      }
+      /* Narrow viewports: a bottom sheet, still leaving the page visible. */
+      @media (max-width: 720px) {
+        .console {
+          right: 0; bottom: 0; left: 0; width: auto; max-width: none;
+          max-height: min(72vh, 560px); border-radius: 12px 12px 0 0;
+          border-left: 0; border-right: 0; border-bottom: 0;
+        }
       }
       .console-head {
-        display: flex; align-items: center; gap: 9px;
+        display: flex; align-items: center; gap: 9px; flex: none;
         padding: 11px 14px; border-bottom: 1px solid var(--border); background: #fcfcfd;
       }
+      .console-collapse {
+        margin-left: 2px; width: 22px; height: 22px; flex: none;
+        display: grid; place-items: center;
+        /* the UA button padding (1px 6px) squeezes the icon into a 10px
+           content box and throws it off-centre — reset it */
+        padding: 0;
+        border: 0; background: transparent; color: var(--text-3);
+        border-radius: 4px; font-size: 13px; line-height: 1;
+        transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+      }
+      .console-collapse:hover { background: var(--bg); color: var(--text); }
+      .console-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      /* block, or the icon sits in an inline line-box and lands off-centre */
+      .console-collapse svg { display: block; }
+
+      /* collapsed: a launcher that still carries the run's status */
+      .console-launcher-dock {
+        position: fixed; right: 20px; bottom: 20px; z-index: 40;
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        justify-content: flex-end; max-width: calc(100vw - 40px);
+      }
+      .console-launcher {
+        display: inline-flex; align-items: center; gap: 8px;
+        height: 36px; padding: 0 14px;
+        background: var(--surface); color: var(--text);
+        border: 1px solid var(--border-strong); border-radius: 999px;
+        box-shadow: 0 1px 2px rgba(9,9,11,0.04), 0 8px 20px rgba(9,9,11,0.10);
+        font-size: 12.5px;
+        transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+      }
+      .console-launcher:hover { border-color: var(--text-3); }
+      .console-launcher:active { transform: scale(0.98); }
+      .console-launcher:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .console-launcher-text { font-weight: 500; }
+      .console-launcher-meta { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+      /* Parked mid-run: advance the agent without reopening the panel. */
+      .launcher-step {
+        display: inline-flex; align-items: center; gap: 10px;
+        padding: 6px 6px 6px 12px;
+        background: var(--surface); border: 1px solid var(--warn);
+        border-radius: 999px; box-shadow: 0 8px 20px rgba(9,9,11,0.10);
+        animation: console-in var(--dur) var(--ease-out);
+      }
+      .launcher-step-label { font-size: 12px; color: var(--text-2); }
+      .launcher-step-label b { font-family: var(--mono); font-weight: 600; color: var(--text); }
       .console-title {
         font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.09em;
         text-transform: uppercase; color: var(--text-2); font-weight: 600;
       }
-      .console-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); }
+      .console-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--border-strong); }
       .console-dot.running { background: var(--ok); box-shadow: 0 0 0 3px rgba(22,163,74,0.18); }
+      /* parked = the agent is waiting on you, the same amber the domain plane
+         and the confirmation dialog use for "a human decision is required" */
+      .console-dot.parked { background: var(--warn); box-shadow: 0 0 0 3px rgba(180,83,9,0.18); }
       .console-meta { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
-      .console-tabs { display: flex; gap: 2px; padding: 10px 14px 0; }
+      .console-tabs { display: flex; gap: 2px; padding: 10px 14px 0; flex: none; }
       .console-tabs button {
         border: 1px solid transparent; background: transparent; color: var(--text-2);
         font-size: 12.5px; padding: 4px 11px; border-radius: var(--radius-sm);
@@ -214,8 +318,44 @@
       .console-tabs button[aria-selected="true"] {
         background: var(--text); color: #fff; border-color: var(--text); font-weight: 500;
       }
-      .console-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
-      .console-intent { color: var(--text-2); font-size: 12.5px; font-style: italic; margin: 0; }
+      /* chat shape: thread takes the height, composer is pinned to the bottom.
+         .thread / .transcript are assistant-ui's Thread.Root / Thread.Viewport —
+         the primitives are headless, so they wear the app's own classes. */
+      .thread { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+      .console-composer {
+        flex: none; padding: 11px 14px 13px;
+        display: flex; flex-direction: column; gap: 8px;
+        border-top: 1px solid var(--border); background: var(--surface);
+      }
+      .composer-intent {
+        color: var(--text-2); font-size: 12.5px; font-style: italic; margin: 0;
+        overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+        -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      }
+      .composer-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .composer-input { display: flex; gap: 8px; align-items: flex-end; }
+      .composer-input .console-textarea { min-height: 38px; max-height: 120px; }
+      .composer-input .btn-accent { flex: none; }
+      .composer-settings { border: 1px solid var(--border); border-radius: var(--radius-sm); }
+      .composer-settings > summary {
+        display: flex; align-items: center; gap: 8px; cursor: pointer;
+        padding: 6px 10px; font-size: 12px; color: var(--text-2);
+        list-style: none; border-radius: var(--radius-sm);
+      }
+      .composer-settings > summary::-webkit-details-marker { display: none; }
+      .composer-settings > summary::before {
+        content: "›"; color: var(--text-3); font-size: 13px;
+        transition: transform var(--dur) var(--ease-out);
+      }
+      .composer-settings[open] > summary::before { transform: rotate(90deg); }
+      .composer-settings > summary:hover { background: var(--bg); }
+      .composer-settings > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .composer-settings-state {
+        margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .composer-settings > *:not(summary) { margin: 0 10px 8px; }
+      .composer-settings > .console-field:first-of-type { margin-top: 2px; }
       .console-field { display: flex; flex-direction: column; gap: 4px; }
       .console-field label {
         font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
@@ -235,22 +375,32 @@
       .remember { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-2); }
       .remember input, .console-input[type="checkbox"] { accent-color: var(--accent); }
 
-      /* ── transcript: a compact, expandable timeline ───────────── */
+      /* ── transcript: chat thread + compact, expandable call timeline ── */
       .transcript {
-        overflow-y: auto; overflow-x: hidden; min-height: 90px;
-        margin: 2px -14px -14px; padding: 8px 14px 14px;
-        border-top: 1px solid var(--border); background: #fcfcfd;
+        flex: 1 1 auto; min-height: 68px; overflow-y: auto; overflow-x: hidden;
+        padding: 10px 14px 12px; display: flex; flex-direction: column;
+        scrollbar-width: thin;
       }
       .transcript > * + * { margin-top: 6px; }
-      .transcript-empty { color: var(--text-3); font-size: 12px; padding: 16px 0; text-align: center; margin: 0; }
+      .transcript-empty {
+        color: var(--text-3); font-size: 12px; margin: auto 0; padding: 8px 12px;
+        text-align: center; line-height: 1.6; text-wrap: balance;
+      }
 
       .msg { font-size: 12.5px; line-height: 1.5; margin: 0; }
+      /* the human's turn — a bubble on the right, chat grammar */
       .msg-user {
-        color: var(--text); border-left: 2px solid var(--accent);
-        padding: 4px 0 4px 9px;
+        align-self: flex-end; max-width: 88%;
+        background: var(--accent-weak); color: var(--text);
+        border: 1px solid #dbeafe; border-radius: 10px 10px 3px 10px;
+        padding: 6px 10px;
       }
-      .msg-assistant { color: var(--text); border-left: 2px solid var(--border-strong); padding: 4px 0 4px 9px; }
-      .msg-note { color: var(--text-3); font-size: 11.5px; padding: 4px 0 0 11px; }
+      .msg-assistant { align-self: flex-start; max-width: 92%; color: var(--text); padding: 2px 0; }
+      /* run lifecycle — a centred system line, not a message */
+      .msg-note {
+        align-self: center; max-width: 92%; text-align: center;
+        color: var(--text-3); font-size: 11.5px; padding: 5px 0 2px;
+      }
 
       /* one call = one row; details/summary carries the disclosure */
       .step { border-bottom: 1px solid var(--border); }
@@ -303,15 +453,58 @@
         white-space: pre-wrap; overflow-wrap: anywhere;
       }
 
-      /* ── step-by-step runner ──────────────────────────────────── */
+      /* ── step-by-step runner ──────────────────────────────────────
+         Reads as the live head of the transcript directly above it: same
+         plane chip + capability id grammar as a settled row, so the eye
+         tracks one column down the panel. The left edge marks the plane —
+         the same "what kind of call is this" signal the table uses for
+         selection — because view (reversible, presentation) and domain
+         (authoritative, server-side) are the difference that matters most
+         before you press the button. */
       .stepper {
-        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-        padding: 7px 9px; border: 1px solid var(--border-strong);
-        border-radius: var(--radius-sm); background: var(--accent-weak);
+        display: flex; flex-direction: column; gap: 3px;
+        padding: 9px 11px 10px; border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        background: var(--bg); box-shadow: inset 2px 0 0 var(--text-3);
+        animation: stepper-in var(--dur) var(--ease-out);
       }
-      .stepper-label { font-size: 12px; color: var(--text); }
-      .stepper-label b { font-family: var(--mono); font-weight: 600; }
-      .stepper .btn-accent { margin-left: auto; }
+      @keyframes stepper-in {
+        from { opacity: 0; transform: translateY(4px); }
+        to   { opacity: 1; transform: none; }
+      }
+      .stepper.plane-view { background: var(--accent-weak); border-color: #dbeafe; box-shadow: inset 2px 0 0 var(--accent); }
+      .stepper.plane-domain { background: var(--warn-weak); border-color: var(--warn-line); box-shadow: inset 2px 0 0 var(--warn); }
+
+      .stepper-head { display: flex; align-items: baseline; gap: 8px; }
+      .stepper-kicker {
+        font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.09em;
+        text-transform: uppercase; color: var(--text-3); font-weight: 600;
+      }
+      .stepper-count { margin-left: auto; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); }
+
+      .stepper-id { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+      /* the plane chip: same word, same colour role as the transcript rows,
+         promoted to a chip because here it is the decision, not a label */
+      .stepper .step-plane {
+        flex: none; text-align: center; padding: 1px 5px; border-radius: 3px;
+        background: rgba(9,9,11,0.05); color: var(--text-2);
+      }
+      .stepper .step-plane.domain { background: rgba(180,83,9,0.12); color: var(--warn); }
+      .stepper .step-plane.view { background: rgba(37,99,235,0.10); color: var(--accent); }
+      .stepper-tool {
+        font-family: var(--mono); font-size: 12.5px; color: var(--text); font-weight: 500;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .stepper-desc { margin: 2px 0 0; font-size: 12.5px; color: var(--text); }
+      .stepper-why { margin: 0; font-size: 11.5px; color: var(--text-2); line-height: 1.45; }
+      .stepper-actions { display: flex; align-items: center; gap: 7px; margin-top: 7px; flex-wrap: wrap; }
+      .stepper-actions .btn-quiet { margin-left: auto; }
+      .stepper-actions kbd {
+        font-family: var(--mono); font-size: 10px; margin-left: 5px;
+        padding: 0 3px; border-radius: 3px;
+        background: rgba(255,255,255,0.22); border: 1px solid rgba(255,255,255,0.28);
+      }
+
       .mode-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
       .mode-toggle input { accent-color: var(--accent); }
 
