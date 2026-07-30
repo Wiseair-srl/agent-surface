@@ -607,7 +607,18 @@ export interface AgentToolsetOptions {
    * "wait" owns its transport-timeout story (docs/09 §confirmation-topology).
    */
   confirmations?: "wait" | "two-phase";
+  /**
+   * Component-type prefixes this consumer may discover. D27: a **floor** —
+   * in "meta" mode a model-supplied scope narrows it, never widens it.
+   * Not an authority boundary (docs/09 §scope-is-discovery-only).
+   */
   scope?: string[];
+  /**
+   * [Experimental] Snapshot truncation budget for `surface_discover`.
+   * "meta" mode only; throws in "direct" mode, where truncation would drop
+   * tools with no `truncated` marker for anyone to see.
+   */
+  budget?: { maxComponents?: number; maxBytes?: number };
 }
 
 export interface AgentTool {
@@ -620,7 +631,11 @@ export interface AgentTool {
 
 export interface AgentToolset {
   tools(): AgentTool[];                  // recomputed per surface version
-  /** Fires when tools() would return a different catalog. */
+  /**
+   * Fires when tools() would return a different catalog. Never fires in
+   * "meta" mode: the 3-tool catalog is constant, and agents re-discover by
+   * comparing `surfaceVersion` (docs/09 §meta-tools-mode).
+   */
   subscribe(listener: (tools: AgentTool[]) => void): Unsubscribe;
   dispose(): void;
 }

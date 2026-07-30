@@ -591,6 +591,24 @@
       ],
       "status": "implemented"
     },
+    "AS-ADAPTER-004": {
+      "title": "Meta mode resolves targets exactly as direct mode (ambiguity, not-found, unmounted, validation, confirmation)",
+      "source": "09-adapters.md#meta-tools-mode-experimental",
+      "decision": "D26",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-005": {
+      "title": "Adapter-configured scope is a floor: a model-supplied scope narrows, never widens",
+      "source": "09-adapters.md#meta-tools-mode-experimental",
+      "decision": "D27",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-REACT-001": {
       "title": "Commit-phase registration with Strict Mode symmetry (register/cleanup/register)",
       "source": "04-react-api.md",

@@ -28,7 +28,20 @@ export interface AgentToolsetOptions {
    * its transport-timeout story, docs/09 §confirmation-topology).
    */
   confirmations?: "wait" | "two-phase";
+  /**
+   * Component-type prefixes this consumer may discover. D27: this is a
+   * **floor** — in "meta" mode a model-supplied `scope` can only narrow it
+   * further, never widen it. Not an authority boundary: `invoke` does not
+   * check scope in either mode (docs/09 §scope-is-discovery-only).
+   */
   scope?: string[];
+  /**
+   * [Experimental] Snapshot truncation budget for `surface_discover`.
+   * "meta" mode only — there the `truncated` marker rides in the payload the
+   * model reads. In "direct" mode a budget would silently drop tools with no
+   * signal to anyone, so it is rejected rather than half-honored.
+   */
+  budget?: { maxComponents?: number; maxBytes?: number };
 }
 
 export interface AgentTool {
@@ -48,7 +61,14 @@ export interface AgentToolset {
 
 interface CatalogEntry {
   capabilityId: string;
-  registrationId: string;
+  /**
+   * Omitted when the target is not uniquely resolvable from the snapshot, so
+   * the registry's own resolver decides (AMBIGUOUS_INSTANCE / not-found /
+   * unmounted). Never send a placeholder: an empty string reads as "this exact
+   * registration", which resolves to STALE_CAPABILITY and sends the agent into
+   * a refresh loop against an unchanged surface (AS-ADAPTER-003).
+   */
+  registrationId?: string;
   instanceId?: string;
   surfaceVersion: string;
   kind: "observation" | "action" | "procedure";
@@ -87,6 +107,13 @@ export function createAgentToolset(
       "createAgentToolset: declare a topology ('embedded' | 'remote') or an explicit confirmations mode ('wait' | 'two-phase'). Embedded loops default to 'wait', remote loops to 'two-phase' (docs/09 §confirmation-topology).",
     );
   }
+  if (options.budget !== undefined && mode !== "meta") {
+    // No silent no-op: in direct mode a budget would drop tools from the
+    // catalog with no `truncated` marker anywhere the host or model can see.
+    throw new Error(
+      "createAgentToolset: `budget` applies to mode 'meta' only — in 'direct' mode it would silently drop tools. Pass a `scope` to bound a direct catalog instead (docs/09 §meta-tools-mode).",
+    );
+  }
   const confirmationsMode =
     options.confirmations ?? (options.topology === "remote" ? "two-phase" : "wait");
   const listeners = new Set<(tools: AgentTool[]) => void>();
@@ -114,15 +141,19 @@ export function createAgentToolset(
     entry: CatalogEntry,
     input: JsonValue | undefined,
     toolCallId: string | undefined,
+    overrides?: { invocationId?: string; confirmationId?: string },
   ): Promise<AgentInvocationResult> {
-    const invocationId = toolCallId ?? `inv_${randomBase62(12)}`;
+    const invocationId = overrides?.invocationId ?? toolCallId ?? `inv_${randomBase62(12)}`;
     const base = {
       invocationId,
       capabilityId: entry.capabilityId,
       ...(entry.instanceId !== undefined ? { instanceId: entry.instanceId } : {}),
-      registrationId: entry.registrationId,
+      ...(entry.registrationId !== undefined ? { registrationId: entry.registrationId } : {}),
       surfaceVersion: entry.surfaceVersion,
       ...(input !== undefined ? { input } : {}),
+      ...(overrides?.confirmationId !== undefined
+        ? { confirmationId: overrides.confirmationId }
+        : {}),
     };
     let result = await registry.invoke(base, { consumer: options.consumer });
     if (
@@ -244,16 +275,23 @@ export function createAgentToolset(
           additionalProperties: false,
         },
         async execute(input) {
-          const scope = (input as { scope?: string[] } | undefined)?.scope;
+          const requested = (input as { scope?: string[] } | undefined)?.scope;
+          // D27: the configured scope is a floor; a model-supplied scope narrows.
+          const effective = intersectScope(options.scope, requested);
           const snapshot = registry.snapshot({
             consumer: options.consumer,
-            ...(scope ? { scope } : options.scope ? { scope: options.scope } : {}),
+            ...(effective.scope ? { scope: effective.scope } : {}),
+            ...(options.budget ? { budget: options.budget } : {}),
           });
+          // Disjoint request: honored as "nothing", never widened to the floor.
+          const projected: AgentSurfaceSnapshot = effective.empty
+            ? { ...snapshot, components: [], procedures: [] }
+            : snapshot;
           return {
             status: "ok",
             invocationId: `inv_${randomBase62(12)}`,
             capabilityId: "meta:surface.discover",
-            output: JSON.parse(JSON.stringify(snapshot)) as JsonValue,
+            output: JSON.parse(JSON.stringify(projected)) as JsonValue,
             surfaceVersion: snapshot.surfaceVersion,
           };
         },
@@ -273,10 +311,12 @@ export function createAgentToolset(
         async execute(input, call) {
           const req = input as { capabilityId: string; instanceId?: string };
           const snapshot = snapshotFor();
+          const registrationId = findRegistrationId(snapshot, req.capabilityId, req.instanceId);
           return invokeThroughSurface(
             {
               capabilityId: req.capabilityId,
-              registrationId: findRegistrationId(snapshot, req.capabilityId, req.instanceId) ?? "",
+              // Unresolved → let the registry answer (AS-ADAPTER-003).
+              ...(registrationId !== undefined ? { registrationId } : {}),
               ...(req.instanceId !== undefined ? { instanceId: req.instanceId } : {}),
               surfaceVersion: snapshot.surfaceVersion,
               kind: "observation",
@@ -310,43 +350,24 @@ export function createAgentToolset(
             confirmationId?: string;
           };
           const snapshot = snapshotFor();
-          const invocationId = req.invocationId ?? call.toolCallId ?? `inv_${randomBase62(12)}`;
-          let result = await registry.invoke(
+          const registrationId = findRegistrationId(snapshot, req.capabilityId, req.instanceId);
+          // One execution path with direct mode: same resolution, same
+          // staleness binding, same wait-mode confirmation retry (D26).
+          return invokeThroughSurface(
             {
-              invocationId,
               capabilityId: req.capabilityId,
+              ...(registrationId !== undefined ? { registrationId } : {}),
               ...(req.instanceId !== undefined ? { instanceId: req.instanceId } : {}),
-              ...(findRegistrationId(snapshot, req.capabilityId, req.instanceId)
-                ? { registrationId: findRegistrationId(snapshot, req.capabilityId, req.instanceId) }
-                : {}),
               surfaceVersion: snapshot.surfaceVersion,
-              ...(req.input !== undefined ? { input: req.input } : {}),
+              kind: "action",
+            },
+            req.input,
+            call.toolCallId,
+            {
+              ...(req.invocationId !== undefined ? { invocationId: req.invocationId } : {}),
               ...(req.confirmationId !== undefined ? { confirmationId: req.confirmationId } : {}),
             },
-            { consumer: options.consumer },
           );
-          if (
-            confirmationsMode === "wait" &&
-            result.status === "error" &&
-            result.error.code === "CONFIRMATION_REQUIRED" &&
-            typeof result.error.details?.confirmationId === "string"
-          ) {
-            const confirmationId = result.error.details.confirmationId;
-            await waitForConfirmation(confirmationId);
-            if (disposed) return result;
-            result = await registry.invoke(
-              {
-                invocationId,
-                capabilityId: req.capabilityId,
-                ...(req.instanceId !== undefined ? { instanceId: req.instanceId } : {}),
-                surfaceVersion: snapshot.surfaceVersion,
-                ...(req.input !== undefined ? { input: req.input } : {}),
-                confirmationId,
-              },
-              { consumer: options.consumer },
-            );
-          }
-          return result;
         },
       },
     ];
@@ -373,6 +394,11 @@ export function createAgentToolset(
   const unsubscribe = registry.subscribe((event) => {
     if (disposed || event.type !== "surface-changed") return;
     cachedVersion = undefined;
+    // Meta mode: the three-tool catalog is constant by construction, so
+    // tools() can never differ and listeners are never called. Agents notice
+    // surface changes by re-running surface_discover and comparing
+    // surfaceVersion (docs/09 §meta-tools-mode).
+    if (mode === "meta") return;
     const tools = computeTools();
     const signature = signatureOf(tools);
     if (signature === cachedSignature) return;
@@ -407,6 +433,36 @@ export function createAgentToolset(
       pendingWaits.clear();
     },
   };
+}
+
+/**
+ * D27 — the adapter-configured scope is a floor, not a default. A model-supplied
+ * scope may narrow it (`["devices"]` → `["devices.table"]`), never widen it
+ * (`[]` or `["admin"]` cannot reach past the floor). Prefix lists intersect
+ * pairwise: the more specific prefix wins when one extends the other, and a
+ * pair that shares no prefix contributes nothing. An empty result means the
+ * request was entirely outside the floor — reported as an empty surface rather
+ * than silently falling back to the floor itself.
+ */
+function intersectScope(
+  floor: string[] | undefined,
+  requested: string[] | undefined,
+): { scope?: string[]; empty: boolean } {
+  const hasFloor = floor !== undefined && floor.length > 0;
+  // `[]` is "everything" to matchesScope — treat it as "unspecified", so an
+  // empty array cannot be used to widen past the floor.
+  if (requested === undefined || requested.length === 0) {
+    return hasFloor ? { scope: floor, empty: false } : { empty: false };
+  }
+  if (!hasFloor) return { scope: requested, empty: false };
+  const out = new Set<string>();
+  for (const f of floor) {
+    for (const r of requested) {
+      if (r === f || r.startsWith(`${f}.`)) out.add(r);
+      else if (f.startsWith(`${r}.`)) out.add(f);
+    }
+  }
+  return out.size > 0 ? { scope: [...out], empty: false } : { empty: true };
 }
 
 function findRegistrationId(
