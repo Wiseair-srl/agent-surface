@@ -518,8 +518,18 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
 
 - **Actions**: serialized per component instance (FIFO). One in-flight + a wait queue of `limits.actionQueueDepth` (default 2). Overflow → `RATE_LIMITED` with `details.reason: "queue-full"`, `retry: "after-delay"`.
 - **Observations**: bounded concurrency (D24). Admission gates: `maxConcurrentObservationsPerConsumer` (8) and `maxConcurrentObservationsTotal` (32), independent; a saturated consumer queues FIFO up to `maxQueuedObservationsPerConsumer` (8). Overflow → `RATE_LIMITED {reason: "queue-full", retryAfterMs}`. Observations never consume the action queue; one consumer cannot starve another below its per-consumer allowance beyond the shared global cap. Cancellation/timeout/settlement release slots; disposal drains queues as `CANCELLED`. Observations SHOULD still be synchronous reads.
-- **Procedures**: forwarded; client-side no queueing beyond per-instance serialization of the *binding evaluation*; the server governs real concurrency.
-- **Concurrency contract (D25, Experimental — specified, deliberately unimplemented until Phase C):** the default stays `{mode:"instance"}`; the declared shape `AgentConcurrency = {mode:"instance"} | {mode:"capability"} | {mode:"key";key} | {mode:"parallel";max}` (bounded `max` required) is reserved so apps and adapters don't invent shapes. Not model-visible.
+- **Procedures**: forwarded, and admitted through one group per *procedure identity per referencing registration* — repeat calls of the same domain operation serialize client-side, while a view action on the same component is never blocked by an in-flight domain call. The server still governs real concurrency; this is queueing hygiene, not authority.
+- **Concurrency contract (D25, Draft — implemented):**
+
+  ```ts
+  export type AgentConcurrency =
+    | { mode: "instance"; queueDepth?: number }   // default: one queue per registration
+    | { mode: "capability"; queueDepth?: number } // one queue per capability
+    | { mode: "key"; key: string; queueDepth?: number }
+    | { mode: "parallel"; max: number; queueDepth?: number };
+  ```
+
+  Declared per action (`action({concurrency})`) or per procedure reference (binding config). The default remains `{mode:"instance"}` — the safe one: two actions on the same component never interleave. `parallel` requires an integer `max ≥ 1`; unbounded parallelism is not offered, and an invalid group throws `AgentSurfaceDefinitionError` at registration. `queueDepth` overrides `limits.actionQueueDepth` for that group only; overflow is `RATE_LIMITED {reason:"queue-full"}` as everywhere else. Groups are created on demand and dropped when idle, so the runtime holds one entry per *currently contended* group, not per capability ever invoked. Not model-visible: concurrency is runtime behavior, not planning information.
 - **Timeouts**: `timeoutMs` per capability, else defaults (observation 5 s, action 10 s, procedure 30 s). On timeout the registry aborts `ctx.signal`, settles `TIMEOUT`, and ignores (but logs) any late handler settlement. JS cannot force-kill the handler; cooperation via `signal` is the contract.
 - **External cancellation**: `InvokeOptions.signal` aborted → settle `CANCELLED` (same late-settlement rule).
 - **Unmount mid-flight (D16, non-navigation)**: unregistration aborts the registration's in-flight signals; the invocation settles `COMPONENT_UNMOUNTED` unless the handler settled first (first settle wins, the loser is logged as `late-settlement` in audit) — never a hang, never a zombie handler kept alive by the registry.

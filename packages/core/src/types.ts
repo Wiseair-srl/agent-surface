@@ -39,6 +39,26 @@ export interface AgentRouteInfo {
   params?: Record<string, string>;
 }
 
+/**
+ * Concurrency group for an action or procedure reference (D25). Not
+ * model-visible: it is runtime behavior, not planning information.
+ *
+ * - `instance` (default) — every action on the registration shares one FIFO
+ *   queue. Safest: two actions on the same component can never interleave.
+ * - `capability` — one queue per capability, so a slow export does not block
+ *   closing a drawer.
+ * - `key` — one queue per author-chosen key, for actions that contend over
+ *   the same resource across capabilities.
+ * - `parallel` — bounded parallelism; `max` is required and must be ≥ 1.
+ *
+ * `queueDepth` overrides `limits.actionQueueDepth` for this group only.
+ */
+export type AgentConcurrency =
+  | { mode: "instance"; queueDepth?: number }
+  | { mode: "capability"; queueDepth?: number }
+  | { mode: "key"; key: string; queueDepth?: number }
+  | { mode: "parallel"; max: number; queueDepth?: number };
+
 export interface AgentSurfaceLimits {
   maxComponentDescription: number; // 500 chars
   maxCapabilityDescription: number; // 300 chars

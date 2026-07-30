@@ -1,4 +1,5 @@
 import type {
+  AgentConcurrency,
   AgentConsumer,
   AgentEnvironment,
   AgentProcedureEffect,
@@ -55,6 +56,7 @@ export interface ActionRuntime {
   meta?: Record<string, JsonValue>;
   timeoutMs?: number;
   policies: AgentPolicy[];
+  concurrency?: AgentConcurrency;
 }
 
 export interface ProcedureRuntime {
@@ -77,6 +79,7 @@ export interface ProcedureRuntime {
   meta?: Record<string, JsonValue>;
   policies: AgentPolicy[];
   contextLink?: { type: string; instanceId: string };
+  concurrency?: AgentConcurrency;
 }
 
 export interface InFlightEntry {
@@ -114,7 +117,20 @@ export interface InternalRegistration {
   enabled: boolean;
   availabilityOverrides: Map<string, { available: boolean; reason?: string }>;
   inFlight: Set<InFlightEntry>;
-  actionQueue: { running: boolean; waiting: Array<() => void> };
+  /**
+   * Concurrency groups (D25), created lazily and deleted when they fall idle,
+   * so the map is bounded by the number of *currently contended* groups rather
+   * than by the number of capabilities ever invoked.
+   */
+  concurrencyGroups: Map<string, ConcurrencyGroup>;
+}
+
+/** One FIFO admission group. `max` is 1 for every mode except `parallel`. */
+export interface ConcurrencyGroup {
+  running: number;
+  max: number;
+  depth: number;
+  waiting: Array<() => void>;
 }
 
 export interface Tombstone {
@@ -251,6 +267,7 @@ export function normalizeRegistration(
       meta: act.meta ? jsonClone(act.meta) : undefined,
       timeoutMs: act.timeoutMs,
       policies: [...(act.policies ?? [])],
+      concurrency: act.concurrency,
     });
   }
   const hasView = observations.size > 0 || actions.size > 0;
@@ -286,6 +303,7 @@ export function normalizeRegistration(
       policies: [...(binding.config.policies ?? [])],
       contextLink:
         binding.contextLink ?? (hasView ? { type: def.type, instanceId } : undefined),
+      concurrency: binding.config.concurrency,
     };
   });
 
@@ -312,8 +330,41 @@ export function normalizeRegistration(
     enabled: def.enabled !== false,
     availabilityOverrides: new Map(),
     inFlight: new Set(),
-    actionQueue: { running: false, waiting: [] },
+    concurrencyGroups: new Map(),
   };
+}
+
+/**
+ * Resolve the concurrency group for a capability (D25). Actions default to
+ * `{mode:"instance"}` — one queue for the whole registration, so unrelated
+ * actions on one component cannot interleave. Procedure references default to
+ * one group per procedure identity per referencing registration: conservative
+ * for repeat calls of the same domain operation, and never coupled to view
+ * actions that happen to live on the same component.
+ */
+export function concurrencyGroupFor(
+  cap: ActionRuntime | ProcedureRuntime,
+  limits: AgentSurfaceLimits,
+): { key: string; max: number; depth: number } {
+  const declared: AgentConcurrency | undefined =
+    cap.kind === "action" ? cap.concurrency : cap.concurrency;
+  const fallbackDepth = limits.actionQueueDepth;
+  if (declared === undefined) {
+    return cap.kind === "action"
+      ? { key: "instance", max: 1, depth: fallbackDepth }
+      : { key: `proc:${cap.capabilityId}`, max: 1, depth: fallbackDepth };
+  }
+  const depth = declared.queueDepth ?? fallbackDepth;
+  switch (declared.mode) {
+    case "instance":
+      return { key: "instance", max: 1, depth };
+    case "capability":
+      return { key: `cap:${cap.capabilityId}`, max: 1, depth };
+    case "key":
+      return { key: `key:${declared.key}`, max: 1, depth };
+    case "parallel":
+      return { key: `par:${cap.capabilityId}`, max: declared.max, depth };
+  }
 }
 
 export type CapabilityRuntime = ObservationRuntime | ActionRuntime | ProcedureRuntime;

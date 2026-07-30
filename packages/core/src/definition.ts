@@ -1,4 +1,5 @@
 import type {
+  AgentConcurrency,
   AgentConsumer,
   AgentProcedureEffect,
   AgentSurfaceLimits,
@@ -88,6 +89,9 @@ export interface AgentActionDefinition<
   policies?: AgentPolicy[];
   meta?: Record<string, JsonValue>;
   timeoutMs?: number;
+  /** Concurrency group (D25). Default `{mode:"instance"}` — serialize with
+   *  every other action on this component instance. */
+  concurrency?: AgentConcurrency;
 }
 
 /** Identity helpers that fix generics for record-literal authoring. */
@@ -150,6 +154,10 @@ export interface AgentProcedureBindingRuntimeConfig {
   /** Contextual description appended to the manifest description. */
   describe?: () => string;
   meta?: Record<string, JsonValue>;
+  /** Concurrency group (D25). Default: one group per procedure identity per
+   *  referencing registration — conservative, and it never couples a domain
+   *  call to unrelated view actions. */
+  concurrency?: AgentConcurrency;
 }
 
 export interface AgentProcedureBinding<TIn extends object = object, TOut = unknown> {
@@ -243,6 +251,7 @@ const ACTION_KEYS = new Set([
   "policies",
   "meta",
   "timeoutMs",
+  "concurrency",
 ]);
 
 const VIEW_EFFECTS = new Set(["local-state", "navigation"]);
@@ -264,6 +273,35 @@ function checkMeta(meta: unknown, where: string, limits: AgentSurfaceLimits): vo
   }
   if (byteLength(meta) > limits.maxMetaBytes) {
     fail("LIMIT_EXCEEDED", `${where}: meta exceeds ${limits.maxMetaBytes} bytes`);
+  }
+}
+
+/** D25: the group shape is closed and `parallel` must be explicitly bounded —
+ *  an unbounded group would be the one place the runtime stops being bounded. */
+function checkConcurrency(concurrency: AgentConcurrency | undefined, where: string): void {
+  if (concurrency === undefined) return;
+  if (typeof concurrency !== "object" || concurrency === null) {
+    fail("INVALID_DEFINITION", `${where}: concurrency must be an object`);
+  }
+  const { mode } = concurrency;
+  if (!["instance", "capability", "key", "parallel"].includes(mode)) {
+    fail("INVALID_DEFINITION", `${where}: invalid concurrency mode "${String(mode)}"`);
+  }
+  if (mode === "key" && (typeof concurrency.key !== "string" || concurrency.key.length === 0)) {
+    fail("INVALID_DEFINITION", `${where}: concurrency mode "key" requires a non-empty key`);
+  }
+  if (
+    mode === "parallel" &&
+    (typeof concurrency.max !== "number" || !Number.isInteger(concurrency.max) || concurrency.max < 1)
+  ) {
+    fail(
+      "INVALID_DEFINITION",
+      `${where}: concurrency mode "parallel" requires an integer max ≥ 1 (unbounded parallelism is not offered)`,
+    );
+  }
+  const depth = concurrency.queueDepth;
+  if (depth !== undefined && (!Number.isInteger(depth) || depth < 0)) {
+    fail("INVALID_DEFINITION", `${where}: concurrency queueDepth must be a non-negative integer`);
   }
 }
 
@@ -394,6 +432,7 @@ export function validateComponentDefinition(
     checkSchema(act.input, `${where} input`, limits);
     checkSchema(act.output, `${where} output`, limits);
     checkMeta(act.meta, where, limits);
+    checkConcurrency(act.concurrency, where);
   }
 
   const procedures = def.procedures ?? [];
@@ -432,5 +471,6 @@ export function validateComponentDefinition(
       fail("INVALID_DEFINITION", `procedure "${ref.path}": invalid confirmation escalation`);
     }
     checkMeta(binding.config.meta, `procedure "${ref.path}"`, limits);
+    checkConcurrency(binding.config.concurrency, `procedure "${ref.path}"`);
   }
 }

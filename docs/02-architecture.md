@@ -185,19 +185,19 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 
 ## Bundle and performance budgets (first measured baselines)
 
-Bundle sizes are enforced by `size-limit` in CI: `core` **16.45 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+Bundle sizes are enforced by `size-limit` in CI: `core` **17.09 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
 
 Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30 — machine-local reference points, not CI thresholds yet; directive §7.2 sets thresholds after stable CI baselines):
 
 | Operation | mean |
 |---|---|
-| `createAgentSurfaceRegistry()` | ~1.4 µs |
-| register + unregister, 10 / 100 / 1000 components | ~0.16 ms / ~1.5 ms / ~17 ms |
+| `createAgentSurfaceRegistry()` | ~1.5 µs |
+| register + unregister, 10 / 100 / 1000 components | ~0.17 ms / ~1.6 ms / ~17 ms |
 | `snapshot()` at 100 components (warm descriptor cache) | ~0.16 ms |
-| action invoke end-to-end, no-op handler | ~0.05 ms |
-| action invoke + 2-policy authorize chain | ~0.13 ms |
-| observation invoke end-to-end | ~0.03 ms |
-| canonical digest (fingerprint) at ~32 kB input | ~2.1 ms |
+| action invoke end-to-end, no-op handler | ~0.04 ms |
+| action invoke + 2-policy authorize chain | ~0.12 ms |
+| observation invoke end-to-end | ~0.02 ms |
+| canonical digest (fingerprint) at ~32 kB input | ~1.9 ms |
 
 Reading the numbers: registration stays allocation-light through a route transition (100 registrations ≈ 1.5 ms, spread across commits); pipeline overhead without handler work is tens of microseconds; the request fingerprint is O(input size) — negligible for typical tool inputs, ~2 ms at the 32 kB ceiling (it runs once per invoke, phase 1).
 

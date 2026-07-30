@@ -256,12 +256,13 @@
       "status": "implemented"
     },
     "AS-CONC-001": {
-      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — shape reserved, default instance",
+      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — default instance, bounded parallel, per-group queue depth",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D25",
-      "tests": [],
-      "status": "specified",
-      "justification": "Directive §3.5: hardening step, deliberately not implemented before base-queue race tests are stable in CI (Phase C). Shape specified so adapters/apps do not invent their own."
+      "tests": [
+        "packages/core/test/conformance/concurrency-groups.test.ts"
+      ],
+      "status": "implemented"
     },
     "AS-ID-001": {
       "title": "Canonical id grammar: accept/reject table for component types, capability names, instance ids; parsing unambiguous",

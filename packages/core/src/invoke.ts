@@ -17,6 +17,7 @@ import {
   DevDefectError,
   buildPolicyContext,
   computeAvailability,
+  concurrencyGroupFor,
   consumerKeyOf,
   maxConfirmation,
   policiesFor,
@@ -702,9 +703,9 @@ async function executeAction(
       }
     }
 
-    /* phase 8 — concurrency: actions serialize per component instance (D13) */
+    /* phase 8 — concurrency: per-group admission, default per instance (D13/D25) */
     const queueStart = internals.now();
-    const slot = await acquireActionSlot(internals, reg);
+    const slot = await acquireActionSlot(internals, reg, cap);
     args.setTimings({ queueWaitMs: internals.now() - queueStart });
     if (slot === "overflow") {
       return finalize({ status: "error", error: queueFull(250) });
@@ -742,7 +743,7 @@ async function executeAction(
       args.setAuditPayload(undefined, output.value);
       return finalize({ status: "ok", output: output.value });
     } finally {
-      releaseActionSlot(reg);
+      releaseActionSlot(internals, reg, cap);
     }
   };
   return runInvokePolicies(args, parsedInput, run);
@@ -828,44 +829,56 @@ async function executeProcedure(
     });
     if ("error" in confirmation) return finalize({ status: "error", error: confirmation.error });
 
-    /* phase 9 — forward to the executor (the server re-validates everything) */
-    const executor = internals.executor;
-    if (!executor) {
-      return finalize({ status: "error", error: executionFailed("transport") });
+    /* phase 8 — concurrency: one group per procedure identity by default (D25) */
+    const queueStart = internals.now();
+    const slot = await acquireActionSlot(internals, reg, cap);
+    args.setTimings({ queueWaitMs: internals.now() - queueStart });
+    if (slot === "overflow") {
+      return finalize({ status: "error", error: queueFull(250) });
     }
-    const timeoutMs = options?.timeoutMs ?? internals.limits.procedureTimeoutMs;
-    const executeStart = internals.now();
-    const outcome = await executeWithGuards(internals, reg, {
-      invocationId,
-      capabilityId: cap.capabilityId,
-      timeoutMs,
-      externalSignal: options?.signal,
-      idempotent: cap.idempotent,
-      run: (signal) =>
-        executor.execute({
-          path: cap.path,
-          input: effective,
-          info: {
-            invocationId,
-            consumer,
-            signal,
-            ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
-          },
-        }),
-      procedureErrors: true,
-    });
-    args.setTimings({ executionMs: internals.now() - executeStart });
-    if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
 
-    /* phase 10 — settle */
-    const output = settleOutput(
-      internals,
-      outcome.value,
-      cap.outputJsonSchema ? fromJsonSchema(cap.outputJsonSchema) : undefined,
-    );
-    if ("error" in output) return finalize({ status: "error", error: output.error });
-    args.setAuditPayload(undefined, output.value);
-    return finalize({ status: "ok", output: output.value });
+    try {
+      /* phase 9 — forward to the executor (the server re-validates everything) */
+      const executor = internals.executor;
+      if (!executor) {
+        return finalize({ status: "error", error: executionFailed("transport") });
+      }
+      const timeoutMs = options?.timeoutMs ?? internals.limits.procedureTimeoutMs;
+      const executeStart = internals.now();
+      const outcome = await executeWithGuards(internals, reg, {
+        invocationId,
+        capabilityId: cap.capabilityId,
+        timeoutMs,
+        externalSignal: options?.signal,
+        idempotent: cap.idempotent,
+        run: (signal) =>
+          executor.execute({
+            path: cap.path,
+            input: effective,
+            info: {
+              invocationId,
+              consumer,
+              signal,
+              ...(confirmation.evidence ? { confirmation: confirmation.evidence } : {}),
+            },
+          }),
+        procedureErrors: true,
+      });
+      args.setTimings({ executionMs: internals.now() - executeStart });
+      if (!outcome.ok) return finalize({ status: "error", error: outcome.payload });
+
+      /* phase 10 — settle */
+      const output = settleOutput(
+        internals,
+        outcome.value,
+        cap.outputJsonSchema ? fromJsonSchema(cap.outputJsonSchema) : undefined,
+      );
+      if ("error" in output) return finalize({ status: "error", error: output.error });
+      args.setAuditPayload(undefined, output.value);
+      return finalize({ status: "ok", output: output.value });
+    } finally {
+      releaseActionSlot(internals, reg, cap);
+    }
   };
   return runInvokePolicies(args, effective, run);
 }
@@ -1221,22 +1234,40 @@ function executeWithGuards(
 async function acquireActionSlot(
   internals: RegistryInternals,
   reg: InternalRegistration,
+  cap: ActionRuntime | ProcedureRuntime,
 ): Promise<"ok" | "overflow"> {
-  if (!reg.actionQueue.running) {
-    reg.actionQueue.running = true;
+  const { key, max, depth } = concurrencyGroupFor(cap, internals.limits);
+  let group = reg.concurrencyGroups.get(key);
+  if (!group) {
+    group = { running: 0, max, depth, waiting: [] };
+    reg.concurrencyGroups.set(key, group);
+  }
+  if (group.running < group.max) {
+    group.running += 1;
     return "ok";
   }
-  if (reg.actionQueue.waiting.length >= internals.limits.actionQueueDepth) {
+  if (group.waiting.length >= group.depth) {
+    // Nothing was reserved, so an idle group must not linger in the map.
+    if (group.running === 0 && group.waiting.length === 0) reg.concurrencyGroups.delete(key);
     return "overflow";
   }
-  await new Promise<void>((resolve) => reg.actionQueue.waiting.push(resolve));
+  await new Promise<void>((resolve) => group.waiting.push(resolve));
   return "ok"; // the releasing invocation hands the slot over
 }
 
-function releaseActionSlot(reg: InternalRegistration): void {
-  const next = reg.actionQueue.waiting.shift();
-  if (next) next();
-  else reg.actionQueue.running = false;
+function releaseActionSlot(
+  internals: RegistryInternals,
+  reg: InternalRegistration,
+  cap: ActionRuntime | ProcedureRuntime,
+): void {
+  const { key } = concurrencyGroupFor(cap, internals.limits);
+  const group = reg.concurrencyGroups.get(key);
+  if (!group) return;
+  const next = group.waiting.shift();
+  // A handed-over slot stays counted: `running` never dips between the two.
+  if (!next) group.running -= 1;
+  else next();
+  if (group.running === 0 && group.waiting.length === 0) reg.concurrencyGroups.delete(key);
 }
 
 /* ─────────────── bounded observation admission per consumer (D24) ─────────────── */

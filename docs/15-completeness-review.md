@@ -49,7 +49,7 @@ Top items with mitigations in [14 §risk register](14-implementation-plan.md#ris
 ## Must be validated by the implementation prototype (not yet provable on paper)
 
 1. React commit-phase registration under Strict Mode + Suspense + React 19, especially availability-push ordering vs adapters' re-snapshot (M7).
-2. The 10-phase pipeline's remaining race behavior beyond the named suites: the §6.3 race list exists by name (`test/conformance/races.test.ts`) and §6.4 property invariants run under fast-check (`test/property/`); what remains for Phase C is higher-cardinality interleaving fuzzing (arbitrary event sequences driving the full pipeline concurrently) and the D25 concurrency-group implementation.
+2. The 10-phase pipeline's remaining race behavior beyond the named suites: the §6.3 race list exists by name (`test/conformance/races.test.ts`), §6.4 property invariants run under fast-check (`test/property/`), and D25 concurrency groups are implemented and covered (`test/conformance/concurrency-groups.test.ts`). What remains for Phase C is higher-cardinality interleaving fuzzing — arbitrary event sequences driving the full pipeline concurrently, including mixed group modes.
 3. Schema surgery for partial bindings against real Zod-generated JSON Schemas, including `required` handling and `$defs` (M9).
 4. Whether `wait`-mode confirmations feel right in a real embedded loop, and whether models actually follow `retry` hints (M8/M10 scripted-model harness first, then a manual session).
 5. Catalog sizes and model behavior in `direct` vs `meta` mode on a page with tens of capabilities (v0.3 measurements, OQ-4/OQ-9).

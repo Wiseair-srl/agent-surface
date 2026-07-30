@@ -13,6 +13,7 @@ export type {
   AgentConsumer,
   AgentRouteInfo,
   AgentSurfaceLimits,
+  AgentConcurrency,
   Unsubscribe,
 } from "./types.js";
 export { DEFAULT_LIMITS } from "./types.js";
