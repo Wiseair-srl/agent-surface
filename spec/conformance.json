@@ -296,7 +296,8 @@
       "source": "09-adapters.md#wire-names",
       "decision": "D-grammar",
       "tests": [
-        "packages/core/test/property/invariants.property.test.ts"
+        "packages/core/test/property/invariants.property.test.ts",
+        "packages/core/test/ids.test.ts"
       ],
       "status": "implemented"
     },
