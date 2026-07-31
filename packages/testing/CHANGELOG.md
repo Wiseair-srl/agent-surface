@@ -1,5 +1,19 @@
 # @agent-surface/testing
 
+## 0.4.0
+
+### Minor Changes
+
+- 3588342: Release all packages together at 0.4.0.
+
+  The discovery-honesty changes (D31) land in `core` only, but the packages ship in lockstep while we are pre-1.0 — see `.changeset/README.md`. The `AgentSurfaceSnapshot` shape is what every adapter reads, so a version that identifies the whole surface contract is more useful than four packages trailing a minor behind it.
+
+### Patch Changes
+
+- Updated dependencies [3588342]
+- Updated dependencies [3588342]
+  - @agent-surface/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
