@@ -183,6 +183,19 @@ export interface RegistryInternals {
   devError(...args: unknown[]): void;
 }
 
+/**
+ * Internal seam, deliberately not part of `AgentSurfaceRegistry`: the registry
+ * attaches its environment-gated dev logger here so a same-package adapter can
+ * report a repair it performed without either widening the public interface or
+ * inventing a second environment gate. Symbol-keyed and non-enumerable, so it
+ * stays invisible to spreads, `Object.keys`, and serialization.
+ */
+export const DEV_WARN: unique symbol = Symbol("agent-surface.dev-warn");
+
+export interface DevWarnCarrier {
+  [DEV_WARN]?: (...args: unknown[]) => void;
+}
+
 /** Marker for defects that must throw out of invoke() in development. */
 export class DevDefectError extends Error {
   constructor(message: string) {

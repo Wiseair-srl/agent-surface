@@ -788,6 +788,24 @@
       ],
       "status": "implemented"
     },
+    "AS-META-007": {
+      "title": "Each meta verb enforces its own declared schema before the registry sees the call: a missing capabilityId or an unknown top-level key returns INVALID_INPUT naming it, never a pipeline failure",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D32",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-008": {
+      "title": "surface_act declares input as an object and repairs a JSON-encoded one only when the target's own schema is an object, so a declared string input arrives unparsed",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D32",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-WIRE-004": {
       "title": "Emitted wire names never exceed the 64-character provider budget",
       "source": "09-adapters.md#wire-names",

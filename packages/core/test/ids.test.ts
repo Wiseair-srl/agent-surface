@@ -79,6 +79,17 @@ describe("id grammar (docs/01)", () => {
       expect(parseCapabilityId(id), id).toBeUndefined();
     }
   });
+
+  it("rejects a non-string id instead of throwing", () => {
+    // The signature says `string`; this is the boundary where that assumption
+    // is load-bearing. A caller relaying a malformed request must get a
+    // grammar rejection (→ CAPABILITY_NOT_FOUND), not a TypeError the
+    // invocation pipeline reports as an internal defect with retry:"no".
+    for (const id of [undefined, null, 42, {}, ["view:devices.table.selectRows"]]) {
+      expect(() => parseCapabilityId(id as never)).not.toThrow();
+      expect(parseCapabilityId(id as never), String(id)).toBeUndefined();
+    }
+  });
 });
 
 describe("wire-name codec (docs/09)", () => {
