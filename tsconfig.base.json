@@ -22,6 +22,7 @@
       "@agent-surface/core": ["./packages/core/src/index.ts"],
       "@agent-surface/core/explain": ["./packages/core/src/explain.ts"],
       "@agent-surface/cli": ["./packages/cli/src/index.ts"],
+      "@agent-surface/cli/vitest": ["./packages/cli/src/vitest.ts"],
       "@agent-surface/react": ["./packages/react/src/index.ts"],
       "@agent-surface/orpc": ["./packages/orpc/src/index.ts"],
       "@agent-surface/orpc/react": ["./packages/orpc/src/react.ts"],
