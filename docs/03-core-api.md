@@ -255,7 +255,7 @@ export interface RegistryOptions {
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
   /**
-   * D28 compatibility. `true` (default, for one minor) folds a procedure
+   * D28 compatibility. `true` (default through 0.4; flips in 0.5) folds a procedure
    * reference's contextual `describe()` output into
    * `AgentProcedureDescriptor.description`, as 0.1 did. `false` keeps the two
    * apart: `description` is then stable across snapshots and the live text is
@@ -648,7 +648,7 @@ export interface AgentToolsetOptions {
    */
   budget?: { maxComponents?: number; maxBytes?: number };
   /**
-   * D28 compatibility. `true` (default, for one minor) composes availability
+   * D28 compatibility. `true` (default through 0.4; flips in 0.5) composes availability
    * and the contextual note into `description`, as 0.1 did. `false` keeps
    * `description` free of live state, so the provider tool block is byte-stable
    * across steps and prompt-prefix caching survives; the host renders

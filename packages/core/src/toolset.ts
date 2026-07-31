@@ -49,7 +49,7 @@ export interface AgentToolsetOptions {
    */
   budget?: { maxComponents?: number; maxBytes?: number };
   /**
-   * D28 compatibility flag. `true` (default, for one minor) composes
+   * D28 compatibility flag. `true` (default through 0.4; flips in 0.5) composes
    * availability and the contextual note into `description`, as 0.1 did.
    * `false` keeps `description` free of live state, so the provider tool block
    * is byte-stable across steps and prompt-prefix caching survives; the host

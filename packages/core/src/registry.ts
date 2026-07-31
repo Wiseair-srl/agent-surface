@@ -53,7 +53,7 @@ export interface RegistryOptions {
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
   /**
-   * D28 compatibility flag. `true` (default, for one minor) folds a procedure
+   * D28 compatibility flag. `true` (default through 0.4; flips in 0.5) folds a procedure
    * reference's contextual `describe()` output into
    * `AgentProcedureDescriptor.description`, as 0.1 did. `false` keeps the two
    * apart, so `description` is stable across snapshots and the live text is
