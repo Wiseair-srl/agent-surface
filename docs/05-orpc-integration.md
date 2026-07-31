@@ -191,7 +191,18 @@ Let `B` = keys produced by `bind()` (statically: `keyof TBound`).
 ```ts
 export interface AgentProcedureDescriptor {
   procedureId: string;                    // "domain:devices.disable"
-  description: string;                    // manifest description + contextual describe()
+  /**
+   * The manifest description — stable across snapshots. Contains the
+   * contextual describe() output too only while the registry is left on the
+   * D28 compatibility default (`snapshotMergesContextualNote: true`).
+   */
+  description: string;
+  /**
+   * Volatile: this snapshot's contextual describe() output, if any. Always
+   * populated, in both merge modes. `stableDescriptionOf(descriptor)` returns
+   * the note-free description either way (D28).
+   */
+  contextualNote?: string;
   /** Agent-facing (reduced) input schema per binding rule 1. */
   inputSchema: JsonSchema;
   outputSchema?: JsonSchema;
@@ -209,6 +220,8 @@ export interface AgentProcedureDescriptor {
 ```
 
 Procedure descriptors live at the **top level** of the snapshot (`snapshot.procedures`), never nested inside components: the planes stay structurally distinct, and a procedure referenced by two components appears as two entries disambiguated by `registrationId`.
+
+`describe()` is the one place a *reference* contributes live text ("Currently bound to the 3 selected devices"). It is planning fuel and it changes whenever the UI does, which is why it is carried as its own field rather than concatenated into `description`: a host shipping this catalog to a provider needs the stable half to stay stable (D28, [09 §rendering-capability-state](09-adapters.md#rendering-capability-state)).
 
 ### Multiple simultaneous references
 

@@ -1,6 +1,6 @@
 {
   "$schema": "./conformance.schema.json",
-  "$comment": "Traceability manifest (directive §4.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs — every 'implemented' requirement must reference ≥1 existing test file that mentions the ID; 'specified' requires a justification.",
+  "$comment": "Traceability manifest (directive \u00a74.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs \u2014 every 'implemented' requirement must reference \u22651 existing test file that mentions the ID; 'specified' requires a justification. AS-WIRE-001..003 are intentionally unassigned: the pre-existing codec requirements are AS-ID-002 and AS-ID-004, and D30's proposed ids are kept as written rather than renumbered.",
   "requirements": {
     "AS-INVOKE-001": {
       "title": "Pre-input authority policies (onAuthorize) cannot observe agent input",
@@ -220,7 +220,7 @@
       "status": "implemented"
     },
     "AS-TOPO-002": {
-      "title": "Topology defaults: embedded → wait, remote → two-phase; explicit confirmations overrides",
+      "title": "Topology defaults: embedded \u2192 wait, remote \u2192 two-phase; explicit confirmations overrides",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
       "tests": [
@@ -256,7 +256,7 @@
       "status": "implemented"
     },
     "AS-CONC-001": {
-      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — default instance, bounded parallel, per-group queue depth",
+      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) \u2014 default instance, bounded parallel, per-group queue depth",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D25",
       "tests": [
@@ -594,7 +594,7 @@
     },
     "AS-ADAPTER-004": {
       "title": "Meta mode resolves targets exactly as direct mode (ambiguity, not-found, unmounted, validation, confirmation)",
-      "source": "09-adapters.md#meta-tools-mode-experimental",
+      "source": "09-adapters.md#meta-tools-mode",
       "decision": "D26",
       "tests": [
         "packages/core/test/conformance/meta-parity.test.ts"
@@ -603,7 +603,7 @@
     },
     "AS-ADAPTER-005": {
       "title": "Adapter-configured scope is a floor: a model-supplied scope narrows, never widens",
-      "source": "09-adapters.md#meta-tools-mode-experimental",
+      "source": "09-adapters.md#meta-tools-mode",
       "decision": "D27",
       "tests": [
         "packages/core/test/conformance/meta-parity.test.ts"
@@ -695,6 +695,125 @@
       "source": "10-examples.md",
       "tests": [
         "examples/devices-app/test/devices-app.test.tsx"
+      ],
+      "status": "implemented"
+    },
+    "AS-CACHE-001": {
+      "title": "Live state is absent from AgentTool.description when descriptionIncludesState is off",
+      "source": "09-adapters.md#rendering-capability-state",
+      "decision": "D28",
+      "tests": [
+        "packages/core/test/conformance/catalog-cache.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CACHE-002": {
+      "title": "Provider-facing tool definitions (name, description, inputSchema) are byte-identical across snapshots differing only in availability or contextual note",
+      "source": "09-adapters.md#rendering-capability-state",
+      "decision": "D28",
+      "tests": [
+        "packages/core/test/conformance/catalog-cache.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CACHE-003": {
+      "title": "AgentTool.state.note carries the procedure binding describe() contribution",
+      "source": "09-adapters.md#rendering-capability-state",
+      "decision": "D28",
+      "tests": [
+        "packages/core/test/conformance/catalog-cache.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CACHE-004": {
+      "title": "AgentProcedureDescriptor.description is free of contextual text when snapshotMergesContextualNote is false; contextualNote populated in both modes",
+      "source": "03-core-api.md#snapshot",
+      "decision": "D28",
+      "tests": [
+        "packages/core/test/conformance/catalog-cache.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-001": {
+      "title": "A model-supplied scope narrows the configured floor and never widens it",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D29",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-002": {
+      "title": "A disjoint requested scope yields an empty surface, never a fallback to the floor",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D29",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-003": {
+      "title": "Budget truncation sets the truncated marker in the payload the model reads and leaves surface_discover output a valid snapshot",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D29",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-004": {
+      "title": "surface_act enforces the same confirmation and staleness semantics as the equivalent direct tool",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D29",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-META-005": {
+      "title": "Meta-mode tool-block size is invariant in the number of registered capabilities",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D29",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-WIRE-004": {
+      "title": "Emitted wire names never exceed the 64-character provider budget",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D30",
+      "tests": [
+        "packages/core/test/conformance/wire-names.test.ts",
+        "packages/core/test/ids.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-WIRE-005": {
+      "title": "Wire-name assignment is deterministic across snapshots and independent of entry order",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D30",
+      "tests": [
+        "packages/core/test/conformance/wire-names.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-WIRE-006": {
+      "title": "No two entries in one emitted catalog share a wire name",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D30",
+      "tests": [
+        "packages/core/test/conformance/wire-names.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-WIRE-007": {
+      "title": "wireNameMap() round-trips every emitted name; decodeWireName returns undefined rather than a wrong canonical id",
+      "source": "09-adapters.md#wire-names",
+      "decision": "D30",
+      "tests": [
+        "packages/core/test/conformance/wire-names.test.ts",
+        "packages/core/test/ids.test.ts"
       ],
       "status": "implemented"
     }

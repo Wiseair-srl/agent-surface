@@ -185,7 +185,10 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 
 ## Bundle and performance budgets (first measured baselines)
 
-Bundle sizes are enforced by `size-limit` in CI: `core` **17.09 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+Bundle sizes are enforced by `size-limit` in CI: `core` **17.86 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+
+> [!WARNING]
+> **140 bytes of headroom.** D28–D30 took `core` from 17.09 to 17.86 kB (state splitting, catalog-level wire-name assignment, the compat branches). The next change of any size trips the limit. Either the 0.3 default flip removes the compatibility branches — the flags exist for exactly one minor — or the budget gets revised deliberately. Do not raise it as a side effect of an unrelated PR.
 
 Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30 — machine-local reference points, not CI thresholds yet; directive §7.2 sets thresholds after stable CI baselines):
 
@@ -194,12 +197,13 @@ Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 2
 | `createAgentSurfaceRegistry()` | ~1.5 µs |
 | register + unregister, 10 / 100 / 1000 components | ~0.17 ms / ~1.6 ms / ~17 ms |
 | `snapshot()` at 100 components (warm descriptor cache) | ~0.16 ms |
+| `buildDirectTools()` at 40 / 300 components | ~0.30 ms / ~2.1 ms |
 | action invoke end-to-end, no-op handler | ~0.04 ms |
 | action invoke + 2-policy authorize chain | ~0.12 ms |
 | observation invoke end-to-end | ~0.02 ms |
 | canonical digest (fingerprint) at ~32 kB input | ~1.9 ms |
 
-Reading the numbers: registration stays allocation-light through a route transition (100 registrations ≈ 1.5 ms, spread across commits); pipeline overhead without handler work is tens of microseconds; the request fingerprint is O(input size) — negligible for typical tool inputs, ~2 ms at the 32 kB ceiling (it runs once per invoke, phase 1).
+Reading the numbers: registration stays allocation-light through a route transition (100 registrations ≈ 1.5 ms, spread across commits); pipeline overhead without handler work is tens of microseconds; the request fingerprint is O(input size) — negligible for typical tool inputs, ~2 ms at the 32 kB ceiling (it runs once per invoke, phase 1). The toolset projection is linear in mounted components (7.5× the components ≈ 6–7× the time), which is the point of the D28-era instance-detection pre-pass — the previous per-component re-filter was O(n²) on a path a remote loop runs every step.
 
 - `snapshot()` is O(registrations) with cheap descriptor projection; descriptors are cached per registration and invalidated on version bump.
 - No polling anywhere: everything is event-driven.

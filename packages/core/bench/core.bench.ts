@@ -7,6 +7,7 @@ import {
   action,
   authenticated,
   createAgentSurfaceRegistry,
+  createAgentToolset,
   fromJsonSchema,
   observation,
   rateLimit,
@@ -76,6 +77,25 @@ describe("snapshot projection", () => {
   bench("snapshot() at 100 components (warm descriptor cache)", () => {
     r100.snapshot();
   });
+});
+
+/**
+ * The per-step path a remote loop pays on every turn. Instance detection used
+ * to re-filter the component array per component (O(n²)); these numbers are
+ * why it is a pre-pass now (docs/19 §cleanup).
+ */
+describe("toolset projection", () => {
+  for (const count of [40, 300]) {
+    const registry = populated(count);
+    bench(`buildDirectTools() at ${count} components`, () => {
+      const toolset = createAgentToolset(registry, {
+        consumer: { id: "bench", kind: "embedded" },
+        topology: "embedded",
+      });
+      toolset.tools();
+      toolset.dispose();
+    });
+  }
 });
 
 describe("invocation overhead (no-op handler)", () => {

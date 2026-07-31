@@ -40,11 +40,17 @@ export {
   isValidInstanceId,
   encodeWireName,
   encodeWireNameForInstance,
+  assignWireNames,
   decodeWireName,
   MAX_ID_LENGTH,
   MAX_WIRE_NAME_LENGTH,
 } from "./ids.js";
-export type { AgentPlane, ParsedCapabilityId } from "./ids.js";
+export type {
+  AgentPlane,
+  ParsedCapabilityId,
+  WireNameEntry,
+  WireNameAssignment,
+} from "./ids.js";
 
 export {
   AgentSchemaError,
@@ -118,6 +124,7 @@ export type {
   RegistrationCandidate,
 } from "./registry.js";
 
+export { stableDescriptionOf } from "./snapshot.js";
 export type {
   SnapshotContext,
   AgentSurfaceSnapshot,

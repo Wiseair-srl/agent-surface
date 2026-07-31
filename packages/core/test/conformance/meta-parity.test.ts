@@ -2,6 +2,13 @@
  * Conformance: meta-tools mode preserves the direct-mode contract (docs/09
  * §meta-tools-mode). Requirements: AS-ADAPTER-004 (resolution parity),
  * AS-ADAPTER-005 (configured scope is a floor, D27).
+ *
+ * D29 graduated the mode from Experimental to supported; the suite that made
+ * that defensible is below — AS-META-001 (a model scope narrows the floor),
+ * AS-META-002 (a disjoint scope yields empty, never the floor), AS-META-003
+ * (budget truncation is marked in the payload the model reads), AS-META-004
+ * (`surface_act` keeps direct-mode confirmation and staleness semantics),
+ * AS-META-005 (tool-block size is invariant in the catalog size).
  */
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -201,7 +208,7 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     return output.components.map((c) => c.type);
   }
 
-  it("a model-supplied scope cannot widen past the configured floor", async () => {
+  it("AS-META-001: a model-supplied scope cannot widen past the configured floor", async () => {
     const registry = createAgentSurfaceRegistry({ environment: "test" });
     registry.register(devicesTableDefinition(makeDevicesState()));
     const meta = metaToolset(registry, { scope: ["billing"] });
@@ -217,7 +224,7 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     );
   });
 
-  it("a model-supplied scope may narrow within the floor", async () => {
+  it("AS-META-001: a model-supplied scope may narrow within the floor", async () => {
     const registry = createAgentSurfaceRegistry({ environment: "test" });
     registry.register(devicesTableDefinition(makeDevicesState()));
     const meta = metaToolset(registry, { scope: ["devices"] });
@@ -228,6 +235,23 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
       "devices.table",
     ]);
     expect(discoveredTypes(await discover.execute({ scope: ["devices.map"] }, {}))).toEqual([]);
+  });
+
+  it("AS-META-002: a disjoint requested scope yields empty, never the floor", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    registry.register(devicesTableDefinition(makeDevicesState(), { type: "billing.invoices" }));
+    const meta = metaToolset(registry, { scope: ["devices"] });
+    const discover = tool(meta, "surface_discover");
+
+    // Falling back to the floor would silently hand back `devices.table` —
+    // the model would then plan against a surface it did not ask for.
+    expect(discoveredTypes(await discover.execute({ scope: ["billing"] }, {}))).toEqual([]);
+    expect(discoveredTypes(await discover.execute({ scope: ["nothing.here"] }, {}))).toEqual([]);
+    // …and the floor is still there for the next, non-disjoint request.
+    expect(discoveredTypes(await discover.execute({ scope: ["devices"] }, {}))).toEqual([
+      "devices.table",
+    ]);
   });
 
   it("with no floor configured, a model-supplied scope is honored as-is", async () => {
@@ -274,7 +298,7 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     ).toThrow(/mode 'meta' only/);
   });
 
-  it("a meta budget truncates and says so in the payload the model reads", async () => {
+  it("AS-META-003: a meta budget truncates and says so in the payload the model reads", async () => {
     const registry = createAgentSurfaceRegistry({ environment: "test" });
     registry.register({ ...devicesTableDefinition(makeDevicesState()), instanceId: "a" });
     registry.register({ ...devicesTableDefinition(makeDevicesState()), instanceId: "b" });
@@ -293,5 +317,135 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
         : { components: [], truncated: undefined };
     expect(output.components).toHaveLength(1);
     expect(output.truncated).toEqual({ droppedComponents: 1 });
+  });
+
+  it("AS-META-003: a truncated discover payload is still a valid snapshot", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.setProcedureExecutor({ paths: ["devices.disable"], execute: async () => ({}) });
+    const state = makeDevicesState();
+    registry.register({
+      ...devicesTableDefinition(state, { procedures: [disableBinding(state)] }),
+      instanceId: "a",
+    });
+    registry.register({ ...devicesTableDefinition(makeDevicesState()), instanceId: "b" });
+    const meta = createAgentToolset(registry, {
+      consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
+      mode: "meta",
+      budget: { maxComponents: 1 },
+    });
+
+    const result = await tool(meta, "surface_discover").execute({}, {});
+    // Truncation drops components; it must not leave the model a half-object
+    // it cannot plan against.
+    const payload = result.status === "ok" ? (result.output as Record<string, unknown>) : {};
+    expect(Object.keys(payload).sort()).toEqual(
+      ["capturedAt", "components", "procedures", "surfaceId", "surfaceVersion", "truncated"].sort(),
+    );
+    for (const component of payload.components as Array<Record<string, unknown>>) {
+      expect(Object.keys(component)).toEqual(
+        expect.arrayContaining([
+          "type",
+          "instanceId",
+          "registrationId",
+          "description",
+          "observations",
+          "actions",
+        ]),
+      );
+    }
+    // Procedures survive their component being dropped — they are top-level,
+    // and each still carries the registrationId an act must send back.
+    for (const procedure of payload.procedures as Array<Record<string, unknown>>) {
+      expect(typeof procedure.registrationId).toBe("string");
+      expect(typeof procedure.procedureId).toBe("string");
+    }
+  });
+
+  it("AS-META-004: a destructive act against a surface that moved is rejected, as in direct mode", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.setProcedureExecutor({
+      paths: ["devices.disable"],
+      async execute() {
+        return { disabled: 1 };
+      },
+    });
+    const state = makeDevicesState();
+    state.selectedIds = ["d1"];
+    registry.register(devicesTableDefinition(state, { procedures: [disableBinding(state)] }));
+    const meta = metaToolset(registry, { confirmations: "two-phase" });
+
+    // What the model saw when it planned the destructive step.
+    const discovered = registry.getVersion();
+    // …and the page moved underneath it.
+    registry.register(devicesTableDefinition(makeDevicesState(), { type: "aux.panel" }));
+    expect(registry.getVersion()).not.toBe(discovered);
+
+    const result = await tool(meta, "surface_act").execute(
+      {
+        capabilityId: "domain:devices.disable",
+        input: { reason: "maintenance" },
+        surfaceVersion: discovered,
+      },
+      { toolCallId: "call_meta_stale" },
+    );
+    expect(errorCode(result)).toBe("STALE_CAPABILITY");
+    expect(result.status === "error" && result.error.details?.reason).toBe(
+      "surface-version-mismatch",
+    );
+
+    // Direct mode reaches the same verdict from a catalog captured then.
+    const direct = createAgentToolset(registry, {
+      consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
+      confirmations: "two-phase",
+    });
+    const captured = direct.tools().find((t) => t.name === "domain_devices__disable")!;
+    registry.register(devicesTableDefinition(makeDevicesState(), { type: "aux.two" }));
+    expect(errorCode(await captured.execute({ reason: "maintenance" }, { toolCallId: "d1" }))).toBe(
+      "STALE_CAPABILITY",
+    );
+  });
+
+  it("AS-META-004: an omitted surfaceVersion still resolves against the live surface", async () => {
+    const registry = createAgentSurfaceRegistry({
+      environment: "test",
+      onDuplicateInstance: "replace",
+    });
+    const handle = registry.register(devicesTableDefinition(makeDevicesState()));
+    const meta = metaToolset(registry);
+
+    registry.register(devicesTableDefinition(makeDevicesState())); // replaces
+    expect(handle.status).toBe("unregistered");
+
+    // Resolution is re-run per call, so a local-state act picks up the LIVE
+    // registration instead of replaying a dead one.
+    const result = await tool(meta, "surface_act").execute(
+      { capabilityId: "view:devices.table.selectRows", input: { ids: ["d1"] } },
+      { toolCallId: "call_meta_live" },
+    );
+    expect(result.status).toBe("ok");
+  });
+
+  it("AS-META-005: the tool block does not grow with the catalog", () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    const meta = metaToolset(registry);
+    const blockSize = (): number => JSON.stringify(
+      meta.tools().map((t) => [t.name, t.description, t.inputSchema]),
+    ).length;
+
+    const empty = blockSize();
+    for (let i = 0; i < 60; i++) {
+      registry.register(
+        devicesTableDefinition(makeDevicesState(), {
+          type: `feature${i}.panel`,
+          instanceId: `i${i}`,
+        }),
+      );
+    }
+    // 60 components, ~180 capabilities: a direct catalog would be ~180 tools.
+    expect(registry.snapshot().components.length).toBe(60);
+    expect(meta.tools()).toHaveLength(3);
+    expect(blockSize()).toBe(empty);
   });
 });

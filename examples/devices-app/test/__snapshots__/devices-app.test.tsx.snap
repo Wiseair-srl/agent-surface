@@ -410,6 +410,7 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
         "instanceId": "default",
         "type": "devices.table",
       },
+      "contextualNote": "Currently bound to the 0 selected device(s).",
       "description": "Disable the given devices Currently bound to the 0 selected device(s).",
       "effect": "destructive",
       "inputSchema": {

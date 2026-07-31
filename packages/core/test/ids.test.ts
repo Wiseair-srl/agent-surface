@@ -1,4 +1,6 @@
-// Conformance: AS-ID-001 (grammar accept/reject), AS-ID-002 (wire codec + truncation)
+// Conformance: AS-ID-001 (grammar accept/reject), AS-ID-002 (wire codec +
+// shortening), AS-WIRE-004 (64-char budget), AS-WIRE-007 (decode refuses what
+// it cannot reverse — the map is authoritative)
 import { describe, expect, it } from "vitest";
 import {
   decodeWireName,
@@ -112,14 +114,25 @@ describe("wire-name codec (docs/09)", () => {
     expect(a).not.toBe(b); // hash covers the instance too
   });
 
-  it("truncates long names to 56 + '_' + 7-char hash (64 total)", () => {
+  it("shortens long names to 54 + '_0_' + 7-char hash (64 total)", () => {
     const longType = `${"verylongsegment.".repeat(4)}tail`;
     const id = `view:${longType}.someCapabilityName`;
     const name = encodeWireName(id);
     expect(name.length).toBe(64);
-    expect(name.slice(56, 57)).toBe("_");
+    expect(name.slice(54, 57)).toBe("_0_");
     // Deterministic and distinct from a different long id.
     expect(encodeWireName(id)).toBe(name);
     expect(encodeWireName(`${id}X`)).not.toBe(name);
+    // The marker is what lets decode refuse instead of guessing (D30).
+    expect(decodeWireName(name)).toBeUndefined();
+  });
+
+  it("refuses to decode anything it cannot re-encode byte-identically", () => {
+    // Per-instance names look decodable and are not: 0.1 answered
+    // "view:devices.table.readState_at_main" here.
+    expect(decodeWireName("view_devices__table__readState_at_main")).toBeUndefined();
+    for (const name of ["", "_", "view", "view_", "other_devices__table__x", "_view_x"]) {
+      expect(decodeWireName(name), name).toBeUndefined();
+    }
   });
 });

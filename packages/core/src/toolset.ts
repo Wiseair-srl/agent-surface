@@ -7,12 +7,18 @@ import type {
   AgentProcedureDescriptor,
   AgentSurfaceSnapshot,
 } from "./snapshot.js";
-import { encodeWireNameForInstance } from "./ids.js";
+import { assignWireNames, type WireNameEntry } from "./ids.js";
+import { stableDescriptionOf } from "./snapshot.js";
 import { randomBase62 } from "./utils.js";
 
 export interface AgentToolsetOptions {
   consumer: AgentConsumer;
-  /** "direct": one tool per capability. "meta": 3 generic tools. [meta: Experimental] */
+  /**
+   * "direct": one tool per capability — provider-native input typing, catalog
+   * size linear in the surface. "meta": three fixed tools with lazy discovery —
+   * constant tool-block size, one extra round trip before the first act.
+   * Default "direct"; see the selection guide in docs/09 §choosing-a-mode.
+   */
   mode?: "direct" | "meta";
   /**
    * Loop topology (D26). Sets the confirmation-mode default: "embedded" →
@@ -42,18 +48,50 @@ export interface AgentToolsetOptions {
    * signal to anyone, so it is rejected rather than half-honored.
    */
   budget?: { maxComponents?: number; maxBytes?: number };
+  /**
+   * D28 compatibility flag. `true` (default, for one minor) composes
+   * availability and the contextual note into `description`, as 0.1 did.
+   * `false` keeps `description` free of live state, so the provider tool block
+   * is byte-stable across steps and prompt-prefix caching survives; the host
+   * renders `AgentTool.state` outside the tool definitions (docs/09
+   * §rendering-capability-state). `state` is populated either way.
+   */
+  descriptionIncludesState?: boolean;
 }
 
 export interface AgentTool {
-  /** Wire-safe name (docs/09 §wire-names), ≤ 64 chars. */
+  /** Wire-safe name (docs/09 §wire-names), ≤ 64 chars, unique in this catalog. */
   name: string;
-  description: string; // includes [view|domain] + effect prefix
+  /**
+   * Plane + effect + confirmation prefix, then the authored description.
+   * With `descriptionIncludesState: false` this contains NO live state — it is
+   * safe in a provider tool block with prompt-prefix caching across steps.
+   */
+  description: string;
   inputSchema: JsonSchema;
+  /**
+   * Volatile: re-derived on every snapshot. Hosts render this OUTSIDE the tool
+   * block (e.g. a trailing system message) so availability stays honest without
+   * invalidating the cached prefix (D28).
+   */
+  state: {
+    available: boolean;
+    unavailableReason?: string;
+    /** Live text contributed by a contextual binding's `describe()`. */
+    note?: string;
+  };
   execute(input: JsonValue, call: { toolCallId?: string }): Promise<AgentInvocationResult>;
 }
 
 export interface AgentToolset {
   tools(): AgentTool[]; // recomputed per surface version
+  /**
+   * wireName → canonical capability id, for the catalog `tools()` last built.
+   * Authoritative: shortened names are not decodable by string surgery, so a
+   * host MUST consult this rather than reversing names itself (D30). Empty in
+   * "meta" mode, whose three tool names are not capability ids.
+   */
+  wireNameMap(): ReadonlyMap<string, string>;
   /** Fires when tools() would return a different catalog. */
   subscribe(listener: (tools: AgentTool[]) => void): Unsubscribe;
   dispose(): void;
@@ -80,20 +118,46 @@ const EMPTY_INPUT_SCHEMA: JsonSchema = {
   additionalProperties: false,
 };
 
+/**
+ * Stable properties of the capability — plane, effect, confirmation. Never
+ * availability: that is a property of the moment, and folding it in here is
+ * what made the tool block churn between steps (D28).
+ */
 function describePrefix(
   plane: "view" | "domain",
   effect: string,
   confirmation: "never" | "optional" | "required",
-  available: boolean,
-  unavailableReason: string | undefined,
 ): string {
   const parts = [plane, effect];
   if (confirmation === "required") parts.push("requires confirmation");
-  let prefix = `[${parts.join(" · ")}]`;
-  if (!available) {
-    prefix += ` [currently unavailable${unavailableReason ? `: ${unavailableReason}` : ""}]`;
-  }
-  return prefix;
+  return `[${parts.join(" · ")}]`;
+}
+
+/** Pre-D28 composition, byte-identical to 0.1, kept behind the compat flag. */
+function legacyDescription(
+  prefix: string,
+  description: string,
+  state: AgentTool["state"],
+): string {
+  const unavailable = state.available
+    ? ""
+    : ` [currently unavailable${state.unavailableReason ? `: ${state.unavailableReason}` : ""}]`;
+  const note = state.note ? ` ${state.note}` : "";
+  return `${prefix}${unavailable} ${description}${note}`;
+}
+
+function availabilityState(descriptor: {
+  available: boolean;
+  unavailableReason?: string;
+  contextualNote?: string;
+}): AgentTool["state"] {
+  return {
+    available: descriptor.available,
+    ...(descriptor.unavailableReason !== undefined
+      ? { unavailableReason: descriptor.unavailableReason }
+      : {}),
+    ...(descriptor.contextualNote !== undefined ? { note: descriptor.contextualNote } : {}),
+  };
 }
 
 export function createAgentToolset(
@@ -116,11 +180,13 @@ export function createAgentToolset(
   }
   const confirmationsMode =
     options.confirmations ?? (options.topology === "remote" ? "two-phase" : "wait");
+  const descriptionIncludesState = options.descriptionIncludesState ?? true;
   const listeners = new Set<(tools: AgentTool[]) => void>();
   const pendingWaits = new Set<AbortController>();
   let disposed = false;
   let cachedVersion: string | undefined;
   let cachedTools: AgentTool[] | undefined;
+  let cachedWireNames: ReadonlyMap<string, string> = new Map();
   let cachedSignature: string | undefined;
 
   /** Wait for a confirmation, abortable by dispose (AS-TOPO-003, D26).
@@ -178,43 +244,62 @@ export function createAgentToolset(
     return result;
   }
 
-  function buildDirectTools(): AgentTool[] {
+  function buildDirectTools(): { tools: AgentTool[]; wireNames: ReadonlyMap<string, string> } {
     const snapshot = registry.snapshot({
       consumer: options.consumer,
       ...(options.scope ? { scope: options.scope } : {}),
       includeUnavailable: true,
     });
-    const tools: AgentTool[] = [];
+
+    interface PendingTool {
+      wire: WireNameEntry;
+      entry: CatalogEntry;
+      prefix: string;
+      description: string;
+      inputSchema: JsonSchema;
+      state: AgentTool["state"];
+    }
+    const pending: PendingTool[] = [];
 
     const push = (
       capabilityId: string,
       kind: CatalogEntry["kind"],
       registrationId: string,
       instanceId: string | undefined,
+      prefix: string,
       description: string,
       inputSchema: JsonSchema,
+      state: AgentTool["state"],
       nameSuffix?: string,
     ): void => {
-      const entry: CatalogEntry = {
-        capabilityId,
-        registrationId,
-        ...(instanceId !== undefined ? { instanceId } : {}),
-        surfaceVersion: snapshot.surfaceVersion,
-        kind,
-      };
-      tools.push({
+      const suffix = nameSuffix ?? instanceId;
+      pending.push({
         // Providers require unique tool names: multi-instance capabilities
         // are disambiguated with an `_at_<instance>` suffix (docs/09).
-        name: encodeWireNameForInstance(capabilityId, nameSuffix ?? instanceId),
+        wire: { id: capabilityId, ...(suffix !== undefined ? { instanceId: suffix } : {}) },
+        entry: {
+          capabilityId,
+          registrationId,
+          ...(instanceId !== undefined ? { instanceId } : {}),
+          surfaceVersion: snapshot.surfaceVersion,
+          kind,
+        },
+        prefix,
         description,
         inputSchema,
-        execute: (input, call) => invokeThroughSurface(entry, input, call.toolCallId),
+        state,
       });
     };
 
+    // One pre-pass instead of a filter() per component: at 300 mounted
+    // components the quadratic version cost ~90k comparisons per projection.
+    const typeCounts = new Map<string, number>();
     for (const component of snapshot.components) {
-      const multiInstance =
-        snapshot.components.filter((c) => c.type === component.type).length > 1;
+      typeCounts.set(component.type, (typeCounts.get(component.type) ?? 0) + 1);
+    }
+
+    for (const component of snapshot.components) {
+      const multiInstance = (typeCounts.get(component.type) ?? 0) > 1;
       const instanceId = multiInstance ? component.instanceId : undefined;
       for (const obs of component.observations) {
         push(
@@ -222,8 +307,10 @@ export function createAgentToolset(
           "observation",
           component.registrationId,
           instanceId,
-          `${describePrefix("view", "read", "never", obs.available, obs.unavailableReason)} ${obs.description}`,
+          describePrefix("view", "read", "never"),
+          obs.description,
           EMPTY_INPUT_SCHEMA,
+          availabilityState(obs),
         );
       }
       for (const act of component.actions) {
@@ -232,8 +319,10 @@ export function createAgentToolset(
           "action",
           component.registrationId,
           instanceId,
-          `${describePrefix("view", act.effect, act.confirmation, act.available, act.unavailableReason)} ${act.description}`,
+          describePrefix("view", act.effect, act.confirmation),
+          act.description,
           act.inputSchema,
+          availabilityState(act),
         );
       }
     }
@@ -248,14 +337,30 @@ export function createAgentToolset(
         "procedure",
         proc.registrationId,
         undefined,
-        `${describePrefix("domain", proc.effect, proc.confirmation, proc.available, proc.unavailableReason)} ${proc.description}`,
+        describePrefix("domain", proc.effect, proc.confirmation),
+        // The stable half only: a contextual note travels in `state.note`.
+        stableDescriptionOf(proc),
         proc.inputSchema,
+        availabilityState(proc),
         needsSuffix
           ? (proc.context?.instanceId ?? proc.registrationId.replace(/[^A-Za-z0-9_-]/g, ""))
           : undefined,
       );
     }
-    return tools;
+
+    // Uniqueness is a catalog property, not a per-name one (AS-WIRE-006).
+    const assignment = assignWireNames(pending.map((p) => p.wire));
+    const tools = pending.map((p, i) => ({
+      name: assignment.names[i]!,
+      description: descriptionIncludesState
+        ? legacyDescription(p.prefix, p.description, p.state)
+        : `${p.prefix} ${p.description}`,
+      inputSchema: p.inputSchema,
+      state: p.state,
+      execute: (input: JsonValue, call: { toolCallId?: string }) =>
+        invokeThroughSurface(p.entry, input, call.toolCallId),
+    }));
+    return { tools, wireNames: assignment.byName };
   }
 
   function buildMetaTools(): AgentTool[] {
@@ -264,7 +369,9 @@ export function createAgentToolset(
         consumer: options.consumer,
         ...(options.scope ? { scope: options.scope } : {}),
       });
-    return [
+    // The three verbs are always callable; per-capability availability lives in
+    // the `surface_discover` payload, where the model actually reads it.
+    const verbs: Array<Omit<AgentTool, "state">> = [
       {
         name: "surface_discover",
         description:
@@ -328,7 +435,8 @@ export function createAgentToolset(
       },
       {
         name: "surface_act",
-        description: "[meta] Invoke an action or procedure by capabilityId.",
+        description:
+          "[meta] Invoke an action or procedure by capabilityId. Echo the surfaceVersion you discovered so a surface that changed underneath a destructive plan is rejected rather than executed.",
         inputSchema: {
           type: "object",
           properties: {
@@ -337,6 +445,7 @@ export function createAgentToolset(
             input: {},
             invocationId: { type: "string" },
             confirmationId: { type: "string" },
+            surfaceVersion: { type: "string" },
           },
           required: ["capabilityId"],
           additionalProperties: false,
@@ -348,17 +457,21 @@ export function createAgentToolset(
             input?: JsonValue;
             invocationId?: string;
             confirmationId?: string;
+            surfaceVersion?: string;
           };
           const snapshot = snapshotFor();
           const registrationId = findRegistrationId(snapshot, req.capabilityId, req.instanceId);
           // One execution path with direct mode: same resolution, same
-          // staleness binding, same wait-mode confirmation retry (D26).
+          // staleness binding, same wait-mode confirmation retry (D26). A
+          // direct tool carries the version of the catalog it was built from;
+          // the equivalent here is the version the model discovered, so it is
+          // taken from the caller when supplied (AS-META-004).
           return invokeThroughSurface(
             {
               capabilityId: req.capabilityId,
               ...(registrationId !== undefined ? { registrationId } : {}),
               ...(req.instanceId !== undefined ? { instanceId: req.instanceId } : {}),
-              surfaceVersion: snapshot.surfaceVersion,
+              surfaceVersion: req.surfaceVersion ?? snapshot.surfaceVersion,
               kind: "action",
             },
             req.input,
@@ -371,6 +484,7 @@ export function createAgentToolset(
         },
       },
     ];
+    return verbs.map((verb) => ({ ...verb, state: { available: true } }));
   }
 
   function computeTools(): AgentTool[] {
@@ -380,14 +494,21 @@ export function createAgentToolset(
     }
     const version = registry.getVersion();
     if (cachedTools && cachedVersion === version) return cachedTools;
-    cachedTools = buildDirectTools();
+    const built = buildDirectTools();
+    cachedTools = built.tools;
+    cachedWireNames = built.wireNames;
     cachedVersion = version;
     return cachedTools;
   }
 
+  /**
+   * Includes `state`: with `descriptionIncludesState: false` the definitions
+   * are byte-identical across an availability flip, and a host that re-renders
+   * its state block on `subscribe` would otherwise never hear about it.
+   */
   function signatureOf(tools: AgentTool[]): string {
     return JSON.stringify(
-      tools.map((t) => [t.name, t.description, t.inputSchema]),
+      tools.map((t) => [t.name, t.description, t.inputSchema, t.state]),
     );
   }
 
@@ -417,6 +538,11 @@ export function createAgentToolset(
       const tools = computeTools();
       cachedSignature ??= signatureOf(tools);
       return tools;
+    },
+    wireNameMap() {
+      if (mode === "meta") return new Map();
+      computeTools();
+      return cachedWireNames;
     },
     subscribe(listener) {
       listeners.add(listener);

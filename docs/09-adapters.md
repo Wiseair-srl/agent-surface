@@ -33,7 +33,7 @@ Normative duties of every adapter:
 
 ## Wire names
 
-Provider tool-name alphabets are restricted (typically `[a-zA-Z0-9_-]`, length-capped). Canonical codec (Draft):
+Provider tool-name alphabets are restricted (typically `[a-zA-Z0-9_-]`, length-capped at **64 characters**). Canonical codec:
 
 ```text
 encode(id): ":" → "_"    "." → "__"          e.g. view:devices.table.selectRows
@@ -42,7 +42,14 @@ decode(name): first "_" not part of "__" splits the plane; "__" → "."
 ```
 
 - Reversible because the id grammar forbids `_` everywhere ([01 §grammar](01-concepts.md#canonical-id-grammar-draft)).
-- Names longer than 64 chars: truncate to 56 + `_` + 7-char hash of the full id; the adapter's id↔name map resolves these (decode alone no longer suffices — the map is authoritative anyway, rule 7).
+- **The 64-char budget is enforced, never advisory** (`AS-WIRE-004`, D30). A name that would exceed it is *shortened*: the kept prefix, the marker `_0_`, and a hash of the full id — 54 + 3 + 7 = 64. Deep feature hierarchies plus the `_at_<instanceId>` suffix reach this routinely at application scale (`view:billing.invoices.table.filters.setSelectedRange` in two instances is 73 characters unshortened).
+- **Shortening is deterministic** for a given id (`AS-WIRE-005`) and **collision-checked across the emitted catalog** (`AS-WIRE-006`): two entries that would land on the same name are both re-encoded at a longer hash, so the outcome depends on the set of capabilities and not on the order they were projected in. `assignWireNames(entries)` in core does this for any adapter that builds a catalog.
+- **`decodeWireName` refuses what it cannot reverse.** Shortened names and `_at_<instanceId>` names return `undefined`, as does anything that does not re-encode byte-identically. Consult `toolset.wireNameMap()` (`AS-WIRE-007`) — it is authoritative, and rule 7 already required keeping it. Returning a plausible-but-wrong id is worse than returning nothing: the canonical id *is* the audit identity, and a host that degrades it to the wire name loses the one thing this library guarantees about a call.
+
+```ts
+const canonicalId = toolset.wireNameMap().get(toolCall.name);
+// NOT: decodeWireName(toolCall.name) ?? toolCall.name  ← silent identity loss
+```
 
 ## Embedded toolset adapter (Draft)
 
@@ -76,6 +83,44 @@ const result = await tool.execute(block.input, { toolCallId: block.id });
 
 Mid-conversation surface changes: tools are re-listed **between turns**; a call targeting a removed capability inside a turn fails with the appropriate staleness error, which the model handles via `retry: "after-refresh"` — by design there is no attempt to mutate a provider's tool list mid-turn.
 
+### Rendering capability state
+
+Tool definitions sit at the **front of the provider's cached prompt prefix**. Any byte that changes between steps invalidates the whole conversation behind it, and availability changes every time the user clicks. So the toolset hands back the two halves separately (D28) and the host places each where it belongs:
+
+```ts
+const toolset = createAgentToolset(registry, {
+  consumer: { id: "copilot-panel", kind: "embedded" },
+  topology: "embedded",
+  descriptionIncludesState: false,        // opt into the split
+});
+
+// Front of the prompt — stable across steps, cacheable.
+const providerTools = toolset.tools().map((t) => ({
+  name: t.name,
+  description: t.description,
+  input_schema: t.inputSchema,
+}));
+
+// End of the prompt — re-rendered every step, cheap to invalidate.
+function stateBlock(): string {
+  const lines = toolset.tools().flatMap((t) => {
+    const bits = [
+      t.state.available ? undefined : `unavailable: ${t.state.unavailableReason ?? "not right now"}`,
+      t.state.note,
+    ].filter(Boolean);
+    return bits.length > 0 ? [`- ${t.name}: ${bits.join(" · ")}`] : [];
+  });
+  return lines.length > 0 ? `Current capability state:\n${lines.join("\n")}` : "";
+}
+```
+
+Normative points:
+
+- **The `[currently unavailable: …]` signal is not optional, it moved.** A host that adopts the split and renders nothing loses it from the model's view, and the model starts planning steps it cannot take. That migration cost is the entire reason `descriptionIncludesState` defaults to `true` for a minor.
+- "Authority hides, state discloses" (D12) is unchanged. Hidden capabilities still have no tool; disclosed-but-unavailable ones still carry their reason — in `state`, where a host can put it in a block it is willing to invalidate.
+- `subscribe` fires on state-only changes too, so the trailing block can be re-rendered even when the definitions are byte-identical.
+- `state.note` carries a procedure reference's contextual `describe()` output ([05 §snapshot-descriptor](05-orpc-integration.md#snapshot-descriptor)). It is one string; a host that wants structure should read `snapshot.procedures[].boundFields` directly.
+
 ### Confirmation topology
 
 `createAgentToolset` requires a declared topology (or an explicit `confirmations` mode); omitting both throws. The mapping and its consequences (D26, [18 §correction 6](18-spec-corrections-rfc.md#correction-6--confirmation-mode-is-declared-by-topology-never-defaulted-globally-d26)):
@@ -87,25 +132,39 @@ Mid-conversation surface changes: tools are re-listed **between turns**; a call 
 
 A remote adapter MAY opt into `wait` explicitly — it then owns its transport-timeout story and MUST bound the wait below the transport's own timeout. Recovery after reconnect: re-snapshot; a confirmation approved while disconnected is retried by id within its TTL, an expired one restarts the cycle (`CONFIRMATION_INVALID {reason:"expired"}` → fresh `CONFIRMATION_REQUIRED`). Shutdown is deterministic: `toolset.dispose()` aborts in-flight wait-mode waits (the pending `CONFIRMATION_REQUIRED` result is returned as-is); `registry.dispose()` expires all pending records.
 
-### Meta-tools mode (Experimental)
+### Choosing a mode
+
+| Catalog per route | Mode | Why |
+|---|---|---|
+| up to ~100 capabilities | `direct` | Provider-native input typing and one tool per capability; the model picks accurately and the tool block is affordable. |
+| ~100–200 | `direct` with `scope` | Bound the catalog to the route's own component types. A tool that does not exist cannot be mis-selected, and the floor is a boundary rather than a filter. |
+| beyond ~200 | `meta` | Tool-block size stops tracking the surface (`AS-META-005`), and tool-selection accuracy stops degrading on a flat list of hundreds. Costs one round trip before the first act. |
+
+These are starting points from catalog-size measurements, not thresholds the library enforces; a host that measures its own model's behavior should trust that instead. Automatic switching remains deliberately unspecified (OQ-9).
+
+### Meta-tools mode
 
 For large surfaces, three fixed tools replace the per-capability catalog, trading provider-native input typing for a constant tool count and lazy discovery:
 
 ```text
 surface_discover({ scope? })                → snapshot catalog (JSON)
 surface_read({ capabilityId, instanceId? }) → observation output
-surface_act({ capabilityId, instanceId?, input, invocationId?, confirmationId? })
+surface_act({ capabilityId, instanceId?, input,
+              invocationId?, confirmationId?, surfaceVersion? })
                                             → action/procedure result
 ```
 
-Inputs are validated by the registry exactly as in direct mode (the JSON Schemas ride in the discover payload instead of the tool definitions). Default remains `direct`; a future heuristic ("switch above N capabilities") is deliberately not specified yet — measure first.
+Inputs are validated by the registry exactly as in direct mode (the JSON Schemas ride in the discover payload instead of the tool definitions). Default remains `direct`.
+
+**Supported since 0.2** (D29). It graduated on the conformance suite that pins what makes it different — `AS-META-001` (a model scope narrows the configured floor, never widens it), `AS-META-002` (a disjoint scope yields empty, never the floor), `AS-META-003` (a truncated `surface_discover` payload is marked and still a valid snapshot), `AS-META-004` (`surface_act` keeps direct-mode confirmation and staleness semantics), `AS-META-005` (tool-block size is invariant in the number of registered capabilities). An experimental marker on the library's only answer for a large catalog meant no production host could adopt it in the situation it was built for.
 
 Normative parity rules (`AS-ADAPTER-004`) — meta mode is a different *projection*, never a different *protocol*:
 
 - **Resolution is identical.** `surface_read`/`surface_act` resolve `(capabilityId, instanceId?)` through the same registry path as a direct tool. When the pair does not resolve to exactly one live registration, the adapter MUST omit `registrationId` and let the registry answer: `AMBIGUOUS_INSTANCE` (with the instance list, `retry:"with-changes"`), `CAPABILITY_NOT_FOUND`, or `COMPONENT_UNMOUNTED`. An adapter MUST NOT substitute a placeholder id — an empty string reads as "this exact registration", which returns `STALE_CAPABILITY {retry:"after-refresh"}` and loops the agent against an unchanged surface.
-- **One execution path.** Both verbs go through the same invoke helper as direct tools, so staleness binding, dedupe identity, and the wait-mode confirmation retry (D26) behave the same. `surface_act` accepts `invocationId` (transport retry identity) and `confirmationId` (two-phase re-submission) from the caller.
-- **The catalog is constant**, so `toolset.subscribe` never fires in meta mode — there is nothing that could change. Agents notice surface changes by re-running `surface_discover` and comparing `surfaceVersion`; a stale `surfaceVersion` on an act is rejected as usual. This is the one ergonomic cost of the mode, stated rather than papered over.
-- **`budget` is meta-only** ([03 §snapshot](03-core-api.md#snapshot)). In `surface_discover` the `truncated: {droppedComponents}` marker travels in the payload the model reads, so truncation is visible to the party affected by it. Passing a budget with `mode:"direct"` throws at construction: there it would drop tools from the catalog with no marker anywhere, and a silent cap is worse than a loud refusal.
+- **One execution path.** Both verbs go through the same invoke helper as direct tools, so staleness binding, dedupe identity, and the wait-mode confirmation retry (D26) behave the same. `surface_act` accepts `invocationId` (transport retry identity), `confirmationId` (two-phase re-submission) and `surfaceVersion` from the caller.
+- **Staleness needs the version echoed back** (`AS-META-004`). A direct tool carries the `surfaceVersion` of the catalog it was built from, so a destructive call planned against a surface that has since moved fails `STALE_CAPABILITY`. `surface_act` re-resolves per call, so the equivalent token is the `surfaceVersion` the model read from `surface_discover` — it MUST echo it for destructive and external-side-effect calls, and the tool description says so. Omitted, the call binds to the live surface: correct for `local-state` work, and the reason a scoped `direct` catalog remains the stronger choice for a least-trusted peer.
+- **The catalog is constant**, so `toolset.subscribe` never fires in meta mode — there is nothing that could change. Agents notice surface changes by re-running `surface_discover` and comparing `surfaceVersion`. This is the one ergonomic cost of the mode, stated rather than papered over.
+- **`budget` is meta-only** ([03 §snapshot](03-core-api.md#snapshot)). In `surface_discover` the `truncated: {droppedComponents}` marker travels in the payload the model reads, so truncation is visible to the party affected by it. Passing a budget with `mode:"direct"` throws at construction: there it would drop tools from the catalog with no marker anywhere, and a silent cap is worse than a loud refusal. The option stays **Experimental** (its shape is still open, D6/OQ-4) even though the mode is supported; what `AS-META-003` pins is that when a budget *is* set, the payload says so and remains a valid snapshot.
 
 ### Scope is discovery-only
 
@@ -153,6 +212,7 @@ Explicitly **not** part of the core or of v0.x. If ever built, it would be a sep
 - [ ] Sends `registrationId` (+ `surfaceVersion` for dangerous calls) on invoke.
 - [ ] Stable per-attempt `invocationId` (transport retries dedupe); never reused for a different request; `INVOCATION_CONFLICT` treated as a bug signal, not retried by token-stripping.
 - [ ] Error mapping preserves `code`/`retry`/`details`; confirmation topology declared (`embedded`/`remote` or explicit mode, D26) and wired to host UI; dispose settles pending waits.
-- [ ] Wire-name codec + per-version id map.
+- [ ] Wire-name codec + per-version id map — reverse names through `wireNameMap()`, never by string surgery (D30).
+- [ ] Capability state rendered somewhere the model reads it, if the adapter opts into `descriptionIncludesState: false` (D28).
 - [ ] `stop()` fully unsubscribes; safe to start/stop repeatedly (HMR).
 - [ ] Covered by tests via `createTestSurface` with your consumer kind.

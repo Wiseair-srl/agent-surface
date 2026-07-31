@@ -21,6 +21,7 @@ No new surface area. Everything here closes a gap between what the docs promise 
 - **Meta-tools parity** (`AS-ADAPTER-004/005`, D27): identical resolution to direct mode, adapter scope as a floor, meta-only budgets. *Done.*
 - **D25 concurrency groups** (`AS-CONC-001`): the last requirement that was `specified` rather than `implemented`. *Done — the manifest is now 77/77.*
 - **Support matrix**: Node 20.19/22 × React 18.2/19, out-of-workspace ESM import, Vite bundle smoke, advisory `typescript@next`, Valibot alongside Zod through Standard Schema. *Done.*
+- **Catalog scale** ([19](19-catalog-scale-rfc.md), D28–D30), raised by the first host at ~300 capabilities: capability state as structured data so a provider's prompt prefix survives a click (`AS-CACHE-001…004`); `mode:"meta"` graduated to supported on a conformance suite (`AS-META-001…005`); wire names enforced within the provider's 64-char budget, collision-checked per catalog, and reversed through `wireNameMap()` (`AS-WIRE-004…007`). *Done.*
 - Remaining before tagging: higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7).
 
 ### v0.3 — adoption and enforcement

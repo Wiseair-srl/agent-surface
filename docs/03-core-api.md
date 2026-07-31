@@ -254,6 +254,15 @@ export interface RegistryOptions {
   /** Route descriptor for snapshots (host wires its router here). */
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
+  /**
+   * D28 compatibility. `true` (default, for one minor) folds a procedure
+   * reference's contextual `describe()` output into
+   * `AgentProcedureDescriptor.description`, as 0.1 did. `false` keeps the two
+   * apart: `description` is then stable across snapshots and the live text is
+   * read from `contextualNote`. Populated either way; the default flips in a
+   * later minor and the flag is removed the one after.
+   */
+  snapshotMergesContextualNote?: boolean;
 }
 
 export interface AgentRouteInfo { path: string; params?: Record<string, string>; }
@@ -435,6 +444,7 @@ Snapshot semantics (normative):
 - `snapshot()` is **synchronous and side-effect free**: it MUST NOT run `read()` handlers, MUST NOT await, and discovery-time policy evaluation MUST be synchronous (async authority checks belong to invocation). This is why the shape is a catalog, not a state dump (D5).
 - Descriptors are deep-frozen plain JSON; `internal` metadata MUST NOT appear anywhere in a snapshot (tested).
 - Ordering: components sorted by (`priority` desc, `type`, `instanceId`) — deterministic, never DOM- or mount-order-dependent.
+- **Stable and volatile text are separable** (D28). A procedure reference's contextual `describe()` output is `contextualNote`, always populated; `description` is the manifest text. `snapshotMergesContextualNote: true` (the 0.2 default) additionally folds the note into `description` for 0.1 readers. `stableDescriptionOf(descriptor)` returns the note-free description in either mode, so no consumer has to parse a string it did not compose.
 - Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected for v0.1 (adds traversal API surface with no consumer that needs it yet).
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
 
@@ -600,7 +610,12 @@ The provider-neutral projection used by the embedded adapter ([09-adapters.md](0
 ```ts
 export interface AgentToolsetOptions {
   consumer: AgentConsumer;
-  /** "direct": one tool per capability. "meta": 3 generic tools. [meta: Experimental] */
+  /**
+   * "direct": one tool per capability — provider-native input typing, catalog
+   * size linear in the surface. "meta": three fixed tools with lazy discovery —
+   * constant tool-block size, one extra round trip before the first act.
+   * Default "direct"; selection guide in 09 §choosing-a-mode (D29).
+   */
   mode?: "direct" | "meta";
   /**
    * Loop topology (D26). Determines the confirmation-mode default:
@@ -629,22 +644,56 @@ export interface AgentToolsetOptions {
    * tools with no `truncated` marker for anyone to see.
    */
   budget?: { maxComponents?: number; maxBytes?: number };
+  /**
+   * D28 compatibility. `true` (default, for one minor) composes availability
+   * and the contextual note into `description`, as 0.1 did. `false` keeps
+   * `description` free of live state, so the provider tool block is byte-stable
+   * across steps and prompt-prefix caching survives; the host renders
+   * `AgentTool.state` outside the tool definitions
+   * (09 §rendering-capability-state). `state` is populated either way.
+   */
+  descriptionIncludesState?: boolean;
 }
 
 export interface AgentTool {
-  /** Wire-safe name (see 09 §wire-names), ≤ 64 chars. */
+  /** Wire-safe name (see 09 §wire-names), ≤ 64 chars, unique in this catalog. */
   name: string;
-  description: string;                   // includes [view|domain] + effect prefix
+  /**
+   * Plane + effect + confirmation prefix, then the authored description.
+   * With `descriptionIncludesState: false` it contains NO live state — safe in
+   * a provider tool block with prefix caching across steps.
+   */
+  description: string;
   inputSchema: JsonSchema;
+  /**
+   * Volatile: re-derived on every snapshot. Hosts render this OUTSIDE the tool
+   * block (e.g. a trailing system message) so availability stays honest without
+   * invalidating the cached prefix (D28).
+   */
+  state: {
+    available: boolean;
+    unavailableReason?: string;
+    /** Live text contributed by a contextual binding's describe(). */
+    note?: string;
+  };
   execute(input: JsonValue, call: { toolCallId?: string }): Promise<AgentInvocationResult>;
 }
 
 export interface AgentToolset {
   tools(): AgentTool[];                  // recomputed per surface version
   /**
-   * Fires when tools() would return a different catalog. Never fires in
-   * "meta" mode: the 3-tool catalog is constant, and agents re-discover by
-   * comparing `surfaceVersion` (docs/09 §meta-tools-mode).
+   * wireName → canonical capability id, for the catalog tools() last built.
+   * Authoritative: shortened names are not decodable by string surgery, so a
+   * host MUST consult this rather than reversing names itself (D30). Empty in
+   * "meta" mode, whose three tool names are not capability ids.
+   */
+  wireNameMap(): ReadonlyMap<string, string>;
+  /**
+   * Fires when tools() would return a different catalog — including a change
+   * confined to `state`, so a host re-rendering its state block still hears
+   * about an availability flip that leaves the definitions byte-identical.
+   * Never fires in "meta" mode: the 3-tool catalog is constant, and agents
+   * re-discover by comparing `surfaceVersion` (docs/09 §meta-tools-mode).
    */
   subscribe(listener: (tools: AgentTool[]) => void): Unsubscribe;
   dispose(): void;

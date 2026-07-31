@@ -213,6 +213,11 @@ export function AgentSurfaceChatBridge() {
         ),
       }),
     });
+    // A remote loop re-projects per turn and ships the result to a provider,
+    // so it is the topology D28 was written for: pass
+    // `descriptionIncludesState: false` above and render `t.state` into the
+    // system message instead, or every availability flip re-bills the cached
+    // prefix ([09 §rendering-capability-state](09-adapters.md#rendering-capability-state)).
     return () => { unregister(); toolset.dispose(); };
   }, [aui, registry]);
 
