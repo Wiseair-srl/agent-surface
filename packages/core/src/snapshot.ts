@@ -83,17 +83,10 @@ export interface AgentProcedureDescriptor {
   procedureId: string; // "domain:devices.disable"
   /**
    * The manifest description. Stable across snapshots — the contextual
-   * `describe()` output is `contextualNote`, not part of this string, unless
-   * the registry was created with `snapshotMergesContextualNote: true`
-   * (the 0.2 default, removed in a later minor — D28).
+   * `describe()` output is `contextualNote` and is never folded in here (D28).
    */
   description: string;
-  /**
-   * Volatile: this snapshot's contextual `describe()` output, if any. Always
-   * populated, in both merge modes, so a host can migrate before the default
-   * moves. Use {@link stableDescriptionOf} to recover the note-free
-   * description without parsing.
-   */
+  /** Volatile: this snapshot's contextual `describe()` output, if any. */
   contextualNote?: string;
   /** Agent-facing (reduced) input schema per binding rule 1 (docs/05). */
   inputSchema: JsonSchema;
@@ -116,23 +109,6 @@ export type AgentCapabilityDescriptorUnion =
   | AgentProcedureDescriptor;
 
 const DEFAULT_CONSUMER: AgentConsumer = { id: "anonymous", kind: "embedded" };
-
-/**
- * The note-free description of a descriptor, whichever way the registry was
- * configured to compose it (D28). The merge rule is `${description} ${note}`,
- * so the split is exact — no host ever has to parse a prefix it did not write.
- */
-export function stableDescriptionOf(descriptor: {
-  description: string;
-  contextualNote?: string;
-}): string {
-  const note = descriptor.contextualNote;
-  if (!note) return descriptor.description;
-  if (descriptor.description === note) return "";
-  return descriptor.description.endsWith(` ${note}`)
-    ? descriptor.description.slice(0, -(note.length + 1))
-    : descriptor.description;
-}
 
 function matchesScope(type: string, scope: string[] | undefined): boolean {
   if (!scope || scope.length === 0) return true;
@@ -274,13 +250,12 @@ export function createSnapshot(
           /* describe() must not break the snapshot */
         }
       }
-      const description =
-        contextualNote && internals.mergesContextualNote
-          ? `${proc.baseDescription} ${contextualNote}`.trim()
-          : proc.baseDescription;
       procedures.push({
         procedureId: proc.capabilityId,
-        description,
+        // Never merged with `contextualNote` (D28): the manifest text is the
+        // stable half, and folding volatile text in is what churned the
+        // provider's cached prompt prefix.
+        description: proc.baseDescription,
         ...(contextualNote !== undefined ? { contextualNote } : {}),
         inputSchema: proc.reducedInputSchema,
         ...(proc.outputJsonSchema ? { outputSchema: proc.outputJsonSchema } : {}),

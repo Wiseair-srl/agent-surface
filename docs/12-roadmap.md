@@ -26,7 +26,7 @@ No new surface area. Everything here closed a gap between what the docs promised
 
 The first correction cycle driven by a host rather than by self-review: a dashboard at ~300 domain capabilities and 40+ mounted view capabilities per route ([19](19-catalog-scale-rfc.md), D28–D30). Manifest 77 → 90/90.
 
-- **Capability state is data, not description text** (`AS-CACHE-001…004`, D28). Tool definitions are the provider's cached prompt prefix; folding `available` into the description re-billed the conversation on every click. `AgentTool.state` and `AgentProcedureDescriptor.contextualNote`, behind compatibility flags intended to last one minor — they have not flipped yet, see [v0.4](#v04--discovery-honesty--shipped-2026-07-31).
+- **Capability state is data, not description text** (`AS-CACHE-001…004`, D28). Tool definitions are the provider's cached prompt prefix; folding `available` into the description re-billed the conversation on every click. `AgentTool.state` and `AgentProcedureDescriptor.contextualNote`, behind compatibility flags intended to last one minor — removed in [v0.5](#v05--the-split-is-the-only-composition) without ever flipping.
 - **`mode:"meta"` graduated to supported** (`AS-META-001…005`, D29) on a suite pinning what makes it different. An Experimental marker on the library's only answer for an oversized catalog made it unreachable exactly where it was needed.
 - **Wire names fit the provider budget and keep their identity** (`AS-WIRE-004…007`, D30): collision-checked per emitted catalog, reversed through `wireNameMap()`, and `decodeWireName` now refuses rather than returning a plausible wrong id.
 
@@ -39,15 +39,22 @@ One decision, cut on its own rather than held for the D28 default flip that this
 - **Discovery says what it withheld** (`AS-META-006`, D31): `surface_discover` marks a scope the configured floor refused, so an empty payload is no longer indistinguishable from an empty surface, and the three meta verbs describe their parameters. Manifest 90 → 91/91.
 - `core`'s size budget was deliberately revised 18 → 19 kB (measured 18.33 kB) — the parameter descriptions are the change, so the bytes are payload the model reads ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
 
-> [!IMPORTANT]
-> **The D28 compatibility flags did not flip in 0.4, and the schedule has now slipped twice.** [19 §C4](19-catalog-scale-rfc.md) planned introduce-0.2 → flip-0.3 → remove-0.4. D28 actually landed in 0.3, and 0.4 shipped D31 alone, so the live schedule is **flip in 0.5, remove in 0.6** — three minors of `descriptionIncludesState`/`snapshotMergesContextualNote` defaulting to 0.1 behavior against a D28 that says "one minor". Either flip in 0.5 or amend D28; do not let it slip a third time by default. The 19 kB budget holds until removal, since flipping frees nothing.
+> [!NOTE]
+> **The D28 compatibility flags did not flip here.** They were removed outright in [v0.5](#v05--the-split-is-the-only-composition) instead — the schedule had already slipped twice and the deferred migration was buying nothing pre-1.0.
 
-### v0.5 — adoption and enforcement
+### v0.5 — the split is the only composition
 
-- **The D28 default flip**, per the note above: `descriptionIncludesState` and `snapshotMergesContextualNote` default to `false`, with removal following in 0.6.
+The D28 migration ended by deletion rather than by the planned flip-then-remove. The library is pre-1.0; two code paths for one composition were carrying a migration no consumer had asked for.
+
+- **Both compatibility flags removed**: `AgentToolsetOptions.descriptionIncludesState` and `RegistryOptions.snapshotMergesContextualNote`. `AgentTool.description` never carries live state, and `AgentProcedureDescriptor.description` never carries a contextual note. Hosts render `AgentTool.state` / `contextualNote` themselves ([09 §rendering-capability-state](09-adapters.md#rendering-capability-state)).
+- **`stableDescriptionOf` removed** — it existed only to recover the note-free description across the two modes, and `description` now *is* that string.
+- `core` back to **18.12 kB**, budget retightened 19 → 18.5 kB.
+
+### v0.6 — adoption and enforcement
+
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
 - CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
-- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2, 0.3 and 0.4.
+- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 through 0.5.
 - A tracked expiry for the advisory `typescript@next` job, which fails on a `.d.ts`-bundler incompatibility with TypeScript 7 rather than on our types ([17 §7.4](17-maintainer-directive.md) forbids leaving it allowed-to-fail untracked).
 - Browser matrix (Chromium/Firefox/WebKit) — deferred until it buys something: `webmcp` is the only browser-API surface and it is Experimental.
 - OQ-1 decided and implemented: the `orpc-agent` manifest source (overdue — it was due before M9, which has shipped).
@@ -78,4 +85,4 @@ Graduation criteria to Stable (all required): used by the example app and ≥1 r
 - pnpm workspace, Changesets, semver pre-releases (`0.x`), provenance-signed publishes.
 - Every package ships ESM + `.d.ts`, `sideEffects: false`, size-limit budget enforced in CI ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
 - CI matrix (live): Node 20.19/22 × React 18.2/19 with Strict Mode exercised inside the React suites; `typescript@next` advisory (`continue-on-error` — types are API here, but an upstream regression is not a release gate); Zod and Valibot through Standard Schema; out-of-workspace ESM import and a Vite bundle of the example app.
-- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.5 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
+- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.6 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.

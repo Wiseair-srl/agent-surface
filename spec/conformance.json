@@ -699,7 +699,7 @@
       "status": "implemented"
     },
     "AS-CACHE-001": {
-      "title": "Live state is absent from AgentTool.description when descriptionIncludesState is off",
+      "title": "Live state is absent from AgentTool.description",
       "source": "09-adapters.md#rendering-capability-state",
       "decision": "D28",
       "tests": [
@@ -726,7 +726,7 @@
       "status": "implemented"
     },
     "AS-CACHE-004": {
-      "title": "AgentProcedureDescriptor.description is free of contextual text when snapshotMergesContextualNote is false; contextualNote populated in both modes",
+      "title": "AgentProcedureDescriptor.description is always free of contextual text; contextualNote carries it",
       "source": "03-core-api.md#snapshot",
       "decision": "D28",
       "tests": [

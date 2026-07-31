@@ -1,7 +1,7 @@
 # 19 — Catalog Scale RFC (P1)
 
 > [!IMPORTANT]
-> **Status: Accepted, implemented in 0.2.** Raised by the first host to drive `@agent-surface/core` at production catalog size (a DPAS dashboard targeting ~300 domain capabilities and 40+ mounted view capabilities per route). Three corrections and one cleanup. C1 is a breaking change to `AgentTool`, gated behind a compatibility flag for one minor. Accepted as decision records **D28–D30** in [13](13-open-questions.md); requirements `AS-CACHE-001…004`, `AS-META-001…005`, `AS-WIRE-004…007` are in `spec/conformance.json`.
+> **Status: Accepted; implemented in 0.3 (C1's compatibility flags removed in 0.5 — see C4).** Raised by the first host to drive `@agent-surface/core` at production catalog size (a DPAS dashboard targeting ~300 domain capabilities and 40+ mounted view capabilities per route). Three corrections and one cleanup. C1 is a breaking change to `AgentTool`, gated behind a compatibility flag for one minor. Accepted as decision records **D28–D30** in [13](13-open-questions.md); requirements `AS-CACHE-001…004`, `AS-META-001…005`, `AS-WIRE-004…007` are in `spec/conformance.json`.
 >
 > Nothing here changes the surface's security model. Discovery shaping, wire-name encoding and description composition are all *presentation* concerns; `invoke` is untouched, and every SI-tagged test stands.
 >
@@ -188,7 +188,7 @@ That is O(n²) in mounted components, inside the per-step projection path. At 40
 ## Migration for hosts
 
 1. Adopt `wireNameMap()` in place of any local wire-name reversal. Unblocks C3 and removes a class of silent audit-identity loss. *(Independent; do first.)*
-2. Set `descriptionIncludesState: false`; render `state` into a trailing block outside the tool definitions. *(C1.)*
+2. Render `AgentTool.state` into a trailing block outside the tool definitions. *(C1. The `descriptionIncludesState` flag this step once named was removed in 0.5 — the split is now the only composition, so there is nothing to opt into and rendering `state` is the whole migration.)*
 3. Consider `mode: "meta"` if a scoped direct catalog still exceeds the provider's practical tool count. *(C2.)*
 
 ## Unresolved questions — as resolved on acceptance
@@ -198,6 +198,6 @@ That is O(n²) in mounted components, inside the per-step projection path. At 40
 3. **C2: does graduating `meta` freeze the `surface_discover` payload?** *It is the snapshot contract, versioned with it.* `surface_discover` returns `AgentSurfaceSnapshot` verbatim; no separate payload shape exists to version separately, and inventing one would be a second source of truth for the catalog. `AS-META-003` pins that a truncated payload is still a valid snapshot. `budget` itself stays Experimental (D6/OQ-4).
 4. **When does `descriptionIncludesState` flip?** *One minor after the deprecation warning,* as the RFC body says: the plan was 0.2 ships both flags defaulting to 0.1 behavior, 0.3 flips both defaults together, 0.4 removes them. A host that sets nothing gets one release with a warning before its model's view changes.
 
-   > [!WARNING]
-   > **Superseded by what shipped.** D28 landed in **0.3**, not the 0.2 this RFC was written against, and **0.4** shipped D31 alone without the flip. The live schedule is therefore **flip in 0.5, remove in 0.6** — which is three minors of default-to-0.1 behavior, not the one this answer promised. The intent (a host that sets nothing gets a warning release before its model's view changes) is intact; the *count* is not. Tracked in [12 §v0.4](12-roadmap.md).
+   > [!NOTE]
+   > **Resolved differently.** The schedule slipped twice — D28 landed in **0.3**, not the 0.2 this RFC was written against, and **0.4** shipped D31 alone — which would have made three minors of default-to-0.1 behavior against the one this answer promised. Rather than flip and then remove, **0.5 removed both flags outright**: the library is pre-1.0 and the deferred migration was buying nothing. The split is the only composition, and `stableDescriptionOf` was removed with them.
 5. **Could the flags be skipped entirely?** *No.* The package is public on npm and the repo's own hosts are not the only callers, so the availability text may be load-bearing for someone this repo cannot see. The migration burden is real — a host that adopts the split and renders nothing loses `[currently unavailable]` from the model's view — and that is exactly what a compatibility default is for. Cost is one minor of duplicated composition, all of it behind one branch.

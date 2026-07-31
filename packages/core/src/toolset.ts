@@ -8,7 +8,6 @@ import type {
   AgentSurfaceSnapshot,
 } from "./snapshot.js";
 import { assignWireNames, type WireNameEntry } from "./ids.js";
-import { stableDescriptionOf } from "./snapshot.js";
 import { randomBase62 } from "./utils.js";
 
 export interface AgentToolsetOptions {
@@ -48,15 +47,6 @@ export interface AgentToolsetOptions {
    * signal to anyone, so it is rejected rather than half-honored.
    */
   budget?: { maxComponents?: number; maxBytes?: number };
-  /**
-   * D28 compatibility flag. `true` (default through 0.4; flips in 0.5) composes
-   * availability and the contextual note into `description`, as 0.1 did.
-   * `false` keeps `description` free of live state, so the provider tool block
-   * is byte-stable across steps and prompt-prefix caching survives; the host
-   * renders `AgentTool.state` outside the tool definitions (docs/09
-   * §rendering-capability-state). `state` is populated either way.
-   */
-  descriptionIncludesState?: boolean;
 }
 
 export interface AgentTool {
@@ -64,8 +54,8 @@ export interface AgentTool {
   name: string;
   /**
    * Plane + effect + confirmation prefix, then the authored description.
-   * With `descriptionIncludesState: false` this contains NO live state — it is
-   * safe in a provider tool block with prompt-prefix caching across steps.
+   * Contains NO live state (D28), so it is safe in a provider tool block with
+   * prompt-prefix caching across steps.
    */
   description: string;
   inputSchema: JsonSchema;
@@ -133,19 +123,6 @@ function describePrefix(
   return `[${parts.join(" · ")}]`;
 }
 
-/** Pre-D28 composition, byte-identical to 0.1, kept behind the compat flag. */
-function legacyDescription(
-  prefix: string,
-  description: string,
-  state: AgentTool["state"],
-): string {
-  const unavailable = state.available
-    ? ""
-    : ` [currently unavailable${state.unavailableReason ? `: ${state.unavailableReason}` : ""}]`;
-  const note = state.note ? ` ${state.note}` : "";
-  return `${prefix}${unavailable} ${description}${note}`;
-}
-
 function availabilityState(descriptor: {
   available: boolean;
   unavailableReason?: string;
@@ -180,7 +157,6 @@ export function createAgentToolset(
   }
   const confirmationsMode =
     options.confirmations ?? (options.topology === "remote" ? "two-phase" : "wait");
-  const descriptionIncludesState = options.descriptionIncludesState ?? true;
   const listeners = new Set<(tools: AgentTool[]) => void>();
   const pendingWaits = new Set<AbortController>();
   let disposed = false;
@@ -339,7 +315,7 @@ export function createAgentToolset(
         undefined,
         describePrefix("domain", proc.effect, proc.confirmation),
         // The stable half only: a contextual note travels in `state.note`.
-        stableDescriptionOf(proc),
+        proc.description,
         proc.inputSchema,
         availabilityState(proc),
         needsSuffix
@@ -352,9 +328,7 @@ export function createAgentToolset(
     const assignment = assignWireNames(pending.map((p) => p.wire));
     const tools = pending.map((p, i) => ({
       name: assignment.names[i]!,
-      description: descriptionIncludesState
-        ? legacyDescription(p.prefix, p.description, p.state)
-        : `${p.prefix} ${p.description}`,
+      description: `${p.prefix} ${p.description}`,
       inputSchema: p.inputSchema,
       state: p.state,
       execute: (input: JsonValue, call: { toolCallId?: string }) =>
@@ -552,9 +526,9 @@ export function createAgentToolset(
   }
 
   /**
-   * Includes `state`: with `descriptionIncludesState: false` the definitions
-   * are byte-identical across an availability flip, and a host that re-renders
-   * its state block on `subscribe` would otherwise never hear about it.
+   * Includes `state`: the definitions are byte-identical across an
+   * availability flip, so a host that re-renders its state block on
+   * `subscribe` would otherwise never hear about it.
    */
   function signatureOf(tools: AgentTool[]): string {
     return JSON.stringify(

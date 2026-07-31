@@ -48,8 +48,11 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     const disable = toolByName(tools, "domain_devices__disable");
     expect(disable.description).toContain("[domain · destructive · requires confirmation]");
     // Unavailable (empty selection) is disclosed, not hidden — planning fuel.
-    expect(disable.description).toContain("currently unavailable");
-    expect(disable.description).toContain("Select at least one device first");
+    // It rides in `state`, never the description, so the tool block stays
+    // byte-stable across the flip (D28).
+    expect(disable.state.available).toBe(false);
+    expect(disable.state.unavailableReason).toBe("Select at least one device first");
+    expect(disable.description).not.toContain("currently unavailable");
   });
 
   it("agent-facing procedure schema is the REDUCED one (bound fields removed)", () => {
@@ -63,9 +66,7 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     const notifications: number[] = [];
     toolset.subscribe((tools) => notifications.push(tools.length));
 
-    expect(toolByName(toolset.tools(), "domain_devices__disable").description).toContain(
-      "currently unavailable",
-    );
+    expect(toolByName(toolset.tools(), "domain_devices__disable").state.available).toBe(false);
 
     // Selection becomes non-empty (lazy when() flip); a mutation bumps the
     // version, and the recomputed catalog reflects the fresh availability.
@@ -75,9 +76,7 @@ describe("embedded toolset adapter (docs/03 §toolset, docs/09)", () => {
     );
     await Promise.resolve(); // surface-changed microtask
     expect(notifications.length).toBeGreaterThan(0);
-    expect(toolByName(toolset.tools(), "domain_devices__disable").description).not.toContain(
-      "currently unavailable",
-    );
+    expect(toolByName(toolset.tools(), "domain_devices__disable").state.available).toBe(true);
     handle.unregister();
   });
 

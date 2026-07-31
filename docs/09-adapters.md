@@ -91,7 +91,6 @@ Tool definitions sit at the **front of the provider's cached prompt prefix**. An
 const toolset = createAgentToolset(registry, {
   consumer: { id: "copilot-panel", kind: "embedded" },
   topology: "embedded",
-  descriptionIncludesState: false,        // opt into the split
 });
 
 // Front of the prompt — stable across steps, cacheable.
@@ -116,7 +115,7 @@ function stateBlock(): string {
 
 Normative points:
 
-- **The `[currently unavailable: …]` signal is not optional, it moved.** A host that adopts the split and renders nothing loses it from the model's view, and the model starts planning steps it cannot take. That migration cost is the entire reason `descriptionIncludesState` defaults to `true` for a minor.
+- **The `[currently unavailable: …]` signal is not optional, it moved.** A host that renders nothing loses it from the model's view, and the model starts planning steps it cannot take. There is no opt-out: the split is the only composition since 0.5.
 - "Authority hides, state discloses" (D12) is unchanged. Hidden capabilities still have no tool; disclosed-but-unavailable ones still carry their reason — in `state`, where a host can put it in a block it is willing to invalidate.
 - `subscribe` fires on state-only changes too, so the trailing block can be re-rendered even when the definitions are byte-identical.
 - `state.note` carries a procedure reference's contextual `describe()` output ([05 §snapshot-descriptor](05-orpc-integration.md#snapshot-descriptor)). It is one string; a host that wants structure should read `snapshot.procedures[].boundFields` directly.
@@ -215,6 +214,6 @@ Explicitly **not** part of the core or of v0.x. If ever built, it would be a sep
 - [ ] Stable per-attempt `invocationId` (transport retries dedupe); never reused for a different request; `INVOCATION_CONFLICT` treated as a bug signal, not retried by token-stripping.
 - [ ] Error mapping preserves `code`/`retry`/`details`; confirmation topology declared (`embedded`/`remote` or explicit mode, D26) and wired to host UI; dispose settles pending waits.
 - [ ] Wire-name codec + per-version id map — reverse names through `wireNameMap()`, never by string surgery (D30).
-- [ ] Capability state rendered somewhere the model reads it, if the adapter opts into `descriptionIncludesState: false` (D28).
+- [ ] Capability state rendered somewhere the model reads it — `description` never carries it (D28).
 - [ ] `stop()` fully unsubscribes; safe to start/stop repeatedly (HMR).
 - [ ] Covered by tests via `createTestSurface` with your consumer kind.

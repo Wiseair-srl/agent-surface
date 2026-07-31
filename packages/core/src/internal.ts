@@ -158,8 +158,6 @@ export interface ObservationAdmission {
 export interface RegistryInternals {
   environment: AgentEnvironment;
   limits: AgentSurfaceLimits;
-  /** D28 compatibility: fold a procedure's contextual note into `description`. */
-  mergesContextualNote: boolean;
   surfaceId: string;
   version: number;
   registrations: Map<string, InternalRegistration>;
