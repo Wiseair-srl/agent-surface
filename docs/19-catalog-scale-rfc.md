@@ -126,6 +126,9 @@ Keep the `budget`-rejected-in-`direct`-mode guard exactly as it is. Throwing rat
 
 **Proposed requirements.** `AS-META-001`…`AS-META-005`, one per behavior above.
 
+> [!NOTE]
+> **Reversed in 0.7.** This correction shipped as written — `meta` was Supported from 0.2 through 0.6 — and was then returned to **Experimental** (D29). The five requirements above pin what the mode does *differently* from `direct`; none of them reaches the verbs' own envelope, and that is where 0.6 found two defects against a live model (D32, `AS-META-007/008`). The problem statement below still holds and is not what changed: an Experimental marker does discourage production adoption of the library's only large-catalog answer. What changed is the evidence — a suite covering the distinguishing behaviors was read here as proof the contract had settled, and it was not that.
+
 ---
 
 ## Correction 3 — Wire names must fit the provider budget (D30)
@@ -189,13 +192,13 @@ That is O(n²) in mounted components, inside the per-step projection path. At 40
 
 1. Adopt `wireNameMap()` in place of any local wire-name reversal. Unblocks C3 and removes a class of silent audit-identity loss. *(Independent; do first.)*
 2. Render `AgentTool.state` into a trailing block outside the tool definitions. *(C1. The `descriptionIncludesState` flag this step once named was removed in 0.5 — the split is now the only composition, so there is nothing to opt into and rendering `state` is the whole migration.)*
-3. Consider `mode: "meta"` if a scoped direct catalog still exceeds the provider's practical tool count. *(C2.)*
+3. Consider `mode: "meta"` if a scoped direct catalog still exceeds the provider's practical tool count. *(C2. Experimental again since 0.7 — opt in with a pinned version, per [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).)*
 
 ## Unresolved questions — as resolved on acceptance
 
 1. **C1: is `state.note` one string or a structured record?** *One string,* as the RFC body specified. It is authored prose from `describe()`, and the structured version already exists: `snapshot.procedures[].boundFields` carries paths and locked flags. Two shapes for one fact would drift. Revisit if a host demonstrates a rendering it cannot build from `boundFields`.
 2. **C3: short-hash length, fixed or collision-check-and-extend?** *Collision-check-and-extend,* per the RFC body. 7 base36 chars at level 0, escalating to 9/11/13 for the entries that actually collide, with a rank tie-break that terminates by construction. A fixed longer hash would tax every name to fix a case that arises in a few; uniqueness is a property of the catalog, so it is checked there. Pinned by a real level-0 collision in `wire-names.test.ts` — found by search over the shipped hash, so the escalation path is exercised rather than assumed.
-3. **C2: does graduating `meta` freeze the `surface_discover` payload?** *It is the snapshot contract, versioned with it.* `surface_discover` returns `AgentSurfaceSnapshot` verbatim; no separate payload shape exists to version separately, and inventing one would be a second source of truth for the catalog. `AS-META-003` pins that a truncated payload is still a valid snapshot. `budget` itself stays Experimental (D6/OQ-4).
+3. **C2: does graduating `meta` freeze the `surface_discover` payload?** *It is the snapshot contract, versioned with it.* `surface_discover` returns `AgentSurfaceSnapshot` verbatim; no separate payload shape exists to version separately, and inventing one would be a second source of truth for the catalog. `AS-META-003` pins that a truncated payload is still a valid snapshot. `budget` itself stays Experimental (D6/OQ-4). *(Still true after the 0.7 reversal — the answer was about the discover payload, which never was the unsettled part. The envelope of the three verbs was, and D32 is where that surfaced.)*
 4. **When does `descriptionIncludesState` flip?** *One minor after the deprecation warning,* as the RFC body says: the plan was 0.2 ships both flags defaulting to 0.1 behavior, 0.3 flips both defaults together, 0.4 removes them. A host that sets nothing gets one release with a warning before its model's view changes.
 
    > [!NOTE]

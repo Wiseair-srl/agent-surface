@@ -608,7 +608,8 @@ export interface AgentToolsetOptions {
    * "direct": one tool per capability — provider-native input typing, catalog
    * size linear in the surface. "meta": three fixed tools with lazy discovery —
    * constant tool-block size, one extra round trip before the first act.
-   * Default "direct"; selection guide in 09 §choosing-a-mode (D29).
+   * [Experimental] "meta" only: its verb envelope may change in any release
+   * (D29). Default "direct"; selection guide in 09 §choosing-a-mode.
    */
   mode?: "direct" | "meta";
   /**

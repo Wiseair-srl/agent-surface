@@ -5,7 +5,7 @@
 
 ## P0 corrections (resolved, code-proven)
 
-The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21–D26) and — unlike the rest of this review's "must be validated" items — each landed **with** its implementation and named conformance tests in the same change: pipeline order (effective input before input-aware policy/confirmation), consumer-scoped conflict-safe invocation identity (`INVOCATION_CONFLICT`), navigation settlement under owner unmount, bounded observation concurrency + bounded pending confirmations, topology-declared confirmation modes. The action-concurrency contract (D25) is *specified, deliberately unimplemented* until Phase C — the one intentional spec-ahead-of-code item, tracked as `specified` in `spec/conformance.json`.
+The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21–D26) and — unlike the rest of this review's "must be validated" items — each landed **with** its implementation and named conformance tests in the same change: pipeline order (effective input before input-aware policy/confirmation), consumer-scoped conflict-safe invocation identity (`INVOCATION_CONFLICT`), navigation settlement under owner unmount, bounded observation concurrency + bounded pending confirmations, topology-declared confirmation modes. The action-concurrency contract (D25) was the one intentional spec-ahead-of-code item, carried as `specified` in `spec/conformance.json` until **0.2 implemented it** (`AS-CONC-001`, `test/conformance/concurrency-groups.test.ts`). No requirement is `specified` today: all 93 are `implemented`, and the manifest gate is what keeps that true.
 
 ## Decisions defined
 

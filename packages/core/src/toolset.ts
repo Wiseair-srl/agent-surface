@@ -18,6 +18,11 @@ export interface AgentToolsetOptions {
    * "direct": one tool per capability — provider-native input typing, catalog
    * size linear in the surface. "meta": three fixed tools with lazy discovery —
    * constant tool-block size, one extra round trip before the first act.
+   *
+   * [Experimental] applies to "meta" only (D29): the three verbs' envelope may
+   * change in any release — 0.6 typed `surface_act.input` and started enforcing
+   * the verb schemas (D32). "direct" is Draft, like the rest of the API.
+   *
    * Default "direct"; see the selection guide in docs/09 §choosing-a-mode.
    */
   mode?: "direct" | "meta";
