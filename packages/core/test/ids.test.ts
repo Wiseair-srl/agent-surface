@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   decodeWireName,
   encodeWireName,
+  encodeWireNameForInstance,
   isValidCapabilityName,
   isValidComponentType,
   isValidInstanceId,
@@ -145,5 +146,46 @@ describe("wire-name codec (docs/09)", () => {
     for (const name of ["", "_", "view", "view_", "other_devices__table__x", "_view_x"]) {
       expect(decodeWireName(name), name).toBeUndefined();
     }
+  });
+
+  it("AS-ID-004: a segment named 'at' or '0' decodes like any other", () => {
+    // `view:at.a.a` encodes to `view_at__a__a`, which *contains* "_at_" — the
+    // plane separator meeting the segment. Screening for the marker text
+    // refused every such id its own faithful encoding; the property suite
+    // found this one (seed 654467906, shrunk to "view:at.a.a").
+    for (const id of [
+      "view:at.a.a",
+      "view:devices.at.readState",
+      "view:at.at.at",
+      "domain:a.0.b",
+      "domain:0.at",
+    ]) {
+      expect(decodeWireName(encodeWireName(id)), id).toBe(id);
+    }
+    expect(encodeWireName("view:at.a.a")).toBe("view_at__a__a");
+  });
+
+  it("AS-WIRE-007: an id carrying its own '_' is hashed, not encoded faithfully", () => {
+    // Only reachable on the opaque `domain:` plane. `domain:readState__0` and
+    // `domain:readState.0` would otherwise share `domain_readState__0`, and no
+    // decoder can separate them — so the ambiguous one takes the hashed path.
+    const ambiguous = encodeWireName("domain:readState__0");
+    expect(ambiguous).not.toBe(encodeWireName("domain:readState.0"));
+    expect(ambiguous).toContain("_0_");
+    expect(decodeWireName(ambiguous)).toBeUndefined();
+    expect(decodeWireName(encodeWireName("domain:readState.0"))).toBe("domain:readState.0");
+    // …and the per-instance form of such an id stays undecodable too, rather
+    // than answering with a clean-looking path that is not the capability's.
+    expect(decodeWireName(encodeWireNameForInstance("domain:at__at_", "_x0a"))).toBeUndefined();
+  });
+
+  it("AS-WIRE-007: refuses names whose underscore runs cannot come from a '.'", () => {
+    // Hand-built names reach this function too — including ones an older
+    // release emitted. A run of 3+ is ambiguous: `domain_at____x__a` is the
+    // faithful encoding of BOTH `domain:at_._x.a` and `domain:at..x.a`.
+    expect(decodeWireName("domain_at____x__a")).toBeUndefined();
+    // Same collision, empty-segment shape.
+    expect(decodeWireName("domain_at__at__")).toBeUndefined();
+    expect(decodeWireName("domain___at__")).toBeUndefined();
   });
 });

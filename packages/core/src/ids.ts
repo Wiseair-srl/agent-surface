@@ -142,7 +142,13 @@ export function encodeWireNameForInstance(
   level = 0,
 ): string {
   const raw = rawWireName(id, instanceId);
-  if (level === 0 && raw.length <= MAX_WIRE_NAME_LENGTH) return raw;
+  // An id carrying its own "_" has no faithful encoding — `domain:readState__0`
+  // and `domain:readState.0` both produce `domain_readState__0`, and no decoder
+  // can separate them. Only reachable on the opaque `domain:` plane (the view
+  // grammar forbids "_"), and it is what made the codec non-injective. Such ids
+  // take the hashed path, which is the existing "not decodable — consult
+  // wireNameMap()" contract rather than a new one.
+  if (level === 0 && raw.length <= MAX_WIRE_NAME_LENGTH && !id.includes("_")) return raw;
   const hashLength = 7 + level * 2;
   const keep = MAX_WIRE_NAME_LENGTH - SHORTENED_MARKER.length - hashLength;
   const hash = hash36(`${id}#${instanceId ?? ""}#${level}`, hashLength);
@@ -218,14 +224,33 @@ export function assignWireNames(entries: readonly WireNameEntry[]): WireNameAssi
  * names among them (`AS-WIRE-007`: consult `toolset.wireNameMap()` instead).
  * Returning a plausible-but-wrong canonical id would take the audit identity
  * with it, so this refuses anything it cannot re-encode byte-identically.
+ *
+ * Refusal is decided by what a name *is*, never by a substring it happens to
+ * contain. `view:at.a.a` encodes to `view_at__a__a`, where `_at_` is the plane
+ * separator meeting a segment named "at" — screening for the marker text cost
+ * every id with an `at` or `0` segment its own faithful encoding (`AS-ID-004`).
+ * Marker-bearing names are still refused, by the two checks that can tell:
+ * every underscore run must be exactly two (one "."), and the id must re-encode
+ * byte-identically.
  */
 export function decodeWireName(name: string): string | undefined {
-  if (name.includes(SHORTENED_MARKER) || name.includes(INSTANCE_MARKER)) return undefined;
   const planeEnd = name.indexOf("_");
   if (planeEnd <= 0) return undefined;
   const plane = name.slice(0, planeEnd);
   if (plane !== "view" && plane !== "domain") return undefined;
-  const id = `${plane}:${name.slice(planeEnd + 1).replaceAll("__", ".")}`;
+  const rest = name.slice(planeEnd + 1);
+  // A longer run is ambiguous, not merely odd: `domain_at____x__a` is the
+  // faithful encoding of BOTH `domain:at_._x.a` and `domain:at..x.a`, and
+  // re-encoding cannot separate them because both produce it. Domain paths are
+  // opaque, so they are the plane where a literal "_" can reach the codec.
+  if (/_{3,}/.test(rest)) return undefined;
+  const path = rest.replaceAll("__", ".");
+  // The same collision in its other shape — an empty segment. `domain:at.at.`
+  // shares `domain_at__at__` with `domain:at_` carrying instance `_`. The view
+  // grammar already forbids empty segments; domain paths are opaque, so this is
+  // where that is caught.
+  if (path.split(".").some((segment) => segment === "")) return undefined;
+  const id = `${plane}:${path}`;
   // The codec is injective only for grammar-valid ids with no "_" of their own.
   if (id.includes("_") || !parseCapabilityId(id) || encodeWireName(id) !== name) return undefined;
   return id;
