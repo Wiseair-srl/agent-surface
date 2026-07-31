@@ -19,6 +19,7 @@ import { drainObservationQueues, performInvoke } from "./invoke.js";
 import { createSnapshot, type AgentSurfaceSnapshot, type SnapshotContext } from "./snapshot.js";
 import {
   DEV_WARN,
+  INTERNALS,
   addTombstone,
   componentKey,
   nextRegistrationId,
@@ -418,6 +419,14 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
   // through the registry's own environment gate rather than a second one.
   Object.defineProperty(registry, DEV_WARN, {
     value: (...args: unknown[]) => internals.devWarn(...args),
+    enumerable: false,
+  });
+
+  // Internal seam (INTERNALS): read only by `@agent-surface/core/explain`, a
+  // separate entry so the developer projection cannot be reached from the
+  // package root that adapters import (docs/06 §explain-is-not-agent-facing).
+  Object.defineProperty(registry, INTERNALS, {
+    value: internals,
     enumerable: false,
   });
 

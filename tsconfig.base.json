@@ -20,6 +20,8 @@
     // resolve against this file's directory (the repo root) either way.
     "paths": {
       "@agent-surface/core": ["./packages/core/src/index.ts"],
+      "@agent-surface/core/explain": ["./packages/core/src/explain.ts"],
+      "@agent-surface/cli": ["./packages/cli/src/index.ts"],
       "@agent-surface/react": ["./packages/react/src/index.ts"],
       "@agent-surface/orpc": ["./packages/orpc/src/index.ts"],
       "@agent-surface/orpc/react": ["./packages/orpc/src/react.ts"],

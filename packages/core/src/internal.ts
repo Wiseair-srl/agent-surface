@@ -196,6 +196,24 @@ export interface DevWarnCarrier {
   [DEV_WARN]?: (...args: unknown[]) => void;
 }
 
+/**
+ * Internal seam for the developer-tool projection in `./explain.ts`, attached
+ * the same way and for the same reason as `DEV_WARN`: `explainSurface()` needs
+ * the policy chains and availability hooks that `snapshot()` reads, and neither
+ * belongs on the public `AgentSurfaceRegistry`.
+ *
+ * Symbol-keyed and non-enumerable, so it stays invisible to spreads,
+ * `Object.keys`, and serialization. Nothing agent-facing reads it: the only
+ * consumer is `@agent-surface/core/explain`, which is a separate entry point
+ * precisely so no adapter can reach it by importing the package root
+ * (AS-EXPLAIN-004).
+ */
+export const INTERNALS: unique symbol = Symbol("agent-surface.internals");
+
+export interface InternalsCarrier {
+  [INTERNALS]?: RegistryInternals;
+}
+
 /** Marker for defects that must throw out of invoke() in development. */
 export class DevDefectError extends Error {
   constructor(message: string) {

@@ -18,6 +18,7 @@ export default withMermaid(
         { text: "Vision", link: "/00-vision" },
         { text: "Concepts", link: "/01-concepts" },
         { text: "Core API", link: "/03-core-api" },
+        { text: "CLI", link: "/20-cli" },
         { text: "Example", link: "/10-examples" },
       ],
       sidebar: [
@@ -44,6 +45,7 @@ export default withMermaid(
             { text: "Errors", link: "/07-errors" },
             { text: "Testing", link: "/08-testing" },
             { text: "Adapters", link: "/09-adapters" },
+            { text: "CLI", link: "/20-cli" },
           ],
         },
         {

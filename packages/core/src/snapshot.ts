@@ -108,14 +108,19 @@ export type AgentCapabilityDescriptorUnion =
   | AgentActionDescriptor
   | AgentProcedureDescriptor;
 
-const DEFAULT_CONSUMER: AgentConsumer = { id: "anonymous", kind: "embedded" };
+/* The three helpers below are shared with `./explain.ts` so the developer
+ * projection traverses the surface in exactly the same order, with exactly the
+ * same scope and consumer defaults, as the agent-facing snapshot. They are not
+ * re-exported from the package root. */
 
-function matchesScope(type: string, scope: string[] | undefined): boolean {
+export const DEFAULT_CONSUMER: AgentConsumer = { id: "anonymous", kind: "embedded" };
+
+export function matchesScope(type: string, scope: string[] | undefined): boolean {
   if (!scope || scope.length === 0) return true;
   return scope.some((prefix) => type === prefix || type.startsWith(`${prefix}.`));
 }
 
-function sortRegistrations(regs: InternalRegistration[]): InternalRegistration[] {
+export function sortRegistrations(regs: InternalRegistration[]): InternalRegistration[] {
   return regs.sort((a, b) => {
     if (a.priority !== b.priority) return b.priority - a.priority;
     if (a.type !== b.type) return a.type < b.type ? -1 : 1;

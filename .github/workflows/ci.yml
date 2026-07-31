@@ -87,6 +87,12 @@ jobs:
       # survive a real bundler's resolution + tree-shaking.
       - name: Vite bundle smoke
         run: pnpm --filter devices-app-example exec vite build
+      # Dogfood the CLI on the example, through the *published* entry: the
+      # built `dist/bin.js` and its bin symlink. The unit suite imports `main`
+      # from source, so nothing else covers the packaging path — which is
+      # exactly where a bin that silently exits 0 without running would hide.
+      - name: Surface drift gate
+        run: pnpm --filter devices-app-example exec agent-surface check
 
   # Advisory: upstream regressions must not block a release. Triage, don't gate.
   typescript-next:

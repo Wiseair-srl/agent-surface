@@ -442,6 +442,48 @@ Snapshot semantics (normative):
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
 - `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).
 
+### `explainSurface()` — developer projection
+
+> [!NOTE]
+> **Status: Draft** (D33). Separate entry point: `@agent-surface/core/explain`. Deliberately **not** exported from the package root — see [06 §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing) before wiring it anywhere.
+
+```ts
+import { explainSurface } from "@agent-surface/core/explain";
+
+explainSurface(registry: AgentSurfaceRegistry, ctx?: SnapshotContext): SurfaceExplanation
+```
+
+The snapshot answers *what may this agent call*. It bakes policy outcomes, so a `hide` deletes the capability and the reason together. The explanation answers *why*, over the same registry and the same context:
+
+```ts
+interface CapabilityExplanation {
+  capabilityId: string;
+  kind: "observation" | "action" | "procedure";
+  plane: "view" | "domain";
+  description: string;                      // hidden capabilities have no snapshot entry to read it from
+  registrationId: string;
+  component: { type: string; instanceId: string };
+  outcome: "expose" | "disable" | "hide";   // "hide" ⇒ absent from snapshot()
+  reason?: string;
+  policies: Array<{
+    name: string;                           // AgentPolicy.name
+    scope: "registry" | "component" | "capability";
+    phases: Array<"discovery" | "authorize" | "invoke">;
+    discovery?: DiscoveryDecision;          // this policy's own vote
+    threw?: boolean;                        // onDiscovery threw; evaluateDiscovery failed closed
+    confirmationEscalation?: boolean;
+  }>;
+  availability: { available: boolean; reason?: string };   // `when()`, kept apart from policy
+}
+```
+
+Semantics (normative):
+
+- It reports **every** capability the registry holds, hidden ones included. `includeUnavailable` and `budget` are ignored: withholding is the one thing an explanation must not do. `scope` and `consumer` are honoured, so it lines up with the snapshot being debugged.
+- Its composed outcome MUST equal what `snapshot()` did for the same context (`AS-EXPLAIN-003`). `evaluateDiscovery` short-circuits on the first `hide`, so explain cannot reuse it — it re-runs each `onDiscovery` individually and composes by the same rule. Re-running is safe by contract: discovery policies MUST be synchronous, cheap, and side-effect free ([06](06-policies-and-security.md#policy-pipeline)).
+- Policy attribution keeps `availability` separate from the policy votes, because *authority hides, state discloses* (D11/D12) and the two failures must not look alike.
+- It throws on a registry it did not create, or a disposed one — rather than reporting an empty surface, which is what a missing internals seam would otherwise look like.
+
 ---
 
 ## Invocation

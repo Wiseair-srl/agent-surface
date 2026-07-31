@@ -67,7 +67,16 @@ No behavior change: a stability label, and the documentation debt that had accum
 - **Lockstep versioning realigned.** 0.6.0 released `core` alone, leaving the other four at 0.5.1 against the rule in `.changeset/README.md` that all `@agent-surface/*` packages ship one version. 0.7.0 puts all five back on the same number; those four skip 0.6.0 on npm, where it was never published for them.
 - **A documentation truth pass**, since three published claims had gone stale at once: the README's package versions and test/requirement counts, this file's missing v0.6 entry, and [15](15-completeness-review.md) still calling D25 "specified, deliberately unimplemented" three releases after 0.2 implemented it. The pattern worth naming — a version slot written *before* the release and never recut afterwards — is what produced both the missing v0.6 entry and this one; a shipped release recuts its own slot in the same PR.
 
-### v0.8 — adoption and enforcement
+### v0.8 — the surface is inspectable — shipped (2026-07-31)
+
+A sixth package, `@agent-surface/cli`, and the one core addition it needed. Manifest 93 → 100/100.
+
+- **`explainSurface()`** (`AS-EXPLAIN-001…004`, D33): the developer projection. `snapshot()` bakes policy outcomes, so a `hide` removes the capability *and* the reason — correct at the agent boundary, and the reason "why is my capability missing?" was a manual policy bisect. Explain reports every capability the registry holds with each policy's own vote, scope, phases, and whether its `onDiscovery` threw. Behind its own entry point (`@agent-surface/core/explain`); `AS-EXPLAIN-004` fails the build if it ever surfaces on the package root adapters import ([06 §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing)).
+- **`agent-surface inspect` / `snapshot` / `check`** (`AS-CLI-001…003`, [20](20-cli.md)). `check` is the committed-baseline gate as a command rather than a test file, on the same `serializeSurfaceSnapshot` normalizer, exiting non-zero on any drift — descriptions included, since those are the provider's cached prefix (D28).
+- **Scenarios are shared, not duplicated.** `agent-surface.config.tsx` points at the app's existing composition root, and `@agent-surface/cli/vitest` feeds the same scenarios to the test suite. In `devices-app` this deleted the suite's own `renderApp()` helper: one definition of "admin on /devices", three consumers.
+- `core`'s main entry is unchanged at 18.9 kB (budget 19.5); `explain` is a separate 1.41 kB entry that tree-shakes out of anything that does not import it.
+
+### v0.9 — adoption and enforcement
 
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
 - CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
@@ -102,4 +111,4 @@ Graduation criteria to Stable (all required): used by the example app and ≥1 r
 - pnpm workspace, Changesets, semver pre-releases (`0.x`), provenance-signed publishes.
 - Every package ships ESM + `.d.ts`, `sideEffects: false`, size-limit budget enforced in CI ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
 - CI matrix (live): Node 20.19/22 × React 18.2/19 with Strict Mode exercised inside the React suites; `typescript@next` advisory (`continue-on-error` — types are API here, but an upstream regression is not a release gate); Zod and Valibot through Standard Schema; out-of-workspace ESM import and a Vite bundle of the example app.
-- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.8 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
+- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.9 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
