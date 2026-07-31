@@ -14,20 +14,30 @@ All five packages, the `devices-app` example as the behavioral acceptance artifa
 
 Known gaps at 0.1.0, all now closed or scheduled below: D25 concurrency groups were specified but unimplemented; meta-tools mode diverged from the direct-mode contract; CI ran a single Node/React combination.
 
-### v0.2 — trust (in progress)
+### v0.2 — trust — shipped (2026-07-31)
 
-No new surface area. Everything here closes a gap between what the docs promise and what CI proves:
+No new surface area. Everything here closed a gap between what the docs promised and what CI proved:
 
-- **Meta-tools parity** (`AS-ADAPTER-004/005`, D27): identical resolution to direct mode, adapter scope as a floor, meta-only budgets. *Done.*
-- **D25 concurrency groups** (`AS-CONC-001`): the last requirement that was `specified` rather than `implemented`. *Done — the manifest is now 77/77.*
-- **Support matrix**: Node 20.19/22 × React 18.2/19, out-of-workspace ESM import, Vite bundle smoke, advisory `typescript@next`, Valibot alongside Zod through Standard Schema. *Done.*
-- **Catalog scale** ([19](19-catalog-scale-rfc.md), D28–D30), raised by the first host at ~300 capabilities: capability state as structured data so a provider's prompt prefix survives a click (`AS-CACHE-001…004`); `mode:"meta"` graduated to supported on a conformance suite (`AS-META-001…005`); wire names enforced within the provider's 64-char budget, collision-checked per catalog, and reversed through `wireNameMap()` (`AS-WIRE-004…007`). *Done.*
-- Remaining before tagging: higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7).
+- **Meta-tools parity** (`AS-ADAPTER-004/005`, D27): identical resolution to direct mode, adapter scope as a floor, meta-only budgets.
+- **D25 concurrency groups** (`AS-CONC-001`): the last requirement that was `specified` rather than `implemented` — the manifest reached 77/77.
+- **Support matrix**: Node 20.19/22 × React 18.2/19, out-of-workspace ESM import, Vite bundle smoke, advisory `typescript@next`, Valibot alongside Zod through Standard Schema.
 
-### v0.3 — adoption and enforcement
+### v0.3 — catalog scale — shipped (2026-07-31)
+
+The first correction cycle driven by a host rather than by self-review: a dashboard at ~300 domain capabilities and 40+ mounted view capabilities per route ([19](19-catalog-scale-rfc.md), D28–D30). Manifest 77 → 90/90.
+
+- **Capability state is data, not description text** (`AS-CACHE-001…004`, D28). Tool definitions are the provider's cached prompt prefix; folding `available` into the description re-billed the conversation on every click. `AgentTool.state` and `AgentProcedureDescriptor.contextualNote`, behind compatibility flags for one minor.
+- **`mode:"meta"` graduated to supported** (`AS-META-001…005`, D29) on a suite pinning what makes it different. An Experimental marker on the library's only answer for an oversized catalog made it unreachable exactly where it was needed.
+- **Wire names fit the provider budget and keep their identity** (`AS-WIRE-004…007`, D30): collision-checked per emitted catalog, reversed through `wireNameMap()`, and `decodeWireName` now refuses rather than returning a plausible wrong id.
+
+Breaking, as a 0.x minor may be ([stability policy](#stability-policy)): `AgentTool.state` is required for anyone *constructing* a tool, and wire names can no longer be reversed by string surgery.
+
+### v0.4 — adoption and enforcement
 
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
-- CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
+- CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)). The `core` bundle is the pressing one: 17.86 kB against an 18 kB limit until the D28 default flip removes the compatibility branches.
+- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 and 0.3.
+- A tracked expiry for the advisory `typescript@next` job, which fails on a `.d.ts`-bundler incompatibility with TypeScript 7 rather than on our types ([17 §7.4](17-maintainer-directive.md) forbids leaving it allowed-to-fail untracked).
 - Browser matrix (Chromium/Firefox/WebKit) — deferred until it buys something: `webmcp` is the only browser-API surface and it is Experimental.
 - OQ-1 decided and implemented: the `orpc-agent` manifest source (overdue — it was due before M9, which has shipped).
 - Second adoption context, the real Gate 3 blocker. A second application, or a materially different section of the first, is what tells us whether the abstraction generalizes.

@@ -1,6 +1,6 @@
 # agent-surface
 
-> **Status: 0.1.0 on npm, 0.2 in progress.** The specification in [docs/](docs/) was written first (documentation-driven development); the packages under [packages/](packages/) implement it — core registry, React bindings, oRPC procedure references, testing toolkit, and the experimental WebMCP adapter — with the [docs/08 test recipes](docs/08-testing.md) as the executable contract. Usable and explicitly not yet *Stable*: see the [graduation criteria](docs/12-roadmap.md). The name `agent-surface` is provisional.
+> **Status: 0.3.0 on npm.** The specification in [docs/](docs/) was written first (documentation-driven development); the packages under [packages/](packages/) implement it — core registry, React bindings, oRPC procedure references, testing toolkit, and the experimental WebMCP adapter — with the [docs/08 test recipes](docs/08-testing.md) as the executable contract. Usable and explicitly not yet *Stable*: see the [graduation criteria](docs/12-roadmap.md). The name `agent-surface` is provisional.
 
 **Working with this repo:**
 
@@ -96,10 +96,10 @@ agent-surface never duplicates a domain procedure as a frontend tool. It can onl
 
 | Package | Purpose | Status |
 |---|---|---|
-| [`@agent-surface/core`](packages/core) | Framework-agnostic registry, types, policies, errors, snapshot, invocation, toolset | Implemented (v0.1) |
-| [`@agent-surface/react`](packages/react) | Hooks binding component lifecycle to registrations | Implemented (v0.1) |
-| [`@agent-surface/orpc`](packages/orpc) | Contextual references to oRPC procedures exposed via `orpc-agent` | Implemented (v0.1) |
-| [`@agent-surface/testing`](packages/testing) | Render/discover/invoke/assert utilities, no LLM required | Implemented (v0.1) |
+| [`@agent-surface/core`](packages/core) | Framework-agnostic registry, types, policies, errors, snapshot, invocation, toolset | Implemented |
+| [`@agent-surface/react`](packages/react) | Hooks binding component lifecycle to registrations | Implemented |
+| [`@agent-surface/orpc`](packages/orpc) | Contextual references to oRPC procedures exposed via `orpc-agent` | Implemented |
+| [`@agent-surface/testing`](packages/testing) | Render/discover/invoke/assert utilities, no LLM required | Implemented |
 | [`@agent-surface/webmcp`](packages/webmcp) | WebMCP transport adapter | Implemented (Experimental) |
 
 The [devices-app example](examples/devices-app) is the spec's acceptance artifact: the full [docs/10](docs/10-examples.md) page driven end to end by a scripted agent (no LLM), with the semantic surface snapshot committed as a reviewable artifact. Releases go through [Changesets](.changeset/README.md) (`pnpm changeset` → release PR → npm publish from CI).
@@ -139,12 +139,14 @@ Published as 0.x: usable, and explicitly not yet *Stable* — see the [graduatio
 | [16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) | Integration notes: wiring a Mastra loop + assistant-ui chat + orpc-agent governance (guide, not executable) |
 | [17-maintainer-directive.md](docs/17-maintainer-directive.md) | Standing execution directive: what "10/10" requires, phase gates, PR procedure |
 | [18-spec-corrections-rfc.md](docs/18-spec-corrections-rfc.md) | Accepted RFC closing the P0 protocol bugs (decisions D21–D26) |
+| [19-catalog-scale-rfc.md](docs/19-catalog-scale-rfc.md) | Accepted RFC on catalog scale: prompt-prefix caching, meta-mode graduation, wire-name budget (decisions D28–D30) |
 
 ## Roadmap (short form)
 
 - **v0.1** — shipped: all five packages, the example app, and the conformance manifest.
-- **v0.2** — trust, not surface area: meta-tools parity with direct mode, D25 concurrency groups (the manifest is now 77/77 implemented), and a real support matrix (Node 20.19/22 × React 18.2/19, ESM + bundler smoke, Zod *and* Valibot).
-- **v0.3** — adoption and enforcement: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, and a second adoption context.
+- **v0.2** — shipped, trust not surface area: meta-tools parity with direct mode, D25 concurrency groups, and a real support matrix (Node 20.19/22 × React 18.2/19, ESM + bundler smoke, Zod *and* Valibot).
+- **v0.3** — shipped, catalog scale (D28–D30, the first host-driven correction cycle): capability state as structured data so a provider's prompt prefix survives a click, `mode:"meta"` graduated to supported, wire names held inside the provider's 64-char budget. The manifest is now 90/90 implemented.
+- **v0.4** — adoption and enforcement: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, and a second adoption context.
 - **Later** — MCP bridge, multi-window surfaces, Playwright fallback as a separate non-core package.
 
 See [docs/12-roadmap.md](docs/12-roadmap.md).
