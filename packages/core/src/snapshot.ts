@@ -34,6 +34,13 @@ export interface AgentSurfaceSnapshot {
   procedures: AgentProcedureDescriptor[];
   /** [Experimental] Present iff a budget truncated the snapshot. */
   truncated?: { droppedComponents: number };
+  /**
+   * [Experimental] Present iff a configured scope floor refused part of a
+   * requested scope (D27) — set by the adapter, never by `snapshot()`, which
+   * has no floor to intersect against. Empty `components` alongside this marker
+   * means the request fell outside the floor, not that the surface is empty.
+   */
+  scopeRejected?: { prefixes: string[] };
 }
 
 export interface AgentComponentDescriptor {

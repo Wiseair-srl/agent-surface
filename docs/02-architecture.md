@@ -185,10 +185,12 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 
 ## Bundle and performance budgets (first measured baselines)
 
-Bundle sizes are enforced by `size-limit` in CI: `core` **17.86 kB** min+brotli (budget 18 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+Bundle sizes are enforced by `size-limit` in CI: `core` **18.33 kB** min+brotli (budget 19 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
 
-> [!WARNING]
-> **140 bytes of headroom.** D28–D30 took `core` from 17.09 to 17.86 kB (state splitting, catalog-level wire-name assignment, the compat branches). The next change of any size trips the limit. Either the 0.3 default flip removes the compatibility branches — the flags exist for exactly one minor — or the budget gets revised deliberately. Do not raise it as a side effect of an unrelated PR.
+> [!NOTE]
+> **Budget revised 18 → 19 kB for D31**, which is the deliberate revision the previous warning called for rather than a side effect of it. D31 ships model-facing parameter descriptions on the three meta verbs; those strings are the change, so ~430 B of the bundle is now payload the model reads, not machinery. They were trimmed to what is load-bearing first — every description names where the value comes from and nothing else — because the same bytes are re-billed in every request that carries the tool block, which is the more expensive budget of the two.
+>
+> Do not expect the next minor to hand it back. [19 §C4](19-catalog-scale-rfc.md) schedules the D28 flags as flip-one-minor-then-remove; since D28 landed in 0.3 rather than the 0.2 the RFC was written against, that is a flip in 0.4 and **removal in 0.5**. Flipping frees nothing — `legacyDescription` and both branches stay in the bundle for as long as the flag exists — so 19 kB is the operating budget until 0.5 removes them. `core` sits at 670 B of headroom, and the standing rule holds: do not raise the limit as a side effect of an unrelated PR.
 
 Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30 — machine-local reference points, not CI thresholds yet; directive §7.2 sets thresholds after stable CI baselines):
 
