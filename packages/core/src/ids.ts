@@ -54,7 +54,12 @@ export type ParsedCapabilityId = ParsedViewCapabilityId | ParsedDomainCapability
 
 /** Parses a capability id; returns undefined when the grammar is violated. */
 export function parseCapabilityId(id: string): ParsedCapabilityId | undefined {
-  if (id.length > MAX_ID_LENGTH) return undefined;
+  // The signature says `string`, and this is the boundary where that assumption
+  // is load-bearing: a caller relaying a malformed request (an adapter whose
+  // envelope carried no `capabilityId`) must get a grammar rejection —
+  // CAPABILITY_NOT_FOUND — not a TypeError the pipeline reports as an internal
+  // defect with retry:"no".
+  if (typeof id !== "string" || id.length > MAX_ID_LENGTH) return undefined;
   if (id.startsWith("view:")) {
     const rest = id.slice("view:".length);
     // The capability name is everything after the LAST dot (docs/01).

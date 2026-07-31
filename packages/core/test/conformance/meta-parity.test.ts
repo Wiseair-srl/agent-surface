@@ -12,8 +12,11 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import {
+  action,
   createAgentSurfaceRegistry,
   createAgentToolset,
+  defineAgentComponent,
+  fromJsonSchema,
   type AgentInvocationResult,
   type AgentProcedureExecutor,
   type AgentSurfaceRegistry,
@@ -525,6 +528,30 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     expect(result.status).toBe("ok");
   });
 
+  it("AS-META-005: the tool block is byte-stable across mounts", () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    const meta = metaToolset(registry);
+    // Byte-stable, not merely same-sized: the tool block is the prompt-prefix
+    // cache key (D28), and typing `surface_act.input` must not have made any
+    // part of it depend on what is mounted.
+    const block = (): string =>
+      JSON.stringify(meta.tools().map((t) => [t.name, t.description, t.inputSchema]));
+
+    const empty = block();
+    const handle = registry.register(devicesTableDefinition(makeDevicesState()));
+    expect(block()).toBe(empty);
+    handle.unregister();
+    expect(block()).toBe(empty);
+    // Two toolsets over different registries emit the same three verbs too.
+    expect(block()).toBe(
+      JSON.stringify(
+        metaToolset(createAgentSurfaceRegistry({ environment: "test" }))
+          .tools()
+          .map((t) => [t.name, t.description, t.inputSchema]),
+      ),
+    );
+  });
+
   it("AS-META-005: the tool block does not grow with the catalog", () => {
     const registry = createAgentSurfaceRegistry({ environment: "test" });
     const meta = metaToolset(registry);
@@ -545,5 +572,195 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     expect(registry.snapshot().components.length).toBe(60);
     expect(meta.tools()).toHaveLength(3);
     expect(blockSize()).toBe(empty);
+  });
+});
+
+describe("a meta verb enforces its own envelope (AS-META-007, AS-META-008)", () => {
+  function issues(result: AgentInvocationResult): Array<{ path: string; message: string }> {
+    if (result.status !== "error") throw new Error(`expected an error, got ${result.status}`);
+    return (result.error.details?.issues ?? []) as Array<{ path: string; message: string }>;
+  }
+
+  it("AS-META-007: a call with no arguments is INVALID_INPUT, not a pipeline failure", async () => {
+    const logged: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args);
+    });
+    try {
+      // "development" is where the pipeline logs its defects — the point of the
+      // test is that this call is not one.
+      const registry = createAgentSurfaceRegistry({ environment: "development" });
+      registry.register(devicesTableDefinition(makeDevicesState()));
+      const meta = metaToolset(registry);
+
+      const result = await tool(meta, "surface_act").execute({}, {});
+
+      // Previously: parseCapabilityId(undefined) threw, the outer catch did not
+      // recognise it, and the caller's own mistake came back as
+      // EXECUTION_FAILED {reason:"handler-error", retry:"no"} — the one hint
+      // that tells a model to stop rather than fix its call.
+      expect(errorCode(result)).toBe("INVALID_INPUT");
+      expect(result.status === "error" && result.error.retry).toBe("with-changes");
+      expect(issues(result).map((i) => i.path)).toEqual(["capabilityId"]);
+      // No target named, so the verb itself is the audit identity.
+      expect(result.capabilityId).toBe("meta:surface.act");
+      expect(logged).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("AS-META-007: a hoisted capability argument is named and pointed back at `input`", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    const state = makeDevicesState();
+    registry.register(devicesTableDefinition(state));
+    const meta = metaToolset(registry);
+
+    // `mode` belongs inside `input`; four call-level modifiers sit beside it as
+    // siblings, so this is what the envelope invited.
+    const result = await tool(meta, "surface_act").execute(
+      { capabilityId: "view:devices.table.selectRows", input: { ids: ["d1"] }, mode: "replace" },
+      {},
+    );
+
+    expect(errorCode(result)).toBe("INVALID_INPUT");
+    expect(issues(result).map((i) => i.path)).toEqual(["mode"]);
+    // The recovery instruction is the whole value of the message: without it
+    // the model is told the capability's schema is unhappy, which is false.
+    expect(issues(result)[0]!.message).toContain("`input`");
+    expect(result.status === "error" && result.error.message).toContain("not the capability's");
+    // Named target, so the identity is the target — and it never ran.
+    expect(result.capabilityId).toBe("view:devices.table.selectRows");
+    expect(state.selectedIds).toEqual([]);
+  });
+
+  it("AS-META-007: all three verbs enforce their declared schema", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const meta = metaToolset(registry);
+
+    const discover = await tool(meta, "surface_discover").execute({ limit: 5 }, {});
+    expect(errorCode(discover)).toBe("INVALID_INPUT");
+    expect(discover.capabilityId).toBe("meta:surface.discover");
+
+    // A bare string where an array is declared: iterating it as one would have
+    // scoped discovery to seven single-character prefixes.
+    const scoped = await tool(meta, "surface_discover").execute({ scope: "devices" }, {});
+    expect(issues(scoped).map((i) => i.path)).toEqual(["scope"]);
+
+    const read = await tool(meta, "surface_read").execute({ capabilityId: 42 }, {});
+    expect(issues(read).map((i) => i.path)).toEqual(["capabilityId"]);
+    expect(read.capabilityId).toBe("meta:surface.read");
+
+    // No `input` property on this verb, so nothing to redirect a stray key to.
+    const strayKey = await tool(meta, "surface_read").execute(
+      { capabilityId: "view:devices.table.readState", input: { ids: ["d1"] } },
+      {},
+    );
+    expect(issues(strayKey)[0]!.message).not.toContain("belongs inside");
+
+    // `null` is how some providers spell "no arguments": still a valid
+    // discover, and a missing key on the other verbs rather than a malformed
+    // envelope.
+    const nullish = await tool(meta, "surface_discover").execute(null, {});
+    expect(nullish.status).toBe("ok");
+    expect(issues(await tool(meta, "surface_act").execute(null, {})).map((i) => i.path)).toEqual([
+      "capabilityId",
+    ]);
+    // An array is not an envelope, though.
+    expect(issues(await tool(meta, "surface_act").execute([], {})).map((i) => i.path)).toEqual([""]);
+  });
+
+  it("AS-META-008: `input` as a JSON-encoded string is parsed, loudly, for an object-schema capability", async () => {
+    const warnings: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(String(args[0]));
+    });
+    try {
+      const registry = createAgentSurfaceRegistry({ environment: "development" });
+      const state = makeDevicesState();
+      registry.register(devicesTableDefinition(state));
+      const meta = metaToolset(registry);
+
+      // Typing the property fixes providers that honor the schema while
+      // generating; this is the shape the ones that do not keep producing.
+      const result = await tool(meta, "surface_act").execute(
+        {
+          capabilityId: "view:devices.table.selectRows",
+          input: '{"ids": ["d1", "d2"], "mode": "add"}',
+        },
+        {},
+      );
+
+      // It executes, rather than reaching the capability's own validator with a
+      // string and coming back as "the input does not match the capability's
+      // schema" — which points the model at the wrong place.
+      expect(result.status).toBe("ok");
+      expect(state.selectedIds).toEqual(["d1", "d2"]);
+      // A silent repair is indistinguishable from the model getting it right,
+      // which hides the regression the shim exists to absorb.
+      expect(warnings.filter((w) => w.includes("JSON-encoded string"))).toHaveLength(1);
+      expect(warnings[0]).toContain("view:devices.table.selectRows");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("AS-META-008: a capability that declares a string input receives it intact", async () => {
+    const warnings: string[] = [];
+    const spy = vi.spyOn(console, "warn").mockImplementation((...args: unknown[]) => {
+      warnings.push(String(args[0]));
+    });
+    const registry = createAgentSurfaceRegistry({ environment: "development" });
+    const received: string[] = [];
+    registry.register(
+      defineAgentComponent({
+        type: "notes.editor",
+        description: "A note being edited",
+        actions: {
+          setBody: action({
+            description: "Replace the note body",
+            input: fromJsonSchema<string>({ type: "string" }),
+            effect: "local-state",
+            execute: (body) => {
+              received.push(body);
+            },
+          }),
+        },
+      }),
+    );
+    const meta = metaToolset(registry);
+
+    // A JSON object happens to be a valid note body. The shim must not parse
+    // an argument out from under a capability that asked for the string.
+    const result = await tool(meta, "surface_act").execute(
+      { capabilityId: "view:notes.editor.setBody", input: '{"ids": ["d1"]}' },
+      {},
+    );
+
+    expect(result.status).toBe("ok");
+    expect(received).toEqual(['{"ids": ["d1"]}']);
+    // Nothing was repaired, so nothing is reported.
+    expect(warnings.filter((w) => w.includes("JSON-encoded string"))).toEqual([]);
+    spy.mockRestore();
+  });
+
+  it("AS-META-008: anything that is not a stringified object passes through untouched", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const meta = metaToolset(registry);
+    const act = tool(meta, "surface_act");
+
+    // Unparseable, and parseable-but-not-an-object: both reach the registry's
+    // validator, which owns the verdict.
+    for (const input of ["not json at all", '["d1"]', "42"]) {
+      const result = await act.execute(
+        { capabilityId: "view:devices.table.selectRows", input },
+        {},
+      );
+      expect(errorCode(result)).toBe("INVALID_INPUT");
+      // The capability's validator, not the envelope check.
+      expect(result.status === "error" && result.error.message).toContain("capability's schema");
+    }
   });
 });

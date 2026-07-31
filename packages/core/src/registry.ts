@@ -18,6 +18,7 @@ import type { AgentInvocation, AgentInvocationResult, InvokeOptions } from "./in
 import { drainObservationQueues, performInvoke } from "./invoke.js";
 import { createSnapshot, type AgentSurfaceSnapshot, type SnapshotContext } from "./snapshot.js";
 import {
+  DEV_WARN,
   addTombstone,
   componentKey,
   nextRegistrationId,
@@ -412,6 +413,13 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
       dispatcher.clear();
     },
   };
+
+  // Internal seam (DEV_WARN): adapters in this package report dev-mode repairs
+  // through the registry's own environment gate rather than a second one.
+  Object.defineProperty(registry, DEV_WARN, {
+    value: (...args: unknown[]) => internals.devWarn(...args),
+    enumerable: false,
+  });
 
   return registry;
 }

@@ -1,12 +1,14 @@
 import type { AgentConsumer, JsonSchema, JsonValue, Unsubscribe } from "./types.js";
 import type { AgentSurfaceRegistry } from "./registry.js";
 import type { AgentInvocationResult } from "./invocation-types.js";
+import type { AgentCapabilityErrorPayload } from "./errors.js";
 import type {
   AgentActionDescriptor,
   AgentObservationDescriptor,
   AgentProcedureDescriptor,
   AgentSurfaceSnapshot,
 } from "./snapshot.js";
+import { DEV_WARN, type DevWarnCarrier } from "./internal.js";
 import { assignWireNames, type WireNameEntry } from "./ids.js";
 import { randomBase62 } from "./utils.js";
 
@@ -108,6 +110,91 @@ const EMPTY_INPUT_SCHEMA: JsonSchema = {
   additionalProperties: false,
 };
 
+/* ───────────────────────── meta-mode verb schemas ─────────────────────────
+ * Module-level constants: the three verbs are the same bytes for every toolset
+ * and every mount, which is the property AS-META-005 and D28 pin.
+ */
+
+const META_DISCOVER_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    scope: {
+      type: "array",
+      items: { type: "string" },
+      // No enum: valid tokens are live component types, and inlining them
+      // would make this tool block churn on every mount — the churn
+      // AS-META-005 and D28 exist to prevent.
+      description:
+        'Component-type prefixes to narrow the result, e.g. ["devices.table"], taken from `components[].type` of an earlier call — omit on the first. Narrows only: prefixes outside this host\'s configured scope match nothing and come back in `scopeRejected`.',
+    },
+  },
+  additionalProperties: false,
+};
+
+const META_READ_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    capabilityId: {
+      type: "string",
+      description:
+        "Observation id, verbatim from `observations[].capabilityId` in a discover result.",
+    },
+    instanceId: {
+      type: "string",
+      description:
+        "Only when several components share a type: `components[].instanceId` picks one.",
+    },
+  },
+  required: ["capabilityId"],
+  additionalProperties: false,
+};
+
+const META_ACT_SCHEMA: JsonSchema = {
+  type: "object",
+  properties: {
+    capabilityId: {
+      type: "string",
+      description: "Action `capabilityId` or `procedureId`, verbatim from a discover result.",
+    },
+    instanceId: {
+      type: "string",
+      description:
+        "Only when several components share a type: `components[].instanceId` picks one.",
+    },
+    // Typed, and not merely described: an untyped property is the one position
+    // a provider's constrained decoder cannot constrain, so the model falls
+    // back to its prior — a JSON-encoded string, the shape
+    // `function_call.arguments` carries — and sorts the rest of the capability's
+    // arguments into the sibling modifiers below. `type: "object"` costs
+    // nothing in practice: direct mode already passes `act.inputSchema`
+    // straight through as the tool schema, and providers require that to be an
+    // object schema at the top level. No `additionalProperties` here — the
+    // capability's own schema governs what goes inside.
+    input: {
+      type: "object",
+      description:
+        "Arguments matching that capability's `inputSchema`, as a JSON object — not a JSON-encoded string. Everything the capability declares goes in here, never beside it.",
+    },
+    invocationId: {
+      type: "string",
+      description:
+        "Reuse a previous call's id to retry without executing twice; required when resuming after CONFIRMATION_REQUIRED.",
+    },
+    confirmationId: {
+      type: "string",
+      description:
+        "The id returned with CONFIRMATION_REQUIRED, sent back after the user approves.",
+    },
+    surfaceVersion: {
+      type: "string",
+      description:
+        "The `surfaceVersion` you planned against. Send it for destructive or externally-visible calls: a surface that moved underneath the plan then fails instead of executing. Omitted, the call binds to what is live now.",
+    },
+  },
+  required: ["capabilityId"],
+  additionalProperties: false,
+};
+
 /**
  * Stable properties of the capability — plane, effect, confirmation. Never
  * availability: that is a property of the moment, and folding it in here is
@@ -157,6 +244,9 @@ export function createAgentToolset(
   }
   const confirmationsMode =
     options.confirmations ?? (options.topology === "remote" ? "two-phase" : "wait");
+  // Dev diagnostics ride the registry's own environment gate (DEV_WARN); a
+  // registry built elsewhere (a test double) simply carries none.
+  const devWarn = (registry as unknown as DevWarnCarrier)[DEV_WARN] ?? ((): void => {});
   const listeners = new Set<(tools: AgentTool[]) => void>();
   const pendingWaits = new Set<AbortController>();
   let disposed = false;
@@ -337,6 +427,31 @@ export function createAgentToolset(
     return { tools, wireNames: assignment.byName };
   }
 
+  /**
+   * A meta verb rejecting its own envelope, before the registry sees anything.
+   * The error branch needs an identity: the caller's `capabilityId` when it
+   * supplied one, else the verb's own meta id — mirroring `surface_discover`'s
+   * ok result, and what hosts already fall back to for audit identity when a
+   * meta call names no target.
+   */
+  function envelopeFailure(
+    metaCapabilityId: string,
+    capabilityId: JsonValue | undefined,
+    error: AgentCapabilityErrorPayload,
+    toolCallId: string | undefined,
+  ): AgentInvocationResult {
+    return {
+      status: "error",
+      invocationId: toolCallId ?? `inv_${randomBase62(12)}`,
+      capabilityId:
+        typeof capabilityId === "string" && capabilityId.length > 0
+          ? capabilityId
+          : metaCapabilityId,
+      error,
+      surfaceVersion: registry.getVersion(),
+    };
+  }
+
   function buildMetaTools(): AgentTool[] {
     const snapshotFor = (): AgentSurfaceSnapshot =>
       registry.snapshot({
@@ -350,22 +465,12 @@ export function createAgentToolset(
         name: "surface_discover",
         description:
           "[meta] Discover the current agent surface: components, capabilities, procedures, availability, schemas.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            scope: {
-              type: "array",
-              items: { type: "string" },
-              // No enum: valid tokens are live component types, and inlining
-              // them would make this tool block churn on every mount —
-              // the churn AS-META-005 and D28 exist to prevent.
-              description:
-                'Component-type prefixes to narrow the result, e.g. ["devices.table"], taken from `components[].type` of an earlier call — omit on the first. Narrows only: prefixes outside this host\'s configured scope match nothing and come back in `scopeRejected`.',
-            },
-          },
-          additionalProperties: false,
-        },
-        async execute(input) {
+        inputSchema: META_DISCOVER_SCHEMA,
+        async execute(input, call) {
+          const invalid = validateEnvelope("surface_discover", META_DISCOVER_SCHEMA, input);
+          if (invalid) {
+            return envelopeFailure("meta:surface.discover", undefined, invalid, call.toolCallId);
+          }
           const requested = (input as { scope?: string[] } | undefined)?.scope;
           // D27: the configured scope is a floor; a model-supplied scope narrows.
           const effective = intersectScope(options.scope, requested);
@@ -402,27 +507,15 @@ export function createAgentToolset(
       {
         name: "surface_read",
         description: "[meta] Invoke an observation by capabilityId and return its output.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            capabilityId: {
-              type: "string",
-              description:
-                "Observation id, verbatim from `observations[].capabilityId` in a discover result.",
-            },
-            instanceId: {
-              type: "string",
-              description:
-                "Only when several components share a type: `components[].instanceId` picks one.",
-            },
-          },
-          required: ["capabilityId"],
-          additionalProperties: false,
-        },
+        inputSchema: META_READ_SCHEMA,
         async execute(input, call) {
-          const req = input as { capabilityId: string; instanceId?: string };
+          const req = (input ?? {}) as { capabilityId: string; instanceId?: string };
+          const invalid = validateEnvelope("surface_read", META_READ_SCHEMA, input);
+          if (invalid) {
+            return envelopeFailure("meta:surface.read", req.capabilityId, invalid, call.toolCallId);
+          }
           const snapshot = snapshotFor();
-          const registrationId = findRegistrationId(snapshot, req.capabilityId, req.instanceId);
+          const { registrationId } = findTarget(snapshot, req.capabilityId, req.instanceId);
           return invokeThroughSurface(
             {
               capabilityId: req.capabilityId,
@@ -441,41 +534,9 @@ export function createAgentToolset(
         name: "surface_act",
         description:
           "[meta] Invoke an action or procedure by capabilityId. Echo the surfaceVersion you discovered so a surface that changed underneath a destructive plan is rejected rather than executed.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            capabilityId: {
-              type: "string",
-              description:
-                "Action `capabilityId` or `procedureId`, verbatim from a discover result.",
-            },
-            instanceId: {
-              type: "string",
-              description:
-                "Only when several components share a type: `components[].instanceId` picks one.",
-            },
-            input: { description: "Arguments matching that capability's `inputSchema`." },
-            invocationId: {
-              type: "string",
-              description:
-                "Reuse a previous call's id to retry without executing twice; required when resuming after CONFIRMATION_REQUIRED.",
-            },
-            confirmationId: {
-              type: "string",
-              description:
-                "The id returned with CONFIRMATION_REQUIRED, sent back after the user approves.",
-            },
-            surfaceVersion: {
-              type: "string",
-              description:
-                "The `surfaceVersion` you planned against. Send it for destructive or externally-visible calls: a surface that moved underneath the plan then fails instead of executing. Omitted, the call binds to what is live now.",
-            },
-          },
-          required: ["capabilityId"],
-          additionalProperties: false,
-        },
+        inputSchema: META_ACT_SCHEMA,
         async execute(input, call) {
-          const req = input as {
+          const req = (input ?? {}) as {
             capabilityId: string;
             instanceId?: string;
             input?: JsonValue;
@@ -483,8 +544,29 @@ export function createAgentToolset(
             confirmationId?: string;
             surfaceVersion?: string;
           };
+          // `input` is exempt from the type check: the shim below owns it, and
+          // recovering a stringified object beats rejecting it (AS-META-008).
+          const invalid = validateEnvelope("surface_act", META_ACT_SCHEMA, input, ["input"]);
+          if (invalid) {
+            return envelopeFailure("meta:surface.act", req.capabilityId, invalid, call.toolCallId);
+          }
           const snapshot = snapshotFor();
-          const registrationId = findRegistrationId(snapshot, req.capabilityId, req.instanceId);
+          const { registrationId, inputSchema } = findTarget(
+            snapshot,
+            req.capabilityId,
+            req.instanceId,
+          );
+          let actInput = req.input;
+          const parsed = parseStringifiedObject(actInput, inputSchema);
+          if (parsed !== undefined) {
+            actInput = parsed;
+            // Never silent: a repaired call is indistinguishable from a
+            // well-formed one downstream, which would hide exactly the
+            // regression this shim exists to absorb.
+            devWarn(
+              `[agent-surface] surface_act got \`input\` as a JSON-encoded string for "${req.capabilityId}" and parsed it; the provider is not honoring the tool schema.`,
+            );
+          }
           // One execution path with direct mode: same resolution, same
           // staleness binding, same wait-mode confirmation retry (D26). A
           // direct tool carries the version of the catalog it was built from;
@@ -498,7 +580,7 @@ export function createAgentToolset(
               surfaceVersion: req.surfaceVersion ?? snapshot.surfaceVersion,
               kind: "action",
             },
-            req.input,
+            actInput,
             call.toolCallId,
             {
               ...(req.invocationId !== undefined ? { invocationId: req.invocationId } : {}),
@@ -633,22 +715,167 @@ function intersectScope(
     : { empty: true, rejected };
 }
 
-function findRegistrationId(
+interface ResolvedTarget {
+  /**
+   * Omitted unless the pair resolves to exactly one live registration — see
+   * {@link CatalogEntry.registrationId} for why a placeholder is worse.
+   */
+  registrationId?: string;
+  /**
+   * The target's declared agent-facing input schema, under the same
+   * one-match condition. Read only to decide whether a stringified `input`
+   * may be repaired; the registry remains the validator.
+   */
+  inputSchema?: JsonSchema;
+}
+
+function findTarget(
   snapshot: AgentSurfaceSnapshot,
   capabilityId: string,
   instanceId: string | undefined,
-): string | undefined {
-  const matches: string[] = [];
+): ResolvedTarget {
+  const matches: ResolvedTarget[] = [];
   for (const component of snapshot.components) {
     if (instanceId !== undefined && component.instanceId !== instanceId) continue;
     const all: Array<AgentObservationDescriptor | AgentActionDescriptor> = [
       ...component.observations,
       ...component.actions,
     ];
-    if (all.some((c) => c.capabilityId === capabilityId)) matches.push(component.registrationId);
+    const hit = all.find((c) => c.capabilityId === capabilityId);
+    // Observations carry no input schema, so the field stays absent for them.
+    if (hit) {
+      matches.push({
+        registrationId: component.registrationId,
+        ...("inputSchema" in hit ? { inputSchema: hit.inputSchema } : {}),
+      });
+    }
   }
   for (const proc of snapshot.procedures as AgentProcedureDescriptor[]) {
-    if (proc.procedureId === capabilityId) matches.push(proc.registrationId);
+    if (proc.procedureId === capabilityId) {
+      matches.push({ registrationId: proc.registrationId, inputSchema: proc.inputSchema });
+    }
   }
-  return matches.length === 1 ? matches[0] : undefined;
+  return matches.length === 1 ? matches[0]! : {};
+}
+
+/* ─────────────────────── meta-verb envelope checking ───────────────────────
+ * The three verbs declare `required` and `additionalProperties: false`, and
+ * nothing enforced either: a provider that compiles the tool schema into a
+ * sampling grammar makes most of this unreachable, and one that does not hands
+ * the envelope through verbatim. The consequences were asymmetric — a missing
+ * `capabilityId` reached `parseCapabilityId` as `undefined` and came back as
+ * EXECUTION_FAILED {retry:"no"}, reporting a caller error as an internal defect
+ * and telling the model to stop rather than fix its call. Checked against each
+ * verb's OWN schema, so the declaration and the check cannot drift.
+ */
+
+/** A type alias, not an interface: `details` is a `JsonValue` bag, and only
+ * the alias carries the implicit index signature that makes it assignable. */
+type EnvelopeIssue = { path: string; message: string };
+
+function validateEnvelope(
+  verb: string,
+  schema: JsonSchema,
+  raw: JsonValue | undefined,
+  /** Properties this must not type-check; their owner handles the value. */
+  exempt: readonly string[] = [],
+): AgentCapabilityErrorPayload | undefined {
+  // `null` is how some providers spell "no arguments" — read as `{}`, so a
+  // no-argument verb keeps working and a required key is still reported as
+  // missing rather than as a malformed envelope.
+  if (raw !== undefined && raw !== null && (typeof raw !== "object" || Array.isArray(raw))) {
+    return envelopeError(verb, [
+      { path: "", message: `\`${verb}\` takes a JSON object of arguments.` },
+    ]);
+  }
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  const known = Object.keys(properties);
+  const required = (schema.required ?? []) as string[];
+  const req = (raw ?? {}) as Record<string, JsonValue | undefined>;
+  const issues: EnvelopeIssue[] = [];
+
+  for (const key of required) {
+    if (req[key] === undefined) issues.push({ path: key, message: `\`${key}\` is required.` });
+  }
+  for (const [key, value] of Object.entries(req)) {
+    if (value === undefined) continue;
+    if (!known.includes(key)) {
+      if (schema.additionalProperties === false) {
+        issues.push({
+          path: key,
+          // The high-value half is the pointer back at `input`: it turns the
+          // dead end of a hoisted capability argument into a one-retry
+          // recovery. A verb without an `input` has nowhere to point.
+          message: `Unknown top-level property. \`${verb}\` accepts only ${known.join(", ")}.${
+            known.includes("input")
+              ? " An argument the capability declares belongs inside `input`."
+              : ""
+          }`,
+        });
+      }
+      continue;
+    }
+    if (exempt.includes(key)) continue;
+    const issue = checkDeclaredType(key, properties[key]!, value);
+    if (issue) issues.push(issue);
+  }
+  return issues.length > 0 ? envelopeError(verb, issues) : undefined;
+}
+
+function checkDeclaredType(
+  key: string,
+  property: JsonSchema,
+  value: JsonValue,
+): EnvelopeIssue | undefined {
+  if (property.type === "string" && (typeof value !== "string" || value.length === 0)) {
+    return { path: key, message: `\`${key}\` must be a non-empty string.` };
+  }
+  if (property.type === "array") {
+    if (!Array.isArray(value)) return { path: key, message: `\`${key}\` must be an array.` };
+    const items = property.items as JsonSchema | undefined;
+    if (items?.type === "string" && !value.every((item) => typeof item === "string")) {
+      return { path: key, message: `\`${key}\` must be an array of strings.` };
+    }
+  }
+  return undefined;
+}
+
+function envelopeError(verb: string, issues: EnvelopeIssue[]): AgentCapabilityErrorPayload {
+  return {
+    code: "INVALID_INPUT",
+    // Names the envelope, not the capability: pointing the model at the
+    // capability's schema when the wrapper is what is wrong sends it to fix
+    // something that is already correct.
+    message: `The \`${verb}\` call is malformed — the fault is in the tool's own arguments, not the capability's input. Fix the listed issues and retry.`,
+    retry: "with-changes",
+    details: { issues },
+  };
+}
+
+/**
+ * Recovers the one malformation an untyped `input` property invited: the
+ * arguments arriving as a JSON-encoded string, the shape the dominant
+ * function-calling convention (`function_call.arguments`) carries nested call
+ * arguments in. Typing the property fixes providers that honor the schema
+ * during generation; this covers the ones that do not.
+ *
+ * Deliberately narrow: only when the target's own schema declares an object,
+ * and only when the string parses to a plain object. A capability that
+ * genuinely declares a string input must never have its argument parsed out
+ * from under it. Anything else passes through untouched, to the registry's
+ * validator, which owns the verdict.
+ */
+function parseStringifiedObject(
+  value: JsonValue | undefined,
+  targetSchema: JsonSchema | undefined,
+): JsonValue | undefined {
+  if (typeof value !== "string" || targetSchema?.type !== "object") return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+  return parsed as JsonValue;
 }
