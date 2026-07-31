@@ -40,7 +40,8 @@ registry.register(
 
 const toolset = createAgentToolset(registry, {
   consumer: { id: "copilot", kind: "embedded" },
-});
+  topology: "embedded",   // required (D26): embedded → confirmations "wait",
+});                       // remote → "two-phase". No global default.
 ```
 
 React apps should use [`@agent-surface/react`](https://www.npmjs.com/package/@agent-surface/react) instead of calling `register` directly. Full specification: [docs](https://github.com/Wiseair-srl/agent-surface/tree/main/docs).
