@@ -18,7 +18,7 @@
 Your components declare what an agent may observe and do while they are mounted — as typed, semantic capabilities under one set of policies, confirmations, staleness rules, and audit. Everything else on the page stays invisible to it.
 
 > [!NOTE]
-> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing) and [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp), all at **0.3.0**. The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs 338 tests across 30 files on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest ([91/91 requirements implemented](spec/conformance.json)). Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
+> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing) and [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp), all at **0.4.0**. The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs 338 tests across 30 files on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest ([91/91 requirements implemented](spec/conformance.json)). Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
@@ -243,7 +243,8 @@ No agent loop, planner, prompts, or memory. No chat UI, no generative UI, no wor
 - **v0.1** — shipped: all five packages, the example app, the conformance manifest, and the P0 protocol corrections (D21–D26).
 - **v0.2** — shipped, *trust not surface area*: meta-tools parity with direct mode, D25 concurrency groups, and a real support matrix (Node 20.19/22 × React 18.2/19, ESM + bundler smoke, Zod *and* Valibot).
 - **v0.3** — shipped, *catalog scale* (D28–D30, the first host-driven correction cycle): capability state as structured data so a provider's prompt prefix survives a click, `mode:"meta"` graduated to supported, wire names held inside the provider's 64-character budget. The manifest reached 90/90.
-- **v0.4** — *adoption and enforcement*: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context — the real blocker on graduating anything to Stable.
+- **v0.4** — shipped, *discovery honesty* (D31): `surface_discover` marks a scope its configured floor refused, so an empty payload no longer reads as an empty surface, and the meta verbs describe their parameters. The manifest reached 91/91.
+- **v0.5** — *adoption and enforcement*: the overdue D28 default flip, API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context — the real blocker on graduating anything to Stable.
 - **Later** — MCP bridge, cross-tab and multi-window surfaces, iframe/worker isolation for third-party registrants, frameworks beyond React.
 
 Details, decision log, and open questions: [docs/12-roadmap.md](docs/12-roadmap.md) and [docs/13-open-questions.md](docs/13-open-questions.md).
