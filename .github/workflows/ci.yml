@@ -10,7 +10,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Support matrix (directive §7.4). React and TypeScript are part of this
+  # library's public contract, so they are matrix axes, not assumptions.
   test:
+    if: github.event_name != 'pull_request' || github.head_ref != 'changeset-release/main'
+    name: node ${{ matrix.node }} · react ${{ matrix.react }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 20.19 is the floor declared in every package's `engines`.
+        node: ['20.19', '22']
+        react: ['18.2', '19']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pin React ${{ matrix.react }}
+        if: matrix.react == '18.2'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.pnpm.overrides = {
+              ...(pkg.pnpm.overrides ?? {}),
+              react: '18.2.0',
+              'react-dom': '18.2.0',
+              '@types/react': '^18.3.12',
+              '@types/react-dom': '^18.3.1',
+            };
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          pnpm install --no-frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      # Strict Mode is exercised inside the React suites, not via a flag.
+      - run: pnpm test
+      - run: pnpm check:conformance
+
+  # Packaging checks run once — they do not vary by React or Node.
+  package:
     if: github.event_name != 'pull_request' || github.head_ref != 'changeset-release/main'
     runs-on: ubuntu-latest
     steps:
@@ -24,13 +67,51 @@ jobs:
       - run: pnpm build
       - run: pnpm publint
       - run: pnpm size
+      # ESM resolution from outside the workspace: catches a broken "exports"
+      # map that every in-repo import would happily paper over.
+      - name: ESM import smoke
+        run: |
+          mkdir -p /tmp/esm-smoke && cd /tmp/esm-smoke
+          echo '{"name":"esm-smoke","type":"module","private":true}' > package.json
+          node --input-type=module -e "
+            const core = await import('$GITHUB_WORKSPACE/packages/core/dist/index.js');
+            if (typeof core.createAgentSurfaceRegistry !== 'function') {
+              throw new Error('core ESM entry did not export createAgentSurfaceRegistry');
+            }
+            const registry = core.createAgentSurfaceRegistry({ environment: 'test' });
+            const snapshot = registry.snapshot({ consumer: { id: 'smoke', kind: 'embedded' } });
+            if (!Array.isArray(snapshot.components)) throw new Error('snapshot shape broken');
+            console.log('ESM smoke OK');
+          "
+      # Vite is the bundler the example app uses; a build proves the packages
+      # survive a real bundler's resolution + tree-shaking.
+      - name: Vite bundle smoke
+        run: pnpm --filter devices-app-example exec vite build
+
+  # Advisory: upstream regressions must not block a release. Triage, don't gate.
+  typescript-next:
+    if: github.event_name != 'pull_request' || github.head_ref != 'changeset-release/main'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm add -Dw typescript@next
+      # Typecheck FIRST: types are the API here, so that is the signal this job
+      # exists for. `tsup`'s DTS builder currently crashes under TS 7
+      # (useCaseSensitiveFileNames) — running build first would mask the
+      # typecheck result behind an upstream tooling failure. Tracked in #2.
       - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm check:conformance
+      - run: pnpm build
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: test
+    needs: [test, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write

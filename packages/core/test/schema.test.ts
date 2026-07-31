@@ -1,6 +1,8 @@
 // Conformance: AS-SCHEMA-001 (D19 subset validator), AS-SCHEMA-002 (Standard Schema, D20)
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import * as v from "valibot";
+import { toJsonSchema } from "@valibot/to-json-schema";
 import {
   AgentSchemaError,
   DEFAULT_LIMITS,
@@ -8,6 +10,7 @@ import {
   fromJsonSchema,
   fromStandardSchema,
   validateJsonSchemaDocument,
+  type JsonSchema,
   type StandardSchemaV1,
 } from "@agent-surface/core";
 
@@ -146,6 +149,27 @@ describe("fromStandardSchema (D20)", () => {
       mode: z.enum(["replace", "add", "remove"]).default("replace"),
     });
     const schema = fromStandardSchema(SelectRows, { jsonSchema: z.toJSONSchema(SelectRows) });
+    expect(schema.parse({ ids: ["d1"] })).toEqual({ ids: ["d1"], mode: "replace" });
+    expect(() => schema.parse({ ids: [] })).toThrow(AgentSchemaError);
+    try {
+      schema.parse({ ids: 42 });
+      expect.unreachable();
+    } catch (err) {
+      expect((err as AgentSchemaError).issues[0]?.path).toBe("ids");
+    }
+  });
+
+  it("wraps Valibot via Standard Schema, and its JSON Schema stays in the D19 subset", () => {
+    // Second Standard Schema vendor: proves D20 is a real interop point, not
+    // a Zod alias. Both libraries ride the same `~standard` contract.
+    const SelectRows = v.object({
+      ids: v.pipe(v.array(v.string()), v.minLength(1)),
+      mode: v.optional(v.picklist(["replace", "add", "remove"]), "replace"),
+    });
+    const jsonSchema = toJsonSchema(SelectRows, { errorMode: "ignore" }) as JsonSchema;
+    expect(validateJsonSchemaDocument(jsonSchema, limits)).toEqual({ ok: true });
+
+    const schema = fromStandardSchema(SelectRows, { jsonSchema });
     expect(schema.parse({ ids: ["d1"] })).toEqual({ ids: ["d1"], mode: "replace" });
     expect(() => schema.parse({ ids: [] })).toThrow(AgentSchemaError);
     try {

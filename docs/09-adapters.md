@@ -100,6 +100,19 @@ surface_act({ capabilityId, instanceId?, input, invocationId?, confirmationId? }
 
 Inputs are validated by the registry exactly as in direct mode (the JSON Schemas ride in the discover payload instead of the tool definitions). Default remains `direct`; a future heuristic ("switch above N capabilities") is deliberately not specified yet — measure first.
 
+Normative parity rules (`AS-ADAPTER-004`) — meta mode is a different *projection*, never a different *protocol*:
+
+- **Resolution is identical.** `surface_read`/`surface_act` resolve `(capabilityId, instanceId?)` through the same registry path as a direct tool. When the pair does not resolve to exactly one live registration, the adapter MUST omit `registrationId` and let the registry answer: `AMBIGUOUS_INSTANCE` (with the instance list, `retry:"with-changes"`), `CAPABILITY_NOT_FOUND`, or `COMPONENT_UNMOUNTED`. An adapter MUST NOT substitute a placeholder id — an empty string reads as "this exact registration", which returns `STALE_CAPABILITY {retry:"after-refresh"}` and loops the agent against an unchanged surface.
+- **One execution path.** Both verbs go through the same invoke helper as direct tools, so staleness binding, dedupe identity, and the wait-mode confirmation retry (D26) behave the same. `surface_act` accepts `invocationId` (transport retry identity) and `confirmationId` (two-phase re-submission) from the caller.
+- **The catalog is constant**, so `toolset.subscribe` never fires in meta mode — there is nothing that could change. Agents notice surface changes by re-running `surface_discover` and comparing `surfaceVersion`; a stale `surfaceVersion` on an act is rejected as usual. This is the one ergonomic cost of the mode, stated rather than papered over.
+- **`budget` is meta-only** ([03 §snapshot](03-core-api.md#snapshot)). In `surface_discover` the `truncated: {droppedComponents}` marker travels in the payload the model reads, so truncation is visible to the party affected by it. Passing a budget with `mode:"direct"` throws at construction: there it would drop tools from the catalog with no marker anywhere, and a silent cap is worse than a loud refusal.
+
+### Scope is discovery-only
+
+`scope` filters what a consumer can *see*; it is not an authority boundary. `invoke` does not check scope in either mode, so in meta mode a model that already knows a `capabilityId` can act on it through `surface_act` regardless of scope. That is the honest reading of [06 §threat model](06-policies-and-security.md#threat-model) — client-side filtering is discovery hygiene, and the server remains the authority for anything that persists.
+
+Within that limit, the configured scope is a **floor** (`AS-ADAPTER-005`, D27): a model-supplied `surface_discover({scope})` may narrow it (`["devices"]` → `["devices.table"]`) but never widen it. An empty array is treated as "unspecified", not "everything"; a request entirely outside the floor returns an empty surface rather than falling back to the floor. For a least-trusted peer, prefer `direct` with a `scope` — there no tool exists for what the floor hides, which is a boundary rather than a filter.
+
 ## WebMCP adapter (Experimental)
 
 `@agent-surface/webmcp` maps the registry onto the emerging `navigator.modelContext` API, treating WebMCP strictly as **transport/discovery** — the application model stays in agent-surface, so WebMCP API drift is absorbed here and nowhere else.

@@ -1,6 +1,6 @@
 # agent-surface
 
-> **Status: v0.1 implementation.** The specification in [docs/](docs/) was written first (documentation-driven development); the packages under [packages/](packages/) now implement it — core registry, React bindings, oRPC procedure references, testing toolkit, and the experimental WebMCP adapter — with the [docs/08 test recipes](docs/08-testing.md) as the executable contract. Nothing is published to npm yet. The name `agent-surface` is provisional.
+> **Status: 0.1.0 on npm, 0.2 in progress.** The specification in [docs/](docs/) was written first (documentation-driven development); the packages under [packages/](packages/) implement it — core registry, React bindings, oRPC procedure references, testing toolkit, and the experimental WebMCP adapter — with the [docs/08 test recipes](docs/08-testing.md) as the executable contract. Usable and explicitly not yet *Stable*: see the [graduation criteria](docs/12-roadmap.md). The name `agent-surface` is provisional.
 
 **Working with this repo:**
 
@@ -142,9 +142,9 @@ Published as 0.x: usable, and explicitly not yet *Stable* — see the [graduatio
 
 ## Roadmap (short form)
 
-- **v0.1** — core registry, React hooks, testing package, embedded toolset adapter.
-- **v0.2** — oRPC procedure references, confirmation UX helpers, example app.
-- **v0.3** — WebMCP adapter (experimental), surface budgeting.
+- **v0.1** — shipped: all five packages, the example app, and the conformance manifest.
+- **v0.2** — trust, not surface area: meta-tools parity with direct mode, D25 concurrency groups (the manifest is now 77/77 implemented), and a real support matrix (Node 20.19/22 × React 18.2/19, ESM + bundler smoke, Zod *and* Valibot).
+- **v0.3** — adoption and enforcement: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, and a second adoption context.
 - **Later** — MCP bridge, multi-window surfaces, Playwright fallback as a separate non-core package.
 
 See [docs/12-roadmap.md](docs/12-roadmap.md).
