@@ -254,6 +254,104 @@ describe("configured scope is a floor (AS-ADAPTER-005, D27)", () => {
     ]);
   });
 
+  function scopeRejected(result: AgentInvocationResult): string[] | undefined {
+    if (result.status !== "ok") throw new Error(`discover failed: ${errorCode(result)}`);
+    return (result.output as { scopeRejected?: { prefixes: string[] } }).scopeRejected?.prefixes;
+  }
+
+  it("AS-META-006: a floor that refuses the whole request says so in the payload", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const meta = metaToolset(registry, { scope: ["devices"] });
+    const discover = tool(meta, "surface_discover");
+
+    // Without the marker this payload is indistinguishable from an empty
+    // surface, and the two call for opposite next moves: ask again unscoped,
+    // versus stop asking. Same reason budget truncation is marked (AS-META-003).
+    const result = await discover.execute({ scope: ["billing"] }, {});
+    expect(discoveredTypes(result)).toEqual([]);
+    expect(scopeRejected(result)).toEqual(["billing"]);
+  });
+
+  it("AS-META-006: a genuinely empty surface is distinguishable from a refused scope", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    const meta = metaToolset(registry, { scope: ["devices"] });
+    const discover = tool(meta, "surface_discover");
+
+    // Nothing mounted: empty, and nothing was refused to make it so.
+    const empty = await discover.execute({ scope: ["devices.table"] }, {});
+    expect(discoveredTypes(empty)).toEqual([]);
+    expect(scopeRejected(empty)).toBeUndefined();
+
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const refused = await discover.execute({ scope: ["billing"] }, {});
+    expect(discoveredTypes(refused)).toEqual([]);
+    expect(scopeRejected(refused)).toEqual(["billing"]);
+  });
+
+  it("AS-META-006: partial refusal is reported alongside the part that was admitted", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const meta = metaToolset(registry, { scope: ["devices"] });
+
+    // The admitted half returning results is not evidence the other half
+    // existed and was empty — it was never looked at.
+    const result = await tool(meta, "surface_discover").execute(
+      { scope: ["devices.table", "billing", "billing"] },
+      {},
+    );
+    expect(discoveredTypes(result)).toEqual(["devices.table"]);
+    expect(scopeRejected(result)).toEqual(["billing"]);
+  });
+
+  it("AS-META-006: a refused scope does not inherit a budget's truncation count", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register({ ...devicesTableDefinition(makeDevicesState()), instanceId: "a" });
+    registry.register({ ...devicesTableDefinition(makeDevicesState()), instanceId: "b" });
+    const meta = createAgentToolset(registry, {
+      consumer: { id: "copilot", kind: "embedded" },
+      topology: "embedded",
+      mode: "meta",
+      scope: ["devices"],
+      budget: { maxComponents: 1 },
+    });
+
+    // A disjoint request is snapshotted unscoped, so the budget does drop a
+    // component on the way — but of a surface this payload does not contain.
+    // Reporting it would blame the budget for what the floor did.
+    const result = await tool(meta, "surface_discover").execute({ scope: ["billing"] }, {});
+    expect(result.status).toBe("ok");
+    const output =
+      result.status === "ok"
+        ? (result.output as { components: unknown[]; truncated?: unknown })
+        : { components: ["unreachable"], truncated: "unreachable" };
+    expect(output.components).toEqual([]);
+    expect(output.truncated).toBeUndefined();
+    expect(scopeRejected(result)).toEqual(["billing"]);
+  });
+
+  it("AS-META-006: honored requests carry no marker", async () => {
+    const registry = createAgentSurfaceRegistry({ environment: "test" });
+    registry.register(devicesTableDefinition(makeDevicesState()));
+    const floored = metaToolset(registry, { scope: ["devices"] });
+    const discover = tool(floored, "surface_discover");
+
+    // No request, and a request inside the floor.
+    expect(scopeRejected(await discover.execute({}, {}))).toBeUndefined();
+    expect(scopeRejected(await discover.execute({ scope: ["devices.table"] }, {}))).toBeUndefined();
+
+    // A request *broader* than the floor is not a refusal: it collapses to the
+    // floor's own prefix, which is the narrowing D27 specifies.
+    const narrow = metaToolset(registry, { scope: ["devices.table"] });
+    const broad = await tool(narrow, "surface_discover").execute({ scope: ["devices"] }, {});
+    expect(discoveredTypes(broad)).toEqual(["devices.table"]);
+    expect(scopeRejected(broad)).toBeUndefined();
+
+    // With no floor there is nothing to refuse: an empty result means empty.
+    const unfloored = tool(metaToolset(registry), "surface_discover");
+    expect(scopeRejected(await unfloored.execute({ scope: ["billing"] }, {}))).toBeUndefined();
+  });
+
   it("with no floor configured, a model-supplied scope is honored as-is", async () => {
     const registry = createAgentSurfaceRegistry({ environment: "test" });
     registry.register(devicesTableDefinition(makeDevicesState()));

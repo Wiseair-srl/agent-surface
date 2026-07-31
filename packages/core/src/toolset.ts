@@ -378,7 +378,17 @@ export function createAgentToolset(
           "[meta] Discover the current agent surface: components, capabilities, procedures, availability, schemas.",
         inputSchema: {
           type: "object",
-          properties: { scope: { type: "array", items: { type: "string" } } },
+          properties: {
+            scope: {
+              type: "array",
+              items: { type: "string" },
+              // No enum: valid tokens are live component types, and inlining
+              // them would make this tool block churn on every mount —
+              // the churn AS-META-005 and D28 exist to prevent.
+              description:
+                'Component-type prefixes to narrow the result, e.g. ["devices.table"], taken from `components[].type` of an earlier call — omit on the first. Narrows only: prefixes outside this host\'s configured scope match nothing and come back in `scopeRejected`.',
+            },
+          },
           additionalProperties: false,
         },
         async execute(input) {
@@ -391,9 +401,21 @@ export function createAgentToolset(
             ...(options.budget ? { budget: options.budget } : {}),
           });
           // Disjoint request: honored as "nothing", never widened to the floor.
-          const projected: AgentSurfaceSnapshot = effective.empty
-            ? { ...snapshot, components: [], procedures: [] }
-            : snapshot;
+          // The refusal is marked for the same reason budget truncation is —
+          // an unexplained blank payload reads as "the surface is empty", which
+          // is the one conclusion the model must not draw here (AS-META-006).
+          const projected: AgentSurfaceSnapshot = {
+            ...snapshot,
+            // A disjoint request is snapshotted unscoped, so any `truncated`
+            // count belongs to a surface this payload does not contain. Keeping
+            // it would claim a budget dropped what scope did.
+            ...(effective.empty
+              ? { components: [], procedures: [], truncated: undefined }
+              : {}),
+            ...(effective.rejected.length > 0
+              ? { scopeRejected: { prefixes: effective.rejected } }
+              : {}),
+          };
           return {
             status: "ok",
             invocationId: `inv_${randomBase62(12)}`,
@@ -409,8 +431,16 @@ export function createAgentToolset(
         inputSchema: {
           type: "object",
           properties: {
-            capabilityId: { type: "string" },
-            instanceId: { type: "string" },
+            capabilityId: {
+              type: "string",
+              description:
+                "Observation id, verbatim from `observations[].capabilityId` in a discover result.",
+            },
+            instanceId: {
+              type: "string",
+              description:
+                "Only when several components share a type: `components[].instanceId` picks one.",
+            },
           },
           required: ["capabilityId"],
           additionalProperties: false,
@@ -440,12 +470,32 @@ export function createAgentToolset(
         inputSchema: {
           type: "object",
           properties: {
-            capabilityId: { type: "string" },
-            instanceId: { type: "string" },
-            input: {},
-            invocationId: { type: "string" },
-            confirmationId: { type: "string" },
-            surfaceVersion: { type: "string" },
+            capabilityId: {
+              type: "string",
+              description:
+                "Action `capabilityId` or `procedureId`, verbatim from a discover result.",
+            },
+            instanceId: {
+              type: "string",
+              description:
+                "Only when several components share a type: `components[].instanceId` picks one.",
+            },
+            input: { description: "Arguments matching that capability's `inputSchema`." },
+            invocationId: {
+              type: "string",
+              description:
+                "Reuse a previous call's id to retry without executing twice; required when resuming after CONFIRMATION_REQUIRED.",
+            },
+            confirmationId: {
+              type: "string",
+              description:
+                "The id returned with CONFIRMATION_REQUIRED, sent back after the user approves.",
+            },
+            surfaceVersion: {
+              type: "string",
+              description:
+                "The `surfaceVersion` you planned against. Send it for destructive or externally-visible calls: a surface that moved underneath the plan then fails instead of executing. Omitted, the call binds to what is live now.",
+            },
           },
           required: ["capabilityId"],
           additionalProperties: false,
@@ -569,26 +619,44 @@ export function createAgentToolset(
  * pair that shares no prefix contributes nothing. An empty result means the
  * request was entirely outside the floor — reported as an empty surface rather
  * than silently falling back to the floor itself.
+ *
+ * `rejected` names the requested prefixes the floor admitted nothing for, in
+ * request order. It carries the whole request when the two are disjoint, and a
+ * subset when only part of the request was out of bounds; both are cases where
+ * the model asked for something and got silence back (AS-META-006). A prefix
+ * broader than the floor is *not* rejected: it contributed the floor's own
+ * narrower prefix, which is the narrowing D27 describes.
  */
 function intersectScope(
   floor: string[] | undefined,
   requested: string[] | undefined,
-): { scope?: string[]; empty: boolean } {
+): { scope?: string[]; empty: boolean; rejected: string[] } {
   const hasFloor = floor !== undefined && floor.length > 0;
   // `[]` is "everything" to matchesScope — treat it as "unspecified", so an
   // empty array cannot be used to widen past the floor.
   if (requested === undefined || requested.length === 0) {
-    return hasFloor ? { scope: floor, empty: false } : { empty: false };
+    return hasFloor ? { scope: floor, empty: false, rejected: [] } : { empty: false, rejected: [] };
   }
-  if (!hasFloor) return { scope: requested, empty: false };
+  if (!hasFloor) return { scope: requested, empty: false, rejected: [] };
   const out = new Set<string>();
-  for (const f of floor) {
-    for (const r of requested) {
-      if (r === f || r.startsWith(`${f}.`)) out.add(r);
-      else if (f.startsWith(`${r}.`)) out.add(f);
+  const rejected: string[] = [];
+  for (const r of requested) {
+    let admitted = false;
+    for (const f of floor) {
+      if (r === f || r.startsWith(`${f}.`)) {
+        out.add(r);
+        admitted = true;
+      } else if (f.startsWith(`${r}.`)) {
+        out.add(f);
+        admitted = true;
+      }
     }
+    // Deduped: a repeated prefix is one refusal, not one per occurrence.
+    if (!admitted && !rejected.includes(r)) rejected.push(r);
   }
-  return out.size > 0 ? { scope: [...out], empty: false } : { empty: true };
+  return out.size > 0
+    ? { scope: [...out], empty: false, rejected }
+    : { empty: true, rejected };
 }
 
 function findRegistrationId(

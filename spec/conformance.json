@@ -779,6 +779,15 @@
       ],
       "status": "implemented"
     },
+    "AS-META-006": {
+      "title": "A scope floor that refuses requested prefixes marks them in the discover payload, so an empty result is distinguishable from an empty surface",
+      "source": "09-adapters.md#meta-tools-mode",
+      "decision": "D31",
+      "tests": [
+        "packages/core/test/conformance/meta-parity.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-WIRE-004": {
       "title": "Emitted wire names never exceed the 64-character provider budget",
       "source": "09-adapters.md#wire-names",

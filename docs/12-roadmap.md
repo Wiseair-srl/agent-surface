@@ -34,8 +34,9 @@ Breaking, as a 0.x minor may be ([stability policy](#stability-policy)): `AgentT
 
 ### v0.4 — adoption and enforcement
 
+- **Discovery says what it withheld** (`AS-META-006`, D31): `surface_discover` marks a scope the configured floor refused, so an empty payload is no longer indistinguishable from an empty surface, and the three meta verbs describe their parameters. Manifest 90 → 91/91.
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
-- CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)). The `core` bundle is the pressing one: 17.86 kB against an 18 kB limit until the D28 default flip removes the compatibility branches.
+- CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)). The `core` bundle is the pressing one: 18.33 kB against a limit deliberately revised to 19 kB for D31. The D28 *default flip* due this release does not hand that back — both branches stay while the flags exist — so the budget holds until 0.5 removes them ([19 §C4](19-catalog-scale-rfc.md), one minor later than the RFC's numbering because D28 landed in 0.3).
 - Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 and 0.3.
 - A tracked expiry for the advisory `typescript@next` job, which fails on a `.d.ts`-bundler incompatibility with TypeScript 7 rather than on our types ([17 §7.4](17-maintainer-directive.md) forbids leaving it allowed-to-fail untracked).
 - Browser matrix (Chromium/Firefox/WebKit) — deferred until it buys something: `webmcp` is the only browser-API surface and it is Experimental.

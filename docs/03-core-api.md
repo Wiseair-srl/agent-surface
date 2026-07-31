@@ -398,6 +398,8 @@ export interface AgentSurfaceSnapshot {
   procedures: AgentProcedureDescriptor[];
   /** [Experimental] Present iff a budget truncated the snapshot. */
   truncated?: { droppedComponents: number };
+  /** [Experimental] Present iff a scope floor refused requested prefixes (D31). */
+  scopeRejected?: { prefixes: string[] };
 }
 
 export interface AgentComponentDescriptor {
@@ -447,6 +449,7 @@ Snapshot semantics (normative):
 - **Stable and volatile text are separable** (D28). A procedure reference's contextual `describe()` output is `contextualNote`, always populated; `description` is the manifest text. `snapshotMergesContextualNote: true` (the 0.2 default) additionally folds the note into `description` for 0.1 readers. `stableDescriptionOf(descriptor)` returns the note-free description in either mode, so no consumer has to parse a string it did not compose.
 - Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected for v0.1 (adds traversal API surface with no consumer that needs it yet).
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
+- `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).
 
 ---
 
