@@ -27,7 +27,7 @@ No new surface area. Everything here closed a gap between what the docs promised
 The first correction cycle driven by a host rather than by self-review: a dashboard at ~300 domain capabilities and 40+ mounted view capabilities per route ([19](19-catalog-scale-rfc.md), D28–D30). Manifest 77 → 90/90.
 
 - **Capability state is data, not description text** (`AS-CACHE-001…004`, D28). Tool definitions are the provider's cached prompt prefix; folding `available` into the description re-billed the conversation on every click. `AgentTool.state` and `AgentProcedureDescriptor.contextualNote`, behind compatibility flags intended to last one minor — removed in [v0.5](#v05--the-split-is-the-only-composition--shipped-2026-07-31) without ever flipping.
-- **`mode:"meta"` graduated to supported** (`AS-META-001…005`, D29) on a suite pinning what makes it different. An Experimental marker on the library's only answer for an oversized catalog made it unreachable exactly where it was needed. *(Reversed in [v0.7](#v07--adoption-and-enforcement): the suite covered the mode's distinguishing behaviors, not its verb envelope, which is where 0.6 then found two defects.)*
+- **`mode:"meta"` graduated to supported** (`AS-META-001…005`, D29) on a suite pinning what makes it different. An Experimental marker on the library's only answer for an oversized catalog made it unreachable exactly where it was needed. *(Reversed in [v0.7](#v07--meta-is-experimental-again--shipped-2026-07-31): the suite covered the mode's distinguishing behaviors, not its verb envelope, which is where 0.6 then found two defects.)*
 - **Wire names fit the provider budget and keep their identity** (`AS-WIRE-004…007`, D30): collision-checked per emitted catalog, reversed through `wireNameMap()`, and `decodeWireName` now refuses rather than returning a plausible wrong id.
 
 Breaking, as a 0.x minor may be ([stability policy](#stability-policy)): `AgentTool.state` is required for anyone *constructing* a tool, and wire names can no longer be reversed by string surgery.
@@ -59,13 +59,19 @@ The first cycle driven by a *live model* rather than by review or by a host's ca
 - **`decodeWireName` refuses by structure, not by substring** (`AS-ID-004`, `AS-WIRE-007`): a segment named `at` or `0` no longer costs a capability its faithful encoding. Found by the property suite on a random seed; closed a real encoder ambiguity for `domain:` paths containing `_`.
 - `core`'s size budget revised 18.5 → 19.5 kB (measured 18.86 kB) — the envelope check and its error strings, paid once, against descriptions re-billed per request.
 
-### v0.7 — adoption and enforcement
+### v0.7 — `meta` is Experimental again — shipped (2026-07-31)
 
-- **Lockstep versioning realigned.** 0.6.0 released `core` alone, leaving the other four at 0.5.1 against the rule in `.changeset/README.md` that all `@agent-surface/*` packages ship one version. 0.7.0 puts all five back on the same number; those four skip 0.6.0 on npm, where it was never published for them.
+No behavior change: a stability label, and the documentation debt that had accumulated behind it.
+
 - **`mode:"meta"` returns to Experimental** (D29). Two protocol-level defects in one minor, in the verbs' own envelope, is not what a supported label should absorb — and the graduation suite could not have caught either, since it pins what the mode does *differently* from `direct`. Graduation is re-earnable: envelope requirements that hold across a release, plus a host running it in production. See [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).
+- **Lockstep versioning realigned.** 0.6.0 released `core` alone, leaving the other four at 0.5.1 against the rule in `.changeset/README.md` that all `@agent-surface/*` packages ship one version. 0.7.0 puts all five back on the same number; those four skip 0.6.0 on npm, where it was never published for them.
+- **A documentation truth pass**, since three published claims had gone stale at once: the README's package versions and test/requirement counts, this file's missing v0.6 entry, and [15](15-completeness-review.md) still calling D25 "specified, deliberately unimplemented" three releases after 0.2 implemented it. The pattern worth naming — a version slot written *before* the release and never recut afterwards — is what produced both the missing v0.6 entry and this one; a shipped release recuts its own slot in the same PR.
+
+### v0.8 — adoption and enforcement
+
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
 - CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
-- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 through 0.6.
+- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 through 0.7.
 - A tracked expiry for the advisory `typescript@next` job, which fails on a `.d.ts`-bundler incompatibility with TypeScript 7 rather than on our types ([17 §7.4](17-maintainer-directive.md) forbids leaving it allowed-to-fail untracked).
 - Browser matrix (Chromium/Firefox/WebKit) — deferred until it buys something: `webmcp` is the only browser-API surface and it is Experimental.
 - OQ-1 decided and implemented: the `orpc-agent` manifest source (overdue — it was due before M9, which has shipped).
@@ -96,4 +102,4 @@ Graduation criteria to Stable (all required): used by the example app and ≥1 r
 - pnpm workspace, Changesets, semver pre-releases (`0.x`), provenance-signed publishes.
 - Every package ships ESM + `.d.ts`, `sideEffects: false`, size-limit budget enforced in CI ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
 - CI matrix (live): Node 20.19/22 × React 18.2/19 with Strict Mode exercised inside the React suites; `typescript@next` advisory (`continue-on-error` — types are API here, but an upstream regression is not a release gate); Zod and Valibot through Standard Schema; out-of-workspace ESM import and a Vite bundle of the example app.
-- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.7 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
+- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.8 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
