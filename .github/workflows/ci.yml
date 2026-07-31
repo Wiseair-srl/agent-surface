@@ -102,8 +102,12 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm add -Dw typescript@next
-      - run: pnpm build
+      # Typecheck FIRST: types are the API here, so that is the signal this job
+      # exists for. `tsup`'s DTS builder currently crashes under TS 7
+      # (useCaseSensitiveFileNames) — running build first would mask the
+      # typecheck result behind an upstream tooling failure. Tracked in #2.
       - run: pnpm typecheck
+      - run: pnpm build
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
