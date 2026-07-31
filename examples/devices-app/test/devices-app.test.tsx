@@ -2,23 +2,22 @@
 import { act, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createAgentToolset } from "@agent-surface/core";
-import { renderAgentSurface, type RenderedAgentSurface } from "@agent-surface/testing/react";
+import { mountScenario } from "@agent-surface/cli/vitest";
 import { matchers } from "@agent-surface/testing/matchers";
-import { createApp, type App as AppWiring } from "../src/agent/setup.js";
-import { App } from "../src/app/App.js";
 import { runDevicesScenario } from "../src/agent/scripted-agent.js";
+import surfaceConfig from "../agent-surface.config.js";
 
 expect.extend(matchers);
 
-async function renderApp(options?: Parameters<typeof createApp>[0]): Promise<{
-  wiring: AppWiring;
-  surface: RenderedAgentSurface;
-}> {
-  const wiring = createApp({ environment: "test", ...options });
-  const surface = await renderAgentSurface(<App app={wiring} agentConsole={false} />, {
-    registry: wiring.registry,
-  });
-  await act(async () => {}); // initial data fetch settles
+/**
+ * The scenarios come from `agent-surface.config.tsx` — the same file
+ * `agent-surface inspect` and `agent-surface check` read. This suite used to
+ * build the app a second way, which meant "signed-in operator on /devices"
+ * existed twice and could drift; now there is one definition and three
+ * consumers of it.
+ */
+async function renderApp(scenario: "admin" | "anonymous" = "admin") {
+  const { surface, app: wiring } = await mountScenario(surfaceConfig, scenario);
   return { wiring, surface };
 }
 
@@ -51,7 +50,7 @@ describe("the devices page exposes exactly the documented surface (docs/10)", ()
   });
 
   it("authority hides: signed-out sessions see an empty surface", async () => {
-    const { surface } = await renderApp({ user: null });
+    const { surface } = await renderApp("anonymous");
     expect(surface.snapshot().components).toHaveLength(0);
     expect(surface.snapshot().procedures).toHaveLength(0);
     expect(surface).not.toExpose("domain:devices.disable");

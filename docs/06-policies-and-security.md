@@ -118,6 +118,18 @@ Policy contexts also expose `now(): number` — the registry's injectable clock.
 - `hide` when the consumer/user lacks the *right* (authz, tenant, plan, feature flag): existence is information you don't owe them.
 - `disable` with a reason when the *state* makes it momentarily invalid (nothing selected, already open): the reason teaches the agent what to do first.
 
+### Explain is never agent-facing
+
+`hide` deletes a capability from the snapshot precisely so that its existence does not leak. That leaves the developer with no way to answer "why did my capability disappear?", which `explainSurface()` exists to fix ([03 §explainSurface](03-core-api.md#explainsurface-developer-projection)) — and which makes it, by construction, a disclosure of everything `hide` withholds.
+
+Normative rules:
+
+- `explainSurface` MUST NOT be reachable from `@agent-surface/core`. It lives behind `@agent-surface/core/explain`, a separate entry point, and `AS-EXPLAIN-004` fails the build if it ever appears on the package root that adapters import.
+- No adapter, toolset, transport, or prompt may consume it. Its output is for humans, tests, and the CLI. Piping it into a model re-leaks exactly the existence the threat model withholds, and does so with the policy names attached.
+- There is deliberately **no runtime environment gate**. The boundary is structural, not conditional: an `environment !== "production"` check would both invite the belief that an agent-facing leak is safe in development, and block the legitimate case of inspecting a production-configured registry from a developer's terminal. Import-reachability is the enforceable line; a runtime flag is not.
+
+The frontend is not a security boundary either way ([§threat model](#threat-model)): anything on the page can already enumerate the registry. What this rule protects is the *agent* boundary — the one place where the library does make a claim.
+
 ## Built-in policies
 
 All Draft; all implementable in core without external deps. Host semantics (what "authenticated" means) are injected, not assumed.

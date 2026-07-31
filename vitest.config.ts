@@ -4,7 +4,10 @@ import { defineConfig } from "vitest/config";
 const r = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 
 const alias = {
+  "@agent-surface/core/explain": r("./packages/core/src/explain.ts"),
   "@agent-surface/core": r("./packages/core/src/index.ts"),
+  "@agent-surface/cli/vitest": r("./packages/cli/src/vitest.ts"),
+  "@agent-surface/cli": r("./packages/cli/src/index.ts"),
   "@agent-surface/react": r("./packages/react/src/index.ts"),
   "@agent-surface/orpc/react": r("./packages/orpc/src/react.ts"),
   "@agent-surface/orpc": r("./packages/orpc/src/index.ts"),
@@ -25,6 +28,7 @@ export default defineConfig({
           globals: true,
           include: [
             "packages/core/test/**/*.test.ts",
+            "packages/cli/test/**/*.test.ts",
             "packages/testing/test/**/*.test.ts",
             "packages/orpc/test/**/*.test.ts",
             "packages/webmcp/test/**/*.test.ts",

@@ -3,7 +3,6 @@
   "include": [
     "src",
     "test",
-    "agent-surface.config.tsx",
     "../../types"
   ]
 }

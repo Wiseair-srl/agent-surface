@@ -18,7 +18,7 @@
 Your components declare what an agent may observe and do while they are mounted — as typed, semantic capabilities under one set of policies, confirmations, staleness rules, and audit. Everything else on the page stays invisible to it.
 
 > [!NOTE]
-> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing) and [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp), all at **0.7.0**, which realigned the five on the lockstep the [release notes](.changeset/README.md) describe after 0.6.0 shipped `core` alone. The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs 346 tests across 30 files on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest ([93/93 requirements implemented](spec/conformance.json)). Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
+> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing), [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp) and [`cli`](https://www.npmjs.com/package/@agent-surface/cli), all at **0.8.0** on the lockstep the [release notes](.changeset/README.md) describe. The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs 374 tests across 33 files on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest ([100/100 requirements implemented](spec/conformance.json)). Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
@@ -209,6 +209,7 @@ What this does not claim: **isolation between scripts in the same realm** (hosti
 | [`@agent-surface/orpc`](packages/orpc) | Contextual references to oRPC procedures exposed via `orpc-agent`, with UI-state binding |
 | [`@agent-surface/testing`](packages/testing) | Render / discover / invoke / assert, plus surface snapshots. No LLM |
 | [`@agent-surface/webmcp`](packages/webmcp) | WebMCP (`navigator.modelContext`) transport adapter — **Experimental** |
+| [`@agent-surface/cli`](packages/cli) | `agent-surface inspect` / `snapshot` / `check` — the live surface in a terminal, and drift as a CI gate |
 
 Boundaries and data flow: [docs/02-architecture.md](docs/02-architecture.md). Every package ships ESM + `.d.ts`, `sideEffects: false`, and a size budget enforced in CI.
 
@@ -227,6 +228,24 @@ expect(s).toMatchSurfaceSnapshot(); // the reviewable "what agents can see" arti
 ```
 
 Snapshots normalize volatility (`registrationId` → `<reg#N>`), so they survive Strict Mode and remounts and every diff is a real change in reach. The matchers distinguish *hidden* from *visible-disabled* on purpose — that distinction is the security model, not a UX detail: a hidden capability must be indistinguishable from a nonexistent one, while a disabled one tells the agent why it cannot run it yet. Recipes: [docs/08-testing.md](docs/08-testing.md).
+
+The same gate without a test file, plus the question a snapshot cannot answer:
+
+```bash
+agent-surface check                      # non-zero when the surface drifts from its baseline
+agent-surface inspect anonymous --explain
+```
+
+```text
+0 callable, 0 visible-disabled, 11 hidden
+
+hidden by policy (absent from the snapshot)  (11)
+  - set  [devices.filters@default]
+       Update one or both filters; omitted fields are unchanged.
+       policy authenticated (registry, discovery/authorize): hide
+```
+
+Hiding is what the security model is *for*, which is why a snapshot cannot tell you a capability was hidden, let alone by which policy — `--explain` is the developer-side answer, and it is deliberately unreachable from the package root an adapter imports. [docs/20-cli.md](docs/20-cli.md).
 
 ## Example
 
@@ -247,7 +266,8 @@ No agent loop, planner, prompts, or memory. No chat UI, no generative UI, no wor
 - **v0.5** — shipped, *the split is the only composition*: the D28 compatibility flags were removed rather than flipped, so `description` never carries live state and there is one way to compose a tool. `core` back to 18.12 kB.
 - **v0.6** — shipped, *meta-mode reliability* (D32, the first cycle driven by a live model): `surface_act` validates its own envelope and types its `input`, and `decodeWireName` refuses by structure rather than by substring. The manifest reached 93/93.
 - **v0.7** — shipped, *`meta` is Experimental again* (D29 reversed): a suite pinning what the mode does differently from `direct` was read as evidence its contract had settled, and 0.6's two envelope defects showed it was not. Lockstep versioning realigned across all five packages.
-- **v0.8** — *adoption and enforcement*: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context — the real blocker on graduating anything to Stable.
+- **v0.8** — *the surface is inspectable*: `@agent-surface/cli` (`inspect` / `snapshot` / `check`) and `explainSurface()`, the developer projection that names the policy behind a hidden capability.
+- **v0.9** — *adoption and enforcement*: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context — the real blocker on graduating anything to Stable.
 - **Later** — MCP bridge, cross-tab and multi-window surfaces, iframe/worker isolation for third-party registrants, frameworks beyond React.
 
 Details, decision log, and open questions: [docs/12-roadmap.md](docs/12-roadmap.md) and [docs/13-open-questions.md](docs/13-open-questions.md).
