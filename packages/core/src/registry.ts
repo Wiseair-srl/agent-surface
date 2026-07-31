@@ -52,15 +52,6 @@ export interface RegistryOptions {
   /** Route descriptor for snapshots (host wires its router here). */
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
-  /**
-   * D28 compatibility flag. `true` (default through 0.4; flips in 0.5) folds a procedure
-   * reference's contextual `describe()` output into
-   * `AgentProcedureDescriptor.description`, as 0.1 did. `false` keeps the two
-   * apart, so `description` is stable across snapshots and the live text is
-   * read from `contextualNote`. Populated either way; the default flips in a
-   * later minor and the flag is then removed.
-   */
-  snapshotMergesContextualNote?: boolean;
   /** Injectable clock (docs/08 determinism); default Date.now. */
   now?: () => number;
 }
@@ -114,7 +105,6 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
   const internals: RegistryInternals = {
     environment,
     limits,
-    mergesContextualNote: options?.snapshotMergesContextualNote ?? true,
     surfaceId: `srf_${randomBase62(22)}`,
     version: 0,
     registrations: new Map(),

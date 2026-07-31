@@ -4,8 +4,7 @@
  * AS-CACHE-001 (no live state in `description` once split),
  * AS-CACHE-002 (tool definitions byte-identical across an availability flip),
  * AS-CACHE-003 (`state.note` carries the binding `describe()` contribution),
- * AS-CACHE-004 (`AgentProcedureDescriptor.description` note-free when the
- * registry stops merging).
+ * AS-CACHE-004 (`AgentProcedureDescriptor.description` is always note-free).
  *
  * The point of all four is a stable provider prompt prefix: tool definitions
  * sit at the front of the cached prefix, so a byte that flips when a user
@@ -15,7 +14,6 @@ import { describe, expect, it } from "vitest";
 import {
   createAgentSurfaceRegistry,
   createAgentToolset,
-  stableDescriptionOf,
   type AgentSurfaceRegistry,
   type AgentTool,
   type AgentToolset,
@@ -45,15 +43,9 @@ function tool(toolset: AgentToolset, name: string): AgentTool {
 }
 
 function setup(options?: {
-  mergesContextualNote?: boolean;
   describe?: () => string;
 }): { registry: AgentSurfaceRegistry; state: DevicesState } {
-  const registry = createAgentSurfaceRegistry({
-    environment: "test",
-    ...(options?.mergesContextualNote !== undefined
-      ? { snapshotMergesContextualNote: options.mergesContextualNote }
-      : {}),
-  });
+  const registry = createAgentSurfaceRegistry({ environment: "test" });
   registry.setProcedureExecutor({
     paths: ["devices.disable"],
     async execute() {
@@ -79,7 +71,6 @@ describe("AS-CACHE-001 — descriptions carry no live state once split", () => {
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
       topology: "embedded",
-      descriptionIncludesState: false,
     });
 
     const disable = tool(toolset, "domain_devices__disable");
@@ -95,21 +86,6 @@ describe("AS-CACHE-001 — descriptions carry no live state once split", () => {
     expect(clear.description).not.toContain("currently unavailable");
     expect(clear.state).toEqual({ available: false, unavailableReason: "No rows are selected" });
   });
-
-  it("keeps 0.1's exact composition while the compat flag is on (the default)", () => {
-    const { registry } = setup();
-    const legacy = createAgentToolset(registry, {
-      consumer: { id: "copilot", kind: "embedded" },
-      topology: "embedded",
-    });
-    const disable = tool(legacy, "domain_devices__disable");
-    expect(disable.description).toBe(
-      "[domain · destructive · requires confirmation] [currently unavailable: Select at least one device first] Disable the given devices",
-    );
-    // `state` is populated in BOTH modes, so a host can migrate before the
-    // default moves.
-    expect(disable.state.available).toBe(false);
-  });
 });
 
 describe("AS-CACHE-002 — tool definitions survive an availability flip byte-identically", () => {
@@ -118,7 +94,6 @@ describe("AS-CACHE-002 — tool definitions survive an availability flip byte-id
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
       topology: "embedded",
-      descriptionIncludesState: false,
     });
 
     const before = definitions(toolset);
@@ -140,25 +115,11 @@ describe("AS-CACHE-002 — tool definitions survive an availability flip byte-id
     expect(kept).toBe(before);
   });
 
-  it("the same flip DOES change the definitions under the compat flag", async () => {
-    const { registry, state } = setup();
-    const legacy = createAgentToolset(registry, {
-      consumer: { id: "copilot", kind: "embedded" },
-      topology: "embedded",
-    });
-    const before = definitions(legacy);
-    state.selectedIds = ["d1"];
-    registry.register(devicesTableDefinition(makeDevicesState(), { type: "aux.panel" }));
-    await Promise.resolve();
-    expect(definitions(legacy)).not.toBe(before); // the cache miss this RFC removes
-  });
-
   it("subscribers still hear about the flip, so the state block can be re-rendered", async () => {
     const { registry, state } = setup();
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
       topology: "embedded",
-      descriptionIncludesState: false,
     });
     const seen: Array<boolean | undefined> = [];
     toolset.subscribe((tools) => {
@@ -179,47 +140,35 @@ describe("AS-CACHE-003 — state.note carries the binding describe() contributio
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
       topology: "embedded",
-      descriptionIncludesState: false,
     });
     const disable = tool(toolset, "domain_devices__disable");
     expect(disable.state.note).toBe("Currently bound to 2 selected device(s).");
     expect(disable.description).not.toContain("Currently bound");
   });
 
-  it("the compat flag still merges it into the description, note and all", () => {
-    const { registry } = setup({ describe: () => "Currently bound to 2 selected device(s)." });
-    const legacy = createAgentToolset(registry, {
-      consumer: { id: "copilot", kind: "embedded" },
-      topology: "embedded",
-    });
-    const disable = tool(legacy, "domain_devices__disable");
-    expect(disable.description).toContain("Disable the given devices Currently bound to 2");
-    expect(disable.state.note).toBe("Currently bound to 2 selected device(s).");
-  });
-
-  it("a split toolset is stable even on a registry that still merges", () => {
-    // The two flags are independent: a host may adopt the stable tool block
-    // before its direct snapshot readers migrate.
+  it("the description holds still while the note changes under it", () => {
+    // describe() returns something new on every call; the cached prompt prefix
+    // must not move because of it. This is the invariant the removed
+    // compatibility flags used to be able to defeat.
     let calls = 0;
-    const { registry } = setup({
-      mergesContextualNote: true,
-      describe: () => `note #${++calls}`,
-    });
+    const { registry } = setup({ describe: () => `note #${++calls}` });
     const toolset = createAgentToolset(registry, {
       consumer: { id: "copilot", kind: "embedded" },
       topology: "embedded",
-      descriptionIncludesState: false,
     });
-    expect(tool(toolset, "domain_devices__disable").description).toBe(
-      "[domain · destructive · requires confirmation] Disable the given devices",
-    );
+
+    const stable = "[domain · destructive · requires confirmation] Disable the given devices";
+    expect(tool(toolset, "domain_devices__disable").description).toBe(stable);
+    registry.snapshot();
+    registry.snapshot();
+    expect(tool(toolset, "domain_devices__disable").description).toBe(stable);
+    expect(tool(toolset, "domain_devices__disable").state.note).toMatch(/^note #\d+$/);
   });
 });
 
-describe("AS-CACHE-004 — the snapshot keeps the two apart when asked", () => {
+describe("AS-CACHE-004 — the snapshot always keeps the two apart", () => {
   it("description is the manifest text; contextualNote is this snapshot's", () => {
     const { registry } = setup({
-      mergesContextualNote: false,
       describe: () => "Currently bound to 2 selected device(s).",
     });
     const [procedure] = registry.snapshot().procedures;
@@ -227,30 +176,20 @@ describe("AS-CACHE-004 — the snapshot keeps the two apart when asked", () => {
     expect(procedure?.contextualNote).toBe("Currently bound to 2 selected device(s).");
   });
 
-  it("merging is the default, and stableDescriptionOf recovers the split either way", () => {
-    const merged = setup({
-      mergesContextualNote: true,
+  it("the note is never folded into description, however long it gets", () => {
+    // D28's whole point: `description` is the provider's cached prompt prefix,
+    // so a note that changes with selection must not reach it.
+    const [procedure] = setup({
       describe: () => "Currently bound to 2 selected device(s).",
-    }).registry.snapshot().procedures[0];
-    const split = setup({
-      mergesContextualNote: false,
-      describe: () => "Currently bound to 2 selected device(s).",
-    }).registry.snapshot().procedures[0];
+    }).registry.snapshot().procedures;
 
-    expect(merged?.description).toBe(
-      "Disable the given devices Currently bound to 2 selected device(s).",
-    );
-    expect(merged?.contextualNote).toBe(split?.contextualNote);
-    expect(stableDescriptionOf(merged!)).toBe("Disable the given devices");
-    expect(stableDescriptionOf(split!)).toBe("Disable the given devices");
+    expect(procedure?.description).toBe("Disable the given devices");
+    expect(procedure?.description).not.toContain("Currently bound");
   });
 
-  it("a procedure with no describe() has no note in either mode", () => {
-    for (const mergesContextualNote of [true, false]) {
-      const [procedure] = setup({ mergesContextualNote }).registry.snapshot().procedures;
-      expect(procedure?.description).toBe("Disable the given devices");
-      expect(procedure?.contextualNote).toBeUndefined();
-      expect(stableDescriptionOf(procedure!)).toBe("Disable the given devices");
-    }
+  it("a procedure with no describe() has no note at all", () => {
+    const [procedure] = setup().registry.snapshot().procedures;
+    expect(procedure?.description).toBe("Disable the given devices");
+    expect(procedure?.contextualNote).toBeUndefined();
   });
 });

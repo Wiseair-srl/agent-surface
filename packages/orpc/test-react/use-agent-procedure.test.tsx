@@ -133,7 +133,7 @@ describe("useAgentProcedure (docs/05, docs/10 scenario)", () => {
 
     // Selection non-empty ⇒ the procedure became available (availability push).
     expect(surface).toExpose("domain:devices.disable");
-    expect(surface.snapshot().procedures[0]!.description).toContain(
+    expect(surface.snapshot().procedures[0]!.contextualNote).toContain(
       "Currently bound to the 2 selected device(s)",
     );
 

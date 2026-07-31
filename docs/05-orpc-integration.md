@@ -192,9 +192,8 @@ Let `B` = keys produced by `bind()` (statically: `keyof TBound`).
 export interface AgentProcedureDescriptor {
   procedureId: string;                    // "domain:devices.disable"
   /**
-   * The manifest description — stable across snapshots. Contains the
-   * contextual describe() output too only while the registry is left on the
-   * D28 compatibility default (`snapshotMergesContextualNote: true`).
+   * The manifest description — stable across snapshots. The contextual
+   * describe() output is `contextualNote` and is never folded in here (D28).
    */
   description: string;
   /**

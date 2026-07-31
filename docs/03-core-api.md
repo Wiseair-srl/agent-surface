@@ -254,15 +254,6 @@ export interface RegistryOptions {
   /** Route descriptor for snapshots (host wires its router here). */
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
-  /**
-   * D28 compatibility. `true` (default through 0.4; flips in 0.5) folds a procedure
-   * reference's contextual `describe()` output into
-   * `AgentProcedureDescriptor.description`, as 0.1 did. `false` keeps the two
-   * apart: `description` is then stable across snapshots and the live text is
-   * read from `contextualNote`. Populated either way; the default flips in a
-   * later minor and the flag is removed the one after.
-   */
-  snapshotMergesContextualNote?: boolean;
 }
 
 export interface AgentRouteInfo { path: string; params?: Record<string, string>; }
@@ -446,7 +437,7 @@ Snapshot semantics (normative):
 - `snapshot()` is **synchronous and side-effect free**: it MUST NOT run `read()` handlers, MUST NOT await, and discovery-time policy evaluation MUST be synchronous (async authority checks belong to invocation). This is why the shape is a catalog, not a state dump (D5).
 - Descriptors are deep-frozen plain JSON; `internal` metadata MUST NOT appear anywhere in a snapshot (tested).
 - Ordering: components sorted by (`priority` desc, `type`, `instanceId`) — deterministic, never DOM- or mount-order-dependent.
-- **Stable and volatile text are separable** (D28). A procedure reference's contextual `describe()` output is `contextualNote`, always populated; `description` is the manifest text. `snapshotMergesContextualNote: true` (the 0.2 default) additionally folds the note into `description` for 0.1 readers. `stableDescriptionOf(descriptor)` returns the note-free description in either mode, so no consumer has to parse a string it did not compose.
+- **Stable and volatile text are separate** (D28). A procedure reference's contextual `describe()` output is `contextualNote`; `description` is the manifest text and never contains it. There is one composition, so no consumer has to parse a string it did not write. The 0.3–0.4 compatibility flags that could merge them were removed in 0.5.
 - Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected for v0.1 (adds traversal API surface with no consumer that needs it yet).
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
 - `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).
@@ -647,15 +638,6 @@ export interface AgentToolsetOptions {
    * tools with no `truncated` marker for anyone to see.
    */
   budget?: { maxComponents?: number; maxBytes?: number };
-  /**
-   * D28 compatibility. `true` (default through 0.4; flips in 0.5) composes availability
-   * and the contextual note into `description`, as 0.1 did. `false` keeps
-   * `description` free of live state, so the provider tool block is byte-stable
-   * across steps and prompt-prefix caching survives; the host renders
-   * `AgentTool.state` outside the tool definitions
-   * (09 §rendering-capability-state). `state` is populated either way.
-   */
-  descriptionIncludesState?: boolean;
 }
 
 export interface AgentTool {
@@ -663,8 +645,8 @@ export interface AgentTool {
   name: string;
   /**
    * Plane + effect + confirmation prefix, then the authored description.
-   * With `descriptionIncludesState: false` it contains NO live state — safe in
-   * a provider tool block with prefix caching across steps.
+   * Contains NO live state (D28) — safe in a provider tool block with prefix
+   * caching across steps.
    */
   description: string;
   inputSchema: JsonSchema;

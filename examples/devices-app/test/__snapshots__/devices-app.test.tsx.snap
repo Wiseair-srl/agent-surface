@@ -411,7 +411,7 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
         "type": "devices.table",
       },
       "contextualNote": "Currently bound to the 0 selected device(s).",
-      "description": "Disable the given devices Currently bound to the 0 selected device(s).",
+      "description": "Disable the given devices",
       "effect": "destructive",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

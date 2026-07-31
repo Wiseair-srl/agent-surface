@@ -262,8 +262,9 @@ describe("bindAgentProcedure + registry integration (docs/05 binding semantics)"
       { path: "deviceIds", locked: true, source: "ui-state" },
     ]);
     expect(Object.keys(descriptor.inputSchema.properties as object)).toEqual(["reason"]);
-    expect(descriptor.description).toContain("Disable the given devices");
-    expect(descriptor.description).toContain("Currently bound to the 2 selected device(s)");
+    expect(descriptor.description).toBe("Disable the given devices");
+    // The contextual half is data, never folded into the manifest text (D28).
+    expect(descriptor.contextualNote).toContain("Currently bound to the 2 selected device(s)");
     // A procedures-only definition has no owning VIEW component, so the
     // context link is absent (page-level reference, docs/05). The linked case
     // is covered by the React useAgentComponent + useAgentProcedure tests.

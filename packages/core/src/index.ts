@@ -124,7 +124,6 @@ export type {
   RegistrationCandidate,
 } from "./registry.js";
 
-export { stableDescriptionOf } from "./snapshot.js";
 export type {
   SnapshotContext,
   AgentSurfaceSnapshot,
