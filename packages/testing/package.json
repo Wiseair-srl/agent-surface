@@ -35,7 +35,7 @@
     "@agent-surface/core": "workspace:^"
   },
   "peerDependencies": {
-    "@agent-surface/react": "workspace:^",
+    "@agent-surface/react": ">=0.1.0",
     "@testing-library/react": ">=14",
     "react": ">=18.2"
   },
