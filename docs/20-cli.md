@@ -46,10 +46,11 @@ useAgentComponent({
 
 ```tsx
 import { defineSurface } from "@agent-surface/cli";
-import { createApp } from "./src/agent/setup.js";   // already exists
+import { agentManifest, createApp } from "./src/agent/setup.js";   // already exists
 import { App } from "./src/app/App.js";             // already exists
 
 export default defineSurface({
+  manifest: agentManifest,
   mount: ({ user }) => {
     const app = createApp({ environment: "test", user });
     return { registry: app.registry, ui: <App app={app} />, app };
@@ -68,6 +69,7 @@ export default defineSurface({
 | `settle(mounted)` | Optional. Extra settling after mount. React effects and pending microtasks are already flushed for you. |
 | `consumer` | Consumer identity snapshots are computed for. Default `{id:"cli",kind:"test"}`. |
 | `scope` | Component-type prefixes, same meaning as `SnapshotContext.scope`. |
+| `manifest` | Authoritative oRPC/orpc-agent manifest. At full depth its tools are the `domain:` denominator. |
 | `baselineDir` | Where baselines live. Default `.agent-surface`, resolved next to the config. |
 
 Loading goes through **vite-node** on your own `vite.config.*`, so your aliases, plugins and TSX resolve exactly as they do in dev. The mount runs inside that same module graph — see [§one graph](#one-graph-one-react-one-core).
@@ -203,7 +205,7 @@ REJECTED — the registry refused these during the mount  (1)
 
 Duplicate `(type, instanceId)` yields a dead handle, first-wins; an `onRegister` guard rejection does the same. Neither reaches the snapshot (it never registered) nor the explanation (`explainSurface()` iterates *active* registrations), and neither appears as drift in `check`, because the baseline never contained the capability. The only diagnostic core emits goes through `devError`, which prints nothing unless the app was built `environment: "development"` — and [the config shape above](#configuration) builds it with `"test"`.
 
-So a copy-pasted component `type`, or two instances rendered without an `instanceId`, would otherwise remove a capability with no output anywhere. The collector reads the registry's `component-rejected` events to catch it. `--json` carries `rejections` as an always-present array, so a consumer never has to tell "none" apart from "this CLI is too old to say".
+So a copy-pasted component `type`, or two instances rendered without an `instanceId`, would otherwise remove a capability with no output anywhere. The collector reads the registry's `component-rejected` events to catch it. `--json` carries `rejections` as an always-present array, and `check` fails on any rejection even when the rejected projection was snapshotted.
 
 ### Why is my capability missing?
 
@@ -235,7 +237,7 @@ Availability is reported separately from policy, because they are different fail
 agent-surface snapshot [scenario]
 ```
 
-Writes `.agent-surface/<scenario>.json` — the normalized form, via the same `serializeSurfaceSnapshot` the Vitest matcher uses ([Testing §semantic snapshots](08-testing.md)). Commit it.
+Writes `.agent-surface/<scenario>.json` plus `.agent-surface/scenarios.json`. The scenario document is normalized and includes visible and hidden capabilities plus registration rejections. The manifest lets `check` detect removed scenarios and stale baseline files. Commit both.
 
 It prints [the verdict](#the-verdict) too. This is the command you run to *accept* a change to the surface, which makes it the last moment before a reviewer sees the diff — and accepting a projection while a capability sits behind a route no scenario visits is exactly the state worth hearing about. It reports; `check` is still the only thing that fails.
 
@@ -245,7 +247,7 @@ It prints [the verdict](#the-verdict) too. This is the command you run to *accep
 agent-surface check [scenario]
 ```
 
-The gate — the only command that fails on a finding, which is why every finding has to reach it. It fails on four:
+The gate — the only command that fails on a finding, which is why every finding has to reach it. It fails on:
 
 | | |
 |---|---|
@@ -253,6 +255,10 @@ The gate — the only command that fails on a finding, which is why every findin
 | **no baseline** | nothing to compare, which is not the same as a match |
 | **unreached** | authored, and no scenario mounts it |
 | **unread call site** | the catalog is incomplete, so `unreached` is a floor rather than an answer |
+| **rejected registration** | the registry refused authored surface during mount |
+| **scenario drift** | config scenarios, committed manifest, and baseline files disagree |
+
+A baseline file that exists but cannot be read or parsed is *could not run* (`2`), never “missing baseline.” Scenario names must be filename-safe and cannot escape or collide inside `baselineDir`.
 
 ```text
 UNREACHED — authored, and no scenario mounts it  (1)
@@ -364,6 +370,35 @@ Resolution is per call site, not per wrapper. Fifteen literals and two variables
 
 **`check` exits non-zero when any call site is unread**, unless `--allow-unresolved` is passed (`AS-COVER-003`) — which still prints the gap. `inspect` prints unread call sites just as loudly and exits `0`, because it is a viewer.
 
+#### A rename is still the same hook
+
+A registration is identified by **what a file imported**, not by what that file calls it (`AS-COVER-010`):
+
+```tsx
+import { useAgentComponent as useAC } from "@agent-surface/react";
+import * as AS from "@agent-surface/react";
+
+useAC({ type: "alias.panel", … });                  // read
+AS.useAgentComponent({ type: "alias.ns", … });      // read
+```
+
+Matched on the local identifier, the first of those was in **neither list** — no capability in the catalog, and no unread call site saying the catalog was short. It was the only gap here that was silent. Every other one — a dynamic `type`, an unreadable spread, a granular hook, a wrapper it cannot prove — is printed with a file and a line and fails `check`.
+
+The binding is also what turns the namespace form into an answer rather than a coincidence: matching the property name alone would attribute `anything.useAgentComponent()` just as readily.
+
+The same *prove it is ours* bar as the wrapper resolution applies, and what cannot be proved is reported rather than dropped:
+
+| Shape | Verdict |
+|---|---|
+| `import { useAgentComponent as useAC }` from `@agent-surface/*` | read |
+| `import * as AS`, then `AS.useAgentComponent(…)` or `AS["useAgentComponent"](…)` | read |
+| `registry.register(…)`, or any call spelled with a hook's own name | read — the plain name match, unchanged |
+| `export { useAgentComponent as useAC } from "@agent-surface/react"` | `dynamic-callee` |
+| `AS[hook](…)` — a computed member of a namespace of ours | `dynamic-callee` |
+| a local function that happens to share someone else's alias | not ours, and not attributed |
+
+A hook that leaves a module renamed is reported **at the re-export**, not at the call sites it hides: reaching those would mean following the chain, which is the hop [the wrapper resolution](#a-wrapper-hook-resolves-one-hop-up) already refuses to take for the same reason. Re-exported under its own name it needs no report — downstream then reads a name the extractor knows.
+
 *Why this is the substance of the static half:* every number downstream, the `unreached` denominator above all, is only as trustworthy as the extractor's own admission of what it could not read. A partial understanding of a codebase that reports itself as complete is the failure this exists to remove.
 
 Two boundaries the output states outright:
@@ -371,9 +406,9 @@ Two boundaries the output states outright:
 - **The catalog is an upper bound.** A tsconfig's include globs are wider than what a bundle reaches, so a capability in a component no route renders any more is in here. That is dead code — a different finding, not a false positive — and the summary line says `upper bound` in so many words.
 - **The `domain:` plane is not analyzed.** Those capabilities come from the oRPC router, which is already a static export ([OQ-1](project/13-open-questions.md#part-b--genuinely-open-questions)). Reporting zero of them would read as *there are none* rather than *nobody looked*.
 
-Analysis is rooted at the surface config's directory. Program files outside it — workspace packages a tsconfig aliases in, typically the library's own source, where `registry.register(definition)` inside `useAgentComponent` reads as an unresolvable call site — are skipped, and the count of them is printed.
+First-party workspace files in the TypeScript program are analyzed even outside the config directory. Only agent-surface implementation packages are excluded: their internal `registry.register(definition)` implements the authored hook and is not another app registration. The exclusion count is printed.
 
-`useAgentComponent` and `registry.register` are the shapes the extractor reads. The granular hooks [`useAgentAction`/`useAgentObservation`](04-react-api.md) register through a render-scope link rather than one aggregated descriptor, so the component `type` is not at their call site at all; every such call is reported `unresolved` with a note ([OQ-13](project/13-open-questions.md#part-b--genuinely-open-questions)). That is deliberate: silently ignoring them would make a codebase built on them look fully covered.
+`useAgentComponent` — under [whatever local name it was imported as](#a-rename-is-still-the-same-hook) — and `registry.register` are the shapes the extractor reads. The granular hooks [`useAgentAction`/`useAgentObservation`](04-react-api.md) register through a render-scope link rather than one aggregated descriptor, so the component `type` is not at their call site at all; every such call is reported `unresolved` with a note ([OQ-13](project/13-open-questions.md#part-b--genuinely-open-questions)). That is deliberate: silently ignoring them would make a codebase built on them look fully covered.
 
 ### The verdict
 
@@ -435,16 +470,16 @@ Entries listed there do not fail `check`. Entries that are *no longer* unreached
 
 ```json
 {
-  "src/agent/useRegisteredPanel.tsx#granular-hook": "shared wrapper hook, tracked in OQ-13"
+  "src/agent/useRegisteredPanel.tsx#granular-hook#7f30bc948e21": "tracked in OQ-13"
 }
 ```
 
-The key is `file#reason`, and `inspect` prints it under every unread entry so nobody has to guess the format. Neither half of that key is an accident:
+The key is `file#reason#site`, and `inspect` prints it under every unread entry — the `site` is a hash, so paste it rather than guessing it.
+
+`site` is built from the call's own text and the named enclosures around it, and from **nothing positional**: not the line, and not the surrounding source either. An edit above the site, beside it, or a reformat leaves a committed entry matching. Two byte-identical calls in the same enclosure are told apart by their order within it, so a second unread site of the same kind in the same file still needs its own allowance — and appending a third leaves the first two alone.
 
 - **not the line**, which churns on every edit above the call site — a ratchet that fails because someone added an import is a ratchet people delete;
 - **not the note**, which is prose written for a human and gets reworded. The `reason` is a stable code (`dynamic-type`, `spread-members`, `granular-hook`, …); renaming one invalidates committed lists and is a breaking change.
-
-It is coarser than a line: a second call site in the same file failing the *same* way is covered silently. That is the accepted trade — the ratchet's job is "no new *kinds* of unread site", and the blast radius is one file and one construct.
 
 `--allow-unresolved` remains the blanket dial, for a codebase not yet ready to enumerate them. The two compose: the list holds what you have accepted deliberately, the flag covers the rest, and **a stale entry in either list fails through both**, because a ratchet that can rot is not a ratchet.
 
@@ -472,7 +507,7 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
 | `--tsconfig <path>` | The tsconfig the static half reads. Default: nearest to the config. |
 | `--allow-unresolved` | `check`: do not fail on a call site that could not be read. |
 | `--yes` | `init`: write without asking. |
-| `--json` | Emit data. Carries `explanation` only with `--explain`. |
+| `--json` | Emit stable data. Always carries all capability rows; `--explain` adds policy attribution. |
 | `--plain` | Force plain text. |
 
 `inspect --json` always emits one shape, whatever the depth and whether or not a scenario was named:
@@ -481,13 +516,15 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
 {
   "depth": "full",
   "catalog":   { /* … */ } | null,   // null at --depth runtime
-  "scenarios": [ { "scenario", "scope"?, "snapshot", "rejections", "explanation"? } ],
+  "scenarios": [ { "scenario", "scope"?, "snapshot", "capabilities", "rejections", "explanation"? } ],
   "failures":  [ { "scenario", "message" } ],
   "coverage":  { /* … */ } | null    // null at any depth but full, or after a failed mount
 }
 ```
 
 A half the depth did not compute is `null`, which is a different statement from `[]` or `{}` — a consumer must never have to tell "nothing found" apart from "nobody looked".
+
+The same normalized scenario model feeds JSON, committed baselines, drift checks, and both human renderers. `capabilities` always includes `expose`, `disable`, and `hide`; `--explain` adds attribution only. Machine output removes timestamps, surface/registration ids, and checkout-specific absolute paths, so identical inputs produce identical bytes.
 
 **stdout is the output; stderr is everything else** (`AS-CLI-004`) — including diagnostics the *mounted app* produces. Core's audit sink therefore writes to stderr under Node ([Policies & Security §audit](06-policies-and-security.md#audit)).
 

@@ -38,7 +38,8 @@
  * failed to parse would understate the denominator, and a coverage number built
  * on it would claim completeness it never had.
  */
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import ts from "typescript";
 
@@ -50,7 +51,7 @@ export interface AuthoredCapability {
   capabilityId: string;
   kind: "observation" | "action" | "procedure";
   /** Where a human can go and read it. */
-  origin: { file: string; line: number };
+  origin: { file: string; line: number; site: string };
   /** Literals recovered from the call site; absent when not statically known. */
   description?: string;
   effect?: string;
@@ -85,6 +86,7 @@ export type UnreadReason =
   | "dynamic-type"
   | "dynamic-config"
   | "dynamic-group"
+  | "dynamic-callee"
   | "spread-members"
   | "computed-name"
   | "granular-hook";
@@ -98,10 +100,9 @@ export interface CapabilityInventory {
   /** Files the program actually walked — the inventory's blast radius. */
   filesAnalyzed: number;
   /**
-   * Program files skipped for living outside `root` — workspace packages the
-   * app's tsconfig aliases in, typically the library's own source. Reported
-   * rather than dropped silently: a boundary nobody can see is a boundary
-   * nobody can check.
+   * Agent-surface implementation files excluded outside `root`. First-party
+   * workspace sources are analyzed; the implementation behind the authored
+   * hooks is not a second app registration.
    */
   filesOutsideRoot: number;
   /**
@@ -117,6 +118,32 @@ export interface CapabilityInventory {
 
 export function findTsconfig(from: string): string | undefined {
   return ts.findConfigFile(resolve(from), ts.sys.fileExists, "tsconfig.json");
+}
+
+/** Reads a literal config `scope: ["..."]` without executing or mounting it. */
+export function readLiteralConfigScope(configPath: string): string[] | undefined {
+  const source = ts.createSourceFile(
+    configPath,
+    readFileSync(configPath, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    configPath.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  let scope: string[] | undefined;
+  const visit = (node: ts.Node): void => {
+    if (scope) return;
+    if (
+      ts.isPropertyAssignment(node) &&
+      propertyName(node.name) === "scope" &&
+      ts.isArrayLiteralExpression(node.initializer)
+    ) {
+      const values = node.initializer.elements.map((entry) => literalText(entry));
+      if (values.every((value): value is string => value !== undefined)) scope = values;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return scope;
 }
 
 interface ProgramFiles {
@@ -146,11 +173,160 @@ function readProgramFiles(tsconfigPath: string): ProgramFiles {
   return { fileNames: parsed.fileNames, options: parsed.options };
 }
 
+/* ── which local name is a registration API ───────────────────────────── */
+
+/**
+ * The hooks a registration is written with, under the names *this library
+ * exports them as* — not the names a codebase happens to call them by.
+ *
+ * `register` is deliberately absent. It is a method on a registry instance
+ * rather than an import, so there is no binding to read; it stays matched by
+ * name, with the extra `type` check `visitCall` already applies to it.
+ */
+const REGISTRATION_HOOKS = new Set(["useAgentComponent", "useAgentAction", "useAgentObservation"]);
+
+/** `@agent-surface/react`, `@agent-surface/core`, and any subpath of either. */
+function isRegistrationModule(specifier: string): boolean {
+  return specifier.startsWith("@agent-surface/");
+}
+
+/**
+ * What a file's own import declarations say about which local names are ours.
+ *
+ * A registration is identified by *what was imported*, not by what this file
+ * calls it. Matching the local identifier alone lost a whole registration to a
+ * rename:
+ *
+ * ```tsx
+ * import { useAgentComponent as useAC } from "@agent-surface/react";
+ * useAC({ type: "alias.panel", … });
+ * ```
+ *
+ * — no capability in the catalog, and no unread call site saying the catalog
+ * was short. Every other gap in this module *reports*: a dynamic `type`, an
+ * unreadable spread, a granular hook, a wrapper it cannot prove. This one was
+ * silent, and a silent gap is the only kind that makes a coverage number lie.
+ */
+interface ImportedApi {
+  /** Local name → the registration hook it is bound to. */
+  locals: Map<string, string>;
+  /** Locals bound to a whole module of ours by `import * as ns`. */
+  namespaces: Set<string>;
+}
+
+const NO_IMPORTS: ImportedApi = { locals: new Map(), namespaces: new Set() };
+
+function importedRegistrations(source: ts.SourceFile): ImportedApi {
+  const locals = new Map<string, string>();
+  const namespaces = new Set<string>();
+
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+    if (!isRegistrationModule(statement.moduleSpecifier.text)) continue;
+
+    // `import type { … }` binds no value, so it can call nothing. A default
+    // import binds nothing of ours either: none of these packages has one.
+    const clause = statement.importClause;
+    if (!clause || clause.isTypeOnly || !clause.namedBindings) continue;
+
+    if (ts.isNamespaceImport(clause.namedBindings)) {
+      namespaces.add(clause.namedBindings.name.text);
+      continue;
+    }
+    for (const element of clause.namedBindings.elements) {
+      if (element.isTypeOnly) continue;
+      const imported = (element.propertyName ?? element.name).text;
+      if (REGISTRATION_HOOKS.has(imported)) locals.set(element.name.text, imported);
+    }
+  }
+  return { locals, namespaces };
+}
+
+/**
+ * Registration hooks this file re-exports under a name that is not their own.
+ *
+ * ```ts
+ * export { useAgentComponent as useAC } from "@agent-surface/react";
+ * ```
+ *
+ * Downstream every call site is spelled `useAC` and imported from a module that
+ * is not ours, so nothing there proves it registers anything — and following
+ * the chain to find out is the hop `callsWrapper` already refuses to take, for
+ * the same reason: a wrong attribution fabricates catalog entries.
+ *
+ * So the gap is reported *here*, on the line that opens it, rather than left
+ * unsaid at each of the call sites it hides. Re-exported under its own name it
+ * needs no report at all — downstream then reads a name this module knows.
+ */
+function renamedRegistrationExports(
+  source: ts.SourceFile,
+  imports: ImportedApi,
+): { node: ts.Node; hook: string; exported: string }[] {
+  const renamed: { node: ts.Node; hook: string; exported: string }[] = [];
+
+  for (const statement of source.statements) {
+    if (!ts.isExportDeclaration(statement) || statement.isTypeOnly) continue;
+    const clause = statement.exportClause;
+    if (!clause || !ts.isNamedExports(clause)) continue;
+
+    const from = statement.moduleSpecifier;
+    // `export … from` some other module says nothing about our API; the local
+    // form is read against what this file imported.
+    const fromOurs =
+      from !== undefined && ts.isStringLiteral(from) && isRegistrationModule(from.text);
+    if (from && !fromOurs) continue;
+
+    for (const element of clause.elements) {
+      if (element.isTypeOnly) continue;
+      const local = (element.propertyName ?? element.name).text;
+      const hook = fromOurs
+        ? REGISTRATION_HOOKS.has(local)
+          ? local
+          : undefined
+        : imports.locals.get(local);
+      // Renaming *back* to the hook's own name closes the gap rather than
+      // opening one, so the comparison is against the export, not the local.
+      if (hook === undefined || element.name.text === hook) continue;
+      renamed.push({ node: element, hook, exported: element.name.text });
+    }
+  }
+  return renamed;
+}
+
 /* ── small AST helpers ────────────────────────────────────────────────── */
 
-function calleeName(call: ts.CallExpression): string | undefined {
-  if (ts.isIdentifier(call.expression)) return call.expression.text;
-  if (ts.isPropertyAccessExpression(call.expression)) return call.expression.name.text;
+/** Whether `object.member` reads a registration hook off a namespace of ours. */
+function namespaceMember(object: ts.Expression, member: string, imports: ImportedApi): boolean {
+  return (
+    ts.isIdentifier(object) && imports.namespaces.has(object.text) && REGISTRATION_HOOKS.has(member)
+  );
+}
+
+function calleeName(call: ts.CallExpression, imports: ImportedApi = NO_IMPORTS): string | undefined {
+  const callee = call.expression;
+
+  // An alias is the same API under another name, and the binding says which.
+  if (ts.isIdentifier(callee)) return imports.locals.get(callee.text) ?? callee.text;
+
+  if (ts.isPropertyAccessExpression(callee)) {
+    // `AS.useAgentComponent()`: the namespace binding is what *proves* this one
+    // is ours. It resolved before this existed, but only because the property
+    // name happened to be spelled like the hook — a coincidence that would have
+    // attributed `anything.useAgentComponent()` just as readily.
+    if (namespaceMember(callee.expression, callee.name.text, imports)) return callee.name.text;
+    // Otherwise the plain name, which is what reads `registry.register(…)`.
+    // Narrowing this to proven bindings would *drop* registrations that resolve
+    // today — a re-export under its own name, most of all — and a silent loss
+    // is the failure this whole change exists to remove.
+    return callee.name.text;
+  }
+
+  // `AS["useAgentComponent"]()` is as readable as the dotted form.
+  if (ts.isElementAccessExpression(callee)) {
+    const member = literalText(callee.argumentExpression);
+    if (member !== undefined && namespaceMember(callee.expression, member, imports)) return member;
+  }
   return undefined;
 }
 
@@ -329,7 +505,7 @@ const GRANULAR_HOOKS = new Set(["useAgentAction", "useAgentObservation"]);
 
 interface Emitter {
   push(capability: AuthoredCapability): void;
-  origin(node: ts.Node): { file: string; line: number };
+  origin(node: ts.Node): { file: string; line: number; site: string };
 }
 
 function capabilitiesFromGroup(
@@ -436,11 +612,31 @@ function visitCall(
   call: ts.CallExpression,
   emit: Emitter,
   source: ts.SourceFile,
+  imports: ImportedApi,
   deferred: DeferredWrapper[],
   enclosing: EnclosingFunction | undefined,
 ): void {
-  const callee = calleeName(call);
-  if (callee === undefined) return;
+  const callee = calleeName(call, imports);
+  if (callee === undefined) {
+    // The callee is not a name at all. Where it reads a computed member of a
+    // namespace of ours, that much *is* known: a call into the registration API
+    // whose export cannot be named, and so whose registration — if it is one —
+    // is nowhere in this catalog. Anywhere else it is simply not our call.
+    const object = ts.isElementAccessExpression(call.expression)
+      ? call.expression.expression
+      : undefined;
+    if (object && ts.isIdentifier(object) && imports.namespaces.has(object.text)) {
+      emit.push({
+        capabilityId: UNRESOLVED_ID,
+        kind: "action",
+        origin: emit.origin(call),
+        resolution: "unresolved",
+        reason: "dynamic-callee",
+        note: `a call reads a computed member of \`${object.text}\`, a namespace of this library — which export it calls, and so whether it registers anything, cannot be read here`,
+      });
+    }
+    return;
+  }
 
   if (GRANULAR_HOOKS.has(callee)) {
     // OQ-3: the granular hooks register through a render-scope link rather than
@@ -721,6 +917,138 @@ export interface ExtractOptions {
   tsconfig?: string;
 }
 
+/** Whitespace-insensitive source text, so a reformat is not a different site. */
+function normalizedText(node: ts.Node, source: ts.SourceFile): string {
+  return node.getText(source).replace(/\s+/g, " ").trim();
+}
+
+interface SiteIdentity {
+  /** Named enclosures, outermost first. */
+  labels: string[];
+  enclosingCall: string;
+  /** Innermost named enclosure, or the file — the subtree a twin could be in. */
+  scope: ts.Node;
+}
+
+function siteIdentity(source: ts.SourceFile, node: ts.Node): SiteIdentity {
+  const labels: string[] = [];
+  let enclosingCall = "";
+  let scope: ts.Node | undefined;
+
+  for (let parent = node.parent; parent && parent !== source; parent = parent.parent) {
+    if (!enclosingCall && ts.isCallExpression(parent)) {
+      enclosingCall = normalizedText(parent, source);
+    }
+    const named =
+      (ts.isFunctionDeclaration(parent) || ts.isMethodDeclaration(parent)) &&
+      parent.name &&
+      (ts.isIdentifier(parent.name) || ts.isStringLiteral(parent.name))
+        ? parent.name.text
+        : ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)
+          ? parent.name.text
+          : undefined;
+    if (named !== undefined) {
+      labels.push(named);
+      scope ??= parent;
+    }
+  }
+  return { labels: labels.reverse(), enclosingCall, scope: scope ?? source };
+}
+
+/**
+ * How many identical nodes precede this one inside its named enclosure.
+ *
+ * Read from source *positions*, never from the order this module visits them:
+ * the deferred wrapper pass emits origins for one file while walking another,
+ * so a running counter would hand out a different answer depending on which ran
+ * first — and a fingerprint that depends on traversal order is not one.
+ */
+function occurrence(scope: ts.Node, node: ts.Node, source: ts.SourceFile): number {
+  const text = normalizedText(node, source);
+  const start = node.getStart(source);
+  let rank = 0;
+  const visit = (candidate: ts.Node): void => {
+    if (
+      candidate.kind === node.kind &&
+      candidate.getStart(source) < start &&
+      normalizedText(candidate, source) === text
+    ) {
+      rank += 1;
+    }
+    ts.forEachChild(candidate, visit);
+  };
+  ts.forEachChild(scope, visit);
+  return rank;
+}
+
+/**
+ * Which site this is, as something a committed allowance can be keyed on.
+ *
+ * Identity is the node's own text and the named enclosures around it. Nothing
+ * positional goes in: not the line, and — the bug this replaces — not the
+ * surrounding source either. An earlier version hashed a window of neighbouring
+ * lines to tell two otherwise identical sites apart. It did tell them apart,
+ * and it also moved the fingerprint whenever a comment changed within ten
+ * lines, silently invalidating the entry and failing `check` for an edit nobody
+ * thought was behavioural. That is the exact churn this key exists to survive,
+ * and `file#reason` survived it before.
+ *
+ * Genuine twins — byte-identical calls in the same named enclosure — are told
+ * apart by their rank within it instead. Inserting a third after them leaves
+ * both keys alone; only a twin inserted *before* one shifts it, which is a
+ * change to the very thing the key names.
+ */
+function stableSite(source: ts.SourceFile, node: ts.Node): string {
+  const { labels, enclosingCall, scope } = siteIdentity(source, node);
+  return createHash("sha256")
+    .update(
+      `${labels.join("/")}\0${enclosingCall}\0${normalizedText(node, source)}\0${occurrence(
+        scope,
+        node,
+        source,
+      )}`,
+    )
+    .digest("hex")
+    .slice(0, 12);
+}
+
+const packageNameCache = new Map<string, string | undefined>();
+
+function packageNameFor(file: string): string | undefined {
+  let dir = dirname(file);
+  for (;;) {
+    if (packageNameCache.has(dir)) return packageNameCache.get(dir);
+    const packagePath = join(dir, "package.json");
+    if (existsSync(packagePath)) {
+      let name: string | undefined;
+      try {
+        const parsed = JSON.parse(readFileSync(packagePath, "utf8")) as { name?: unknown };
+        if (typeof parsed.name === "string") name = parsed.name;
+      } catch {
+        // A malformed package boundary cannot make a file trusted/excluded.
+      }
+      packageNameCache.set(dir, name);
+      return name;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+const IMPLEMENTATION_PACKAGES = new Set([
+  "@agent-surface/core",
+  "@agent-surface/react",
+  "@agent-surface/orpc",
+  "@agent-surface/testing",
+  "@agent-surface/webmcp",
+  "@agent-surface/cli",
+]);
+
+function isAgentSurfaceImplementation(file: string): boolean {
+  return IMPLEMENTATION_PACKAGES.has(packageNameFor(file) ?? "");
+}
+
 /**
  * Reads the program and returns every capability its registration call sites
  * author. Nothing is executed: no Vite server, no jsdom, no scenarios, no mount.
@@ -757,13 +1085,11 @@ export function extractCapabilities(options: ExtractOptions): CapabilityInventor
   for (const source of program.getSourceFiles()) {
     if (source.isDeclarationFile) continue;
     if (source.fileName.includes("/node_modules/")) continue;
-    // A tsconfig with workspace path aliases pulls the library's *own* source
-    // into the program, where `registry.register(definition)` inside
-    // `useAgentComponent` reads as an unresolvable registration call site. It
-    // is not one: it is the implementation every real call site goes through.
-    // The inventory covers the app the surface config points at, and says so
-    // rather than quietly widening or narrowing.
-    if (!isInside(root, source.fileName)) {
+    // Workspace sources are part of the authored denominator even when they
+    // live beside the config package. Only agent-surface's own implementation
+    // packages are excluded: their `registry.register(definition)` is the hook
+    // implementation, not another authored registration.
+    if (!isInside(root, source.fileName) && isAgentSurfaceImplementation(source.fileName)) {
       filesOutsideRoot += 1;
       continue;
     }
@@ -774,8 +1100,22 @@ export function extractCapabilities(options: ExtractOptions): CapabilityInventor
       origin: (node) => ({
         file: relative(root, source.fileName),
         line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+        site: stableSite(source, node),
       }),
     };
+
+    // Read once per file: every call site in it is identified against these.
+    const imports = importedRegistrations(source);
+    for (const renamed of renamedRegistrationExports(source, imports)) {
+      emit.push({
+        capabilityId: UNRESOLVED_ID,
+        kind: "action",
+        origin: emit.origin(renamed.node),
+        resolution: "unresolved",
+        reason: "dynamic-callee",
+        note: `${renamed.hook}() leaves this module as \`${renamed.exported}\`, so nothing at its call sites elsewhere proves they register anything — whatever they author is not in this catalog`,
+      });
+    }
 
     let pendingName: string | undefined;
     const visit = (node: ts.Node, enclosing?: EnclosingFunction): void => {
@@ -791,7 +1131,7 @@ export function extractCapabilities(options: ExtractOptions): CapabilityInventor
       }
 
       if (ts.isCallExpression(node)) {
-        visitCall(node, emit, source, deferred, enclosing);
+        visitCall(node, emit, source, imports, deferred, enclosing);
         // Every identifier-callee call is a potential wrapper call site. Indexed
         // by name here so the second pass does not re-walk the program.
         if (ts.isIdentifier(node.expression)) {

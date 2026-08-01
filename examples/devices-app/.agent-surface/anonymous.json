@@ -3,5 +3,153 @@
     "path": "/devices"
   },
   "components": [],
-  "procedures": []
+  "procedures": [],
+  "capabilities": [
+    {
+      "capabilityId": "view:app.navigation.current",
+      "name": "current",
+      "path": "app.navigation.current",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Current page",
+      "flags": [],
+      "tags": [
+        "app.navigation@default"
+      ]
+    },
+    {
+      "capabilityId": "view:app.navigation.goTo",
+      "name": "goTo",
+      "path": "app.navigation.goTo",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Navigate to a known application page",
+      "flags": [],
+      "tags": [
+        "app.navigation@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.state",
+      "name": "state",
+      "path": "devices.drawer.state",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Whether the drawer is open and for which device",
+      "flags": [],
+      "tags": [
+        "devices.drawer@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.open",
+      "name": "open",
+      "path": "devices.drawer.open",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Open the detail drawer for a device",
+      "flags": [],
+      "tags": [
+        "devices.drawer@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.close",
+      "name": "close",
+      "path": "devices.drawer.close",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Close the detail drawer",
+      "flags": [],
+      "tags": [
+        "devices.drawer@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.read",
+      "name": "read",
+      "path": "devices.filters.read",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Currently active filters",
+      "flags": [],
+      "tags": [
+        "devices.filters@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.set",
+      "name": "set",
+      "path": "devices.filters.set",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Update one or both filters; omitted fields are unchanged. The table refreshes through the app's normal data fetching.",
+      "flags": [],
+      "tags": [
+        "devices.filters@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.readState",
+      "name": "readState",
+      "path": "devices.table.readState",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Visible rows, current selection, current sorting",
+      "flags": [],
+      "tags": [
+        "devices.table@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.selectRows",
+      "name": "selectRows",
+      "path": "devices.table.selectRows",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Replace, extend or reduce the row selection",
+      "flags": [],
+      "tags": [
+        "devices.table@default"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.sort",
+      "name": "sort",
+      "path": "devices.table.sort",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "hide",
+      "description": "Change the table sorting",
+      "flags": [],
+      "tags": [
+        "devices.table@default"
+      ]
+    },
+    {
+      "capabilityId": "domain:devices.disable",
+      "name": "disable",
+      "path": "devices.disable",
+      "kind": "procedure",
+      "plane": "domain",
+      "outcome": "hide",
+      "description": "Disable the given devices",
+      "flags": [
+        "@ref-2"
+      ],
+      "tags": [
+        "orpc-ref@ref-2"
+      ]
+    }
+  ],
+  "rejections": []
 }

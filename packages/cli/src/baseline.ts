@@ -1,16 +1,38 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { serializeSurfaceSnapshot } from "@agent-surface/testing";
 import type { AgentSurfaceSnapshot } from "@agent-surface/core";
 
 export const DEFAULT_BASELINE_DIR = ".agent-surface";
+export const SCENARIO_MANIFEST_FILE = "scenarios.json";
 
 export function baselineDirFor(configPath: string, configured?: string): string {
   return resolve(dirname(configPath), configured ?? DEFAULT_BASELINE_DIR);
 }
 
 export function baselinePath(dir: string, scenario: string): string {
-  return join(dir, `${scenario}.json`);
+  const reserved = new Set(["scenarios", "coverage-allow", "unresolved-allow"]);
+  if (
+    scenario.length === 0 ||
+    scenario === "." ||
+    scenario === ".." ||
+    scenario.includes("/") ||
+    scenario.includes("\\") ||
+    scenario.includes("\0") ||
+    reserved.has(scenario)
+  ) {
+    throw new Error(`invalid scenario name ${JSON.stringify(scenario)} — use a filename-safe name`);
+  }
+  const root = resolve(dir);
+  const path = resolve(root, `${scenario}.json`);
+  if (!path.startsWith(`${root}${sep}`)) {
+    throw new Error(`scenario ${JSON.stringify(scenario)} escapes the baseline directory`);
+  }
+  return path;
+}
+
+export function scenarioManifestPath(dir: string): string {
+  return join(dir, SCENARIO_MANIFEST_FILE);
 }
 
 /**
@@ -24,16 +46,38 @@ export function normalize(snapshot: AgentSurfaceSnapshot): unknown {
 }
 
 export function readBaseline(path: string): unknown | undefined {
+  if (!existsSync(path)) return undefined;
   try {
     return JSON.parse(readFileSync(path, "utf8")) as unknown;
-  } catch {
-    return undefined;
+  } catch (error) {
+    throw new Error(
+      `could not read baseline ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
 export function writeBaseline(path: string, value: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+export function readScenarioManifest(dir: string): string[] | undefined {
+  const path = scenarioManifestPath(dir);
+  const value = readBaseline(path);
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !Array.isArray((value as { scenarios?: unknown }).scenarios) ||
+    !(value as { scenarios: unknown[] }).scenarios.every((name) => typeof name === "string")
+  ) {
+    throw new Error(`${path} must contain { "scenarios": string[] }`);
+  }
+  return [...(value as { scenarios: string[] }).scenarios].sort();
+}
+
+export function writeScenarioManifest(dir: string, scenarios: string[]): void {
+  writeBaseline(scenarioManifestPath(dir), { scenarios: [...scenarios].sort() });
 }
 
 export interface DiffEntry {

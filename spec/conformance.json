@@ -937,7 +937,7 @@
       "status": "implemented"
     },
     "AS-CLI-006": {
-      "title": "Registrations rejected during a mount appear in inspect output and in --json",
+      "title": "Registrations rejected during a mount appear in inspect output and JSON, and fail check",
       "source": "20-cli.md#inspect",
       "decision": "D37",
       "tests": [
@@ -961,6 +961,33 @@
       "decision": "D38",
       "tests": [
         "packages/cli/test/cli.test.ts",
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-009": {
+      "title": "One normalized, deterministic scenario report feeds JSON, baselines and check; it always includes hidden capabilities while detail adds attribution only",
+      "source": "20-cli.md#output-modes",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-010": {
+      "title": "Committed baselines include a scenario manifest; removed and stale scenarios fail check; unread baseline data exits 2; scenario names cannot escape baselineDir",
+      "source": "20-cli.md#check",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-011": {
+      "title": "Full depth consumes an authoritative oRPC manifest as the domain denominator and applies effective config or CLI scope to every plane",
+      "source": "20-cli.md#the-verdict",
+      "decision": "D38",
+      "tests": [
         "packages/cli/test/coverage.test.ts"
       ],
       "status": "implemented"
@@ -1029,7 +1056,7 @@
       "status": "implemented"
     },
     "AS-COVER-008": {
-      "title": "An unread call site can be accepted per entry via unresolved-allow.json, keyed on file plus a stable reason code; an entry the extractor can now read fails the command",
+      "title": "An unread call site can be accepted per semantic site via unresolved-allow.json; a second site in the same file/reason class needs its own entry, and stale entries fail",
       "source": "20-cli.md#the-allowlist-ratchet",
       "decision": "D38",
       "tests": [
@@ -1041,6 +1068,15 @@
       "title": "A registration whose type is a parameter resolves from its wrapper's call sites when they pass string literals; a same-named function elsewhere is never attributed, and unresolved call sites are still reported",
       "source": "20-cli.md#a-wrapper-hook-resolves-one-hop-up",
       "decision": "D38",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-010": {
+      "title": "A registration is identified through its import binding, so an aliased or namespaced hook is read; a binding the extractor cannot follow is reported unread with a stable reason, and a same-named local function is never attributed",
+      "source": "20-cli.md#a-rename-is-still-the-same-hook",
+      "decision": "D35",
       "tests": [
         "packages/cli/test/coverage.test.ts"
       ],

@@ -441,5 +441,187 @@
         "instanceId": "default"
       }
     }
-  ]
+  ],
+  "capabilities": [
+    {
+      "capabilityId": "view:app.navigation.current",
+      "name": "current",
+      "path": "app.navigation.current",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Current page",
+      "flags": [],
+      "tags": [
+        "observation"
+      ]
+    },
+    {
+      "capabilityId": "view:app.navigation.goTo",
+      "name": "goTo",
+      "path": "app.navigation.goTo",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Navigate to a known application page",
+      "effect": "navigation",
+      "flags": [
+        "reversible"
+      ],
+      "tags": [
+        "navigation",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.state",
+      "name": "state",
+      "path": "devices.drawer.state",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Whether the drawer is open and for which device",
+      "flags": [],
+      "tags": [
+        "observation"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.open",
+      "name": "open",
+      "path": "devices.drawer.open",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Open the detail drawer for a device",
+      "effect": "local-state",
+      "flags": [
+        "reversible"
+      ],
+      "tags": [
+        "local-state",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.close",
+      "name": "close",
+      "path": "devices.drawer.close",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "disable",
+      "description": "Close the detail drawer",
+      "reason": "The drawer is not open",
+      "effect": "local-state",
+      "flags": [
+        "reversible"
+      ],
+      "tags": [
+        "local-state",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.read",
+      "name": "read",
+      "path": "devices.filters.read",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Currently active filters",
+      "flags": [],
+      "tags": [
+        "observation"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.set",
+      "name": "set",
+      "path": "devices.filters.set",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Update one or both filters; omitted fields are unchanged. The table refreshes through the app's normal data fetching.",
+      "effect": "local-state",
+      "flags": [
+        "idempotent",
+        "reversible"
+      ],
+      "tags": [
+        "local-state",
+        "idempotent",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.readState",
+      "name": "readState",
+      "path": "devices.table.readState",
+      "kind": "observation",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Visible rows, current selection, current sorting",
+      "flags": [],
+      "tags": [
+        "observation"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.selectRows",
+      "name": "selectRows",
+      "path": "devices.table.selectRows",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Replace, extend or reduce the row selection",
+      "effect": "local-state",
+      "flags": [
+        "reversible"
+      ],
+      "tags": [
+        "local-state",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.sort",
+      "name": "sort",
+      "path": "devices.table.sort",
+      "kind": "action",
+      "plane": "view",
+      "outcome": "expose",
+      "description": "Change the table sorting",
+      "effect": "local-state",
+      "flags": [
+        "idempotent",
+        "reversible"
+      ],
+      "tags": [
+        "local-state",
+        "idempotent",
+        "reversible"
+      ]
+    },
+    {
+      "capabilityId": "domain:devices.disable",
+      "name": "devices.disable",
+      "path": "devices.disable",
+      "kind": "procedure",
+      "plane": "domain",
+      "outcome": "disable",
+      "description": "Disable the given devices",
+      "reason": "Select at least one device first",
+      "effect": "destructive",
+      "flags": [
+        "confirmation:required",
+        "deviceIds bound+locked"
+      ],
+      "tags": [
+        "destructive",
+        "confirmation:required",
+        "deviceIds bound+locked"
+      ]
+    }
+  ],
+  "rejections": []
 }
