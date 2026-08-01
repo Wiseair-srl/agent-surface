@@ -7,7 +7,9 @@
 // is never reachable from core), AS-COVER-007 (the gap reaches every command,
 // and a scope filters the catalog by the same predicate as the mount),
 // AS-CLI-008 (--depth static computes the catalog and mounts nothing),
-// AS-COVER-008 (unread call sites ratchet per entry, keyed on file#reason).
+// AS-COVER-008 (unread call sites ratchet per entry, keyed on file#reason),
+// AS-COVER-009 (a wrapper hook's type resolves from its call sites, and a
+// same-named function elsewhere is never attributed).
 //
 // These drive the real `main()`. The fixture app authors three components and
 // mounts one of them, which is the only shape that can prove a coverage gap:
@@ -31,6 +33,9 @@ const UNMOUNTABLE = fileURLToPath(
 );
 const SPREAD = fileURLToPath(
   new URL("./fixtures/spread/agent-surface.config.tsx", import.meta.url),
+);
+const WRAPPER = fileURLToPath(
+  new URL("./fixtures/wrapper/agent-surface.config.tsx", import.meta.url),
 );
 const DEVICES = fileURLToPath(
   new URL("../../../examples/devices-app/agent-surface.config.tsx", import.meta.url),
@@ -471,6 +476,64 @@ describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-0
     },
     TIMEOUT,
   );
+});
+
+describe("a wrapper hook's type resolves from its call sites (AS-COVER-009)", () => {
+  const inventory = (): ReturnType<typeof extractCapabilities> =>
+    extractCapabilities({ root: dirname(WRAPPER) });
+
+  it("emits one capability set per literal a caller passes", () => {
+    // The whole point of #31: one wrapper, many call sites. Reported unread,
+    // this single line hid every capability every caller authored — 91% of one
+    // real application's surface.
+    const ids = [...authoredIds(inventory())].sort();
+    expect(ids).toContain("view:wrap.devices.read");
+    expect(ids).toContain("view:wrap.devices.poke");
+    expect(ids).toContain("view:wrap.billing.read");
+    expect(ids).toContain("view:wrap.billing.poke");
+  });
+
+  it("reads the destructured spelling too", () => {
+    // `function useX({ type }: Props)` is as common as the positional one.
+    expect(authoredIds(inventory())).toContain("view:wrap.named.read");
+  });
+
+  it("never attributes a call of a same-named function in another file", () => {
+    // THE safety property. Resolving the impostor's call would put
+    // `wrap.impostor` in the catalog with capabilities no component authors —
+    // fabricating an entry, a failure this package has never had. Reporting
+    // nothing is always the safe answer, so anything short of certainty
+    // (a same-file declaration, or an import resolving to the wrapper's file)
+    // resolves to nothing at all.
+    const ids = [...authoredIds(inventory())];
+    expect(ids.some((id) => id.includes("impostor"))).toBe(false);
+  });
+
+  it("resolves the literals and reports the caller that passes a variable", () => {
+    // Partial beats all-or-nothing: 2 resolved plus 1 named unread line is a
+    // truer catalog than 3 unread ones, and it stays honest about which.
+    const entry = unresolved(inventory()).find((c) => c.note?.includes("usePanel()"));
+    expect(entry).toBeDefined();
+    expect(entry?.reason).toBe("dynamic-type");
+    expect(entry?.note).toContain("2 call sites resolved");
+    expect(entry?.note).toContain("1 passes a non-literal");
+  });
+
+  it("costs nothing extra: the join reuses the walk, and forces no type checker", () => {
+    // Binding a large program to get `node.parent` would dwarf the extraction
+    // itself, so the enclosing function is tracked on the way down instead.
+    const before = Date.now();
+    inventory();
+    const withWrappers = Date.now() - before;
+    const plain = ((): number => {
+      const start = Date.now();
+      extractCapabilities({ root: dirname(FIXTURE) });
+      return Date.now() - start;
+    })();
+    // Same order of magnitude — this is a smoke test against accidentally
+    // constructing a checker, not a benchmark.
+    expect(withWrappers).toBeLessThan(Math.max(plain * 20, 5_000));
+  });
 });
 
 describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008)", () => {

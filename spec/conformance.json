@@ -1036,6 +1036,15 @@
         "packages/cli/test/coverage.test.ts"
       ],
       "status": "implemented"
+    },
+    "AS-COVER-009": {
+      "title": "A registration whose type is a parameter resolves from its wrapper's call sites when they pass string literals; a same-named function elsewhere is never attributed, and unresolved call sites are still reported",
+      "source": "20-cli.md#a-wrapper-hook-resolves-one-hop-up",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
     }
   }
 }
