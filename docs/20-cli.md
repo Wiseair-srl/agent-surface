@@ -141,10 +141,41 @@ agent-surface inspect [scenario]
 The whole surface: what this codebase authors, what a mount surfaces, and the difference.
 
 ```text
-10 authored (upper bound) · 10 call sites across 21 files · domain not analyzed, it comes from the oRPC router (OQ-1)
+SURFACE INSPECT
+Config      agent-surface.config.tsx
+Depth       full — the source is read and every scenario is mounted
+Scope       whole surface — no component-type prefix filter
+Scenarios   2 — admin, anonymous
+
+SURFACE SUMMARY
+Reach       11/11 authored capabilities reached
+Callable    9/11 mounted capabilities are callable in at least one scenario · 2 never callable (2 disabled)
+Risk        1 destructive · 1 confirmation-gated · 1 with bound input
+Domain      1 capability reached against the authoritative oRPC manifest
+Catalog     every call site read
+Scenarios   2 mounted
+Verdict     every authored capability is reached by a scenario
+
+SCENARIOS  (2)
+SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED
+admin      /devices  9         2         0       —
+anonymous  /devices  0         0         11      —
+
+NEVER CALLABLE — every scenario mounted these, and none of them could call one  (2)
+CAPABILITY                 BEST STATE  WHY
+domain:devices.disable     disabled    Select at least one device first
+view:devices.drawer.close  disabled    The drawer is not open
+  → add a scenario that reaches the state these need — an open drawer, a filled list, a selected row
+
+STATIC CATALOG
+STATUS        COMPLETE — every capability identity resolved
+Capabilities  11 authored (upper bound) · 10 resolved call sites
+Program       21 files analyzed · 40 agent-surface implementation files excluded
+Metadata      5 call sites partially read · identity remains resolved
+Domain        1 manifest capability
 
 scenario admin  route /devices
-9 callable, 2 visible-disabled, 0 hidden
+9 callable, 2 visible-disabled, 0 hidden  ·  1 destructive, 1 confirmation-gated
 
 CAPABILITY                KIND         EFFECT       STATE     FLAGS
 app.navigation.goTo       action       navigation   callable  reversible
@@ -156,22 +187,38 @@ devices.table.sort        action       local-state  callable  idempotent · reve
 devices.disable           procedure    destructive  disabled  confirmation:required · deviceIds bound+locked
     ⤷ Select at least one device first
 
-10 authored · 10 reached · 0 unreached · 1 scenario (admin)
+… anonymous …
 ```
 
 **It reports findings; it never gates on them.** Exit `0` whatever it prints, because [`check`](#check) is the gate and a viewer that sometimes fails is a viewer nobody puts in a pipeline. The one exception is `2`, which is not a finding — the command could not run.
 
 Name a scenario to see only that one; a bare `inspect` renders **every** scenario the config defines, in the order they are listed. `AS-CLI-001` pins that the rendered view contains every capability the snapshot contains — a renderer that quietly drops one is worse than no renderer.
 
-#### What prints, and when
+#### Summaries first, details after
 
-Three things print, and when each prints is a consequence of when it is knowable:
+The report is read top-down, so it is written top-down:
 
-1. **The catalog summary**, first — it is ready before anything mounts.
-2. **Each scenario, as it finishes.** A config with ten scenarios is otherwise ten mounts of blank terminal.
-3. **The verdict**, last. It is the only part that needs every scenario to have finished, and a reader who stops at the bottom should stop on the finding.
+1. **The run** — the config, the depth, the scope, the scenarios. All of it is known *before* the first mount, and the mounts are the slow half, so it prints immediately rather than making a reader wait to learn what is being measured.
+2. **The summary** — reach, what is callable, what the surface can do, and one verdict line. The answer, above everything it was derived from.
+3. **One row per scenario**, when the config declares more than one.
+4. **The findings** — unreached, never callable, unread call sites — each with what to do about it.
+5. **The details** — the static catalog, then each scenario's own table.
 
-[`check`](#check) inverts this: it collects everything and leads with its findings, because its output is a report someone reads top-down in a pull request rather than a terminal filling up.
+That order costs the streaming this command used to do: a summary is a statement about *every* scenario, so it cannot be written until every scenario has mounted. A terminal is told what it is waiting for instead — the header is already on screen, and a spinner names the scenario being mounted and how far through the list it is. Nothing transient is ever written in plain mode, because `AS-CLI-003` wants byte-stable output and a spinner is neither.
+
+[`check`](#check) has always worked this way, and now says so in the same shape (`AS-CLI-013`).
+
+At `--depth static` the catalog *is* the answer rather than a detail, so it opens the report beside the run that produced it.
+
+#### Mounted, and callable in nothing
+
+`unreached` asks whether anything mounted a capability. `NEVER CALLABLE` asks the question one step in: *it mounted, and could any scenario actually call it?*
+
+A drawer every scenario leaves closed registers its `close` action in every snapshot and is callable in none of them. The coverage join counts it **reached** — correctly, a scenario did mount it — so this is the gap that join cannot see. It is a judgement about your scenarios rather than a defect in the surface, which is why `inspect` reports it and [`check`](#check) does not fail on it.
+
+It prints only when more than one scenario ran. Over a single scenario it is the same statement that scenario's own table already made, one line per capability.
+
+The `Risk` row and the header's risk clause count everything the snapshot carries — `callable` **and** `visible-disabled`. A disabled capability is disclosed to the agent and becomes callable the moment the state it waits on arrives, so leaving it out would report a surface with a destructive action on it as one without. A hidden capability is genuinely absent: authority removed it, and counting it would report a policy working as a risk.
 
 #### The table
 
@@ -262,44 +309,71 @@ A baseline file that exists but cannot be read or parsed is *could not run* (`2`
 
 ```text
 SURFACE CHECK  FAIL
+Config             agent-surface.config.tsx
+Depth              full — the source is read and every scenario is mounted
+Scope              whole surface — no component-type prefix filter
 
 Coverage    FAIL   2/3 authored capabilities reached · 1 unreached
 Catalog     PASS   all static sites resolved
 Domain      PASS   1 manifest capability reached
-Baselines   FAIL   0/1 scenario baselines current
-Runtime     PASS   1 scenario mounted
+Baselines   FAIL   1/2 scenario baselines current
+Runtime     PASS   2 scenarios mounted
 
-SCENARIOS  (1)
-  admin
+SCENARIOS  (2)
+SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED  BASELINE
+admin      /devices  9         2         0       —         drift (1)
+anonymous  /devices  0         0         11      —         current
+
+UNREACHED — authored, and no scenario mounts it  (1)
+CAPABILITY                ORIGIN
+view:cov.unmounted.toCsv  src/Unmounted.tsx:26
+  → add a scenario that mounts them, delete the dead component, or record the decision in
+    .agent-surface/coverage-allow.json
 
 DRIFT — the surface changed against its baseline  (1)
   admin: 1 change
     ~ view:devices.table.sort  (components[3].actions[1].description)
         before: Change the table sorting
         after:  Change the table sorting order
+  → review the change, then `agent-surface snapshot` to accept it
 
+NEXT STEPS
+  1. mount the 1 unreached capability from a scenario, or record the decision in
+     .agent-surface/coverage-allow.json
+  2. `agent-surface snapshot`, then commit .agent-surface/ — this accepts the surface above as
+     reviewed
 ```
 
-The gap leads and drift follows, because a capability nothing reaches is a bigger problem than a capability that changed.
+The report is read top-down, and each band answers the next question the one above raises:
+
+1. **The verdict**, and what it was computed over — the config, the depth, and the scope every count below is relative to (`AS-CLI-007`).
+2. **The health matrix**: one row per class of finding, whether or not it fired. A row that says `PASS` is a check that ran.
+3. **One row per scenario** — route, what it surfaced, and how its baseline compared. A list of names cannot say which scenario was empty, or which one drifted; this can. A scenario that threw appears here too, with the message under its row.
+4. **The findings**, gap first and drift second, because a capability nothing reaches is a bigger problem than a capability that changed. Each carries what to do about it.
+5. **The commands that clear them**, last — the tail of a CI log is what a reader sees first, and a list of findings without the command that fixes them leaves the reader to derive it from six sections.
 
 Any difference counts as drift, including a description edit. Descriptions are the provider's cached prompt prefix (D28) — a silent edit re-bills every conversation, which is precisely a change a reviewer should see.
 
 `check` is **always plain**, with no rendering framework in its path at all. Its output is a report pasted into a pull request and read out of a CI log, and neither of those is a terminal.
 
-A green `check` names what it compared, for the same reason the `inspect` header does (`AS-CLI-007`):
+A green `check` says the same things in the same order, and has nothing to put under `NEXT STEPS`:
 
 ```text
 SURFACE CHECK  PASS
+Config             agent-surface.config.tsx
+Depth              full — the source is read and every scenario is mounted
+Scope              devices — every count below is relative to it
 
-Coverage    PASS   3/3 authored capabilities reached
+Coverage    PASS   9/9 authored capabilities reached
 Catalog     WARN   11 unread static sites allowlisted
-Domain      PASS   2 manifest capabilities reached
-Baselines   PASS   22/22 scenario baselines current
-Runtime     PASS   22 scenarios mounted
+Domain      PASS   1 manifest capability reached
+Baselines   PASS   2/2 scenario baselines current
+Runtime     PASS   2 scenarios mounted
 
-SCENARIOS  (22)
-  cashflow-overview, transactions, rules, balance, accounts, receivables-pending,
-  collections, invoices-all, contracts, …
+SCENARIOS  (2)
+SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED  BASELINE
+admin      /devices  7         2         0       —         current
+anonymous  /devices  0         0         9       —         current
 ```
 
 The verdict is always first. Passing checks summarize non-gating inventories; `--detail` restores undeclared runtime ids and full diagnostics. Failing findings are never suppressed.
@@ -321,6 +395,11 @@ agent-surface inspect --depth static
 ```
 
 ```text
+SURFACE INSPECT
+Config        agent-surface.config.tsx
+Depth         static — the source only; nothing is mounted
+Scope         whole surface — no component-type prefix filter
+
 STATIC CATALOG
 STATUS        INCOMPLETE — 11 unread capability identities
 Capabilities  35 authored (upper bound) · 58 resolved call sites
@@ -343,7 +422,7 @@ ALLOWLIST KEYS
 
 The default preserves every resolved identity and copyable allowlist key, but summarizes repetition: capabilities are grouped under their component and unread sites by file/reason. `--detail` adds the raw call-site table, origins, diagnostic prose, and per-site notes.
 
-At `--depth full` only the summary line prints here: the scenario tables below name every capability a scenario reached, and the verdict names the ones it did not, so the listing would be the same information a second time, above the answer instead of in it.
+At `--depth full` only the `STATIC CATALOG` block prints, in the header: the scenario tables below name every capability a scenario reached, and the findings name the ones they did not, so the listing would be the same information a second time.
 
 Identity and authored metadata come from source text; availability, policy outcome and binding are not claimed here — see [§two sources of truth](#two-sources-of-truth).
 
@@ -444,8 +523,16 @@ Authored, minus reached. Every command reports it (`AS-COVER-007`): it closes `i
 UNREACHED — authored, and no scenario mounts it  (1)
 CAPABILITY                ORIGIN
 view:cov.unmounted.toCsv  Unmounted.tsx:26
+  → add a scenario that mounts them, delete the dead component, or record the decision in
+    .agent-surface/coverage-allow.json
 
-3 authored · 2 reached · 1 unreached · 1 scenario (default)
+SURFACE SUMMARY
+Reach       2/3 authored capabilities reached · 1 unreached
+Callable    2/2 mounted capabilities are callable in at least one scenario
+Risk        nothing mutating or destructive is on the surface · 2 read-only or local-state capabilities
+Catalog     every call site read
+Scenarios   1 mounted
+Verdict     1 authored capability is reached by no scenario
 ```
 
 Three buckets:
@@ -544,7 +631,8 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
   "catalog":   { /* … */ } | null,   // null at --depth runtime
   "scenarios": [ { "scenario", "scope"?, "snapshot", "capabilities", "rejections", "explanation"? } ],
   "failures":  [ { "scenario", "message" } ],
-  "coverage":  { /* … */ } | null    // null at any depth but full, or after a failed mount
+  "coverage":  { /* … */ } | null,   // null at any depth but full, or after a failed mount
+  "neverCallable": [ { "capabilityId", "outcome", "reason"?, "scenarios" } ]
 }
 ```
 

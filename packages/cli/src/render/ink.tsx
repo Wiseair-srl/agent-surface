@@ -3,7 +3,7 @@ import { Box, Static, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import type { CapabilityRow, CapabilityGroup, SurfaceView } from "./model.js";
 import { flatRows } from "./model.js";
-import type { CoverageReport } from "../coverage.js";
+import { riskClause, type FindingSection, type ReportBlock, type ReportRow } from "./summary.js";
 
 const OUTCOME = {
   expose: { mark: "●", color: "green" as const, state: "callable" },
@@ -11,7 +11,18 @@ const OUTCOME = {
   hide: { mark: "○", color: "red" as const, state: "hidden" },
 };
 
+const STATUS_COLOR = {
+  PASS: "green",
+  WARN: "yellow",
+  FAIL: "red",
+  ERROR: "red",
+} as const;
+
+const TONE_COLOR = { good: "green", warn: "yellow", bad: "red" } as const;
+
 const NONE = "—";
+const LABEL_WIDTH = 12;
+const STATUS_WIDTH = 7;
 
 /**
  * Same column widths as the plain renderer computes, and for the same reason:
@@ -61,8 +72,155 @@ export function Loading({ label }: { label: string }): ReactElement {
       <Text color="cyan">
         <Spinner type="dots" />
       </Text>
-      {` ${label}`}
+      <Text dimColor>{` ${label}…`}</Text>
     </Text>
+  );
+}
+
+/** One `label  STATUS  text` row, coloured by whichever of the two it carries. */
+function Row({ row, width, statuses }: { row: ReportRow; width: number; statuses: boolean }): ReactElement {
+  return (
+    <Box>
+      <Text dimColor>{pad(row.label, width)}</Text>
+      {statuses ? (
+        <Text bold color={row.status ? STATUS_COLOR[row.status] : undefined}>
+          {pad(row.status ?? "", STATUS_WIDTH)}
+        </Text>
+      ) : null}
+      <Text color={row.tone ? TONE_COLOR[row.tone] : undefined} wrap="wrap">
+        {row.text}
+      </Text>
+    </Box>
+  );
+}
+
+/**
+ * The labelled blocks a report is built from — the run header, the catalog
+ * summary, the closing verdict. Same rows the plain renderer prints, same
+ * widths, with the status word and the tone carrying colour on a terminal.
+ */
+export function Report({ blocks }: { blocks: ReportBlock[] }): ReactElement {
+  const width = Math.max(
+    LABEL_WIDTH,
+    ...blocks.flatMap((block) => block.rows.map((row) => row.label.length + 2)),
+  );
+  const statuses = blocks.some((block) => block.rows.some((row) => row.status));
+  // Ink prints a newline of its own after each painted frame, so only the
+  // blocks *within* one frame ask for the blank line above them. A margin on
+  // the first would double it, which reads as a missing block rather than as
+  // breathing room.
+  return (
+    <Static
+      items={blocks.map((block, index) => ({ key: block.title ?? `block-${index}`, block, index }))}
+    >
+      {({ key, block, index }) => (
+        <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+          {block.title ? <Text bold>{block.title}</Text> : null}
+          {block.rows.map((row) => (
+            <Row key={row.label} row={row} width={width} statuses={statuses} />
+          ))}
+        </Box>
+      )}
+    </Static>
+  );
+}
+
+function Grid({
+  headers,
+  rows,
+}: {
+  headers: string[];
+  rows: Array<{ cells: string[]; note?: string }>;
+}): ReactElement {
+  const widths = widthsFor(
+    headers,
+    rows.map((row) => row.cells),
+  );
+  return (
+    <Box flexDirection="column">
+      <Box>
+        {headers.map((header, column) => (
+          <Text key={header} dimColor bold>
+            {column === headers.length - 1 ? header : `${pad(header, widths[column]!)}  `}
+          </Text>
+        ))}
+      </Box>
+      {rows.map((row, index) => (
+        <Box key={`${row.cells[0]}-${index}`} flexDirection="column">
+          <Box>
+            {row.cells.map((cell, column) => (
+              <Text key={`${column}`} bold={column === 0}>
+                {column === headers.length - 1 ? cell : `${pad(cell, widths[column]!)}  `}
+              </Text>
+            ))}
+          </Box>
+          {row.note ? (
+            <Box paddingLeft={4}>
+              <Text dimColor wrap="wrap">{`⤷ ${row.note}`}</Text>
+            </Box>
+          ) : null}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
+export function Table({
+  title,
+  headers,
+  rows,
+}: {
+  title: string;
+  headers: string[];
+  rows: Array<{ cells: string[]; note?: string }>;
+}): ReactElement {
+  return (
+    <Static items={[{ key: title }]}>
+      {(block) => (
+        <Box key={block.key} flexDirection="column">
+          <Text bold>{title}</Text>
+          <Grid headers={headers} rows={rows} />
+        </Box>
+      )}
+    </Static>
+  );
+}
+
+/**
+ * Findings. The heading says what it is, the gloss why it matters, and the hint
+ * what to do — printed with the finding rather than left to be inferred.
+ */
+export function Findings({ sections }: { sections: FindingSection[] }): ReactElement {
+  return (
+    <Static
+      items={sections.map((section, index) => ({ key: `${section.title}-${index}`, section, index }))}
+    >
+      {({ key, section, index }) => (
+        <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
+          <Box>
+            <Text
+              backgroundColor={section.tone === "notice" ? "yellow" : "red"}
+              color="black"
+              bold
+            >{` ${section.title} `}</Text>
+            <Text dimColor>{`  ${section.gloss}${section.count > 0 ? `  ${section.count}` : ""}`}</Text>
+          </Box>
+          {section.headers && section.rows ? (
+            <Grid headers={section.headers} rows={section.rows} />
+          ) : null}
+          {(section.lines ?? []).map((line, index) => (
+            <Box key={`${index}`} paddingLeft={2}>
+              <Text>{line}</Text>
+            </Box>
+          ))}
+          {section.hint ? (
+            <Box paddingLeft={2}>
+              <Text color="cyan" wrap="wrap">{`→ ${section.hint}`}</Text>
+            </Box>
+          ) : null}
+        </Box>
+      )}
+    </Static>
   );
 }
 
@@ -166,6 +324,9 @@ function Group({ group }: { group: CapabilityGroup }): ReactElement {
  * `hidden` is unconditional here for the same reason it is in plain text.
  */
 function Header({ view }: { view: SurfaceView }): ReactElement {
+  // What the surface can do, not just how much of it there is: "one of these
+  // deletes a device" is the part a reader needs before they read anything else.
+  const risk = riskClause(flatRows(view));
   return (
     <Box>
       <Text bold>{view.scenario}</Text>
@@ -187,6 +348,12 @@ function Header({ view }: { view: SurfaceView }): ReactElement {
               view.rejections.length === 1 ? "" : "s"
             } rejected`}
           </Text>
+        </>
+      ) : null}
+      {risk ? (
+        <>
+          <Text dimColor>{"  ·  "}</Text>
+          <Text color="magenta">{risk}</Text>
         </>
       ) : null}
     </Box>
@@ -362,45 +529,3 @@ export function Surface({
   );
 }
 
-/**
- * The verdict — authored minus reached. The finding the command surface used to
- * keep behind a fifth command, so it is the last thing painted and the thing a
- * reader stops on.
- */
-export function Coverage({ report }: { report: CoverageReport }): ReactElement {
-  const clean =
-    report.unreached.length === 0 &&
-    report.unresolved.length === 0 &&
-    report.staleAllowlist.length === 0;
-
-  return (
-    <Static items={[{ key: "__coverage" }]}>
-      {(block) => (
-        <Box key={block.key} flexDirection="column" marginTop={1}>
-          {report.unreached.length > 0 ? (
-            <Box flexDirection="column">
-              <Box>
-                <Text backgroundColor="red" color="black" bold>
-                  {" UNREACHED "}
-                </Text>
-                <Text dimColor>{`  authored, and no scenario mounts it  ${report.unreached.length}`}</Text>
-              </Box>
-              {report.unreached.map((entry) => (
-                <Box key={entry.capabilityId} paddingLeft={2}>
-                  <Text bold>{entry.capabilityId}</Text>
-                  <Text dimColor>{`  ${entry.origin.file}:${entry.origin.line}`}</Text>
-                </Box>
-              ))}
-            </Box>
-          ) : null}
-          <Box marginTop={report.unreached.length > 0 ? 1 : 0}>
-            <Text color={clean ? "green" : "red"} bold>
-              {`${report.authored} authored · ${report.reached} reached · ${report.unreached.length} unreached`}
-            </Text>
-            <Text dimColor>{`  ${report.scenarios.join(", ")}`}</Text>
-          </Box>
-        </Box>
-      )}
-    </Static>
-  );
-}

@@ -1,4 +1,3 @@
-import { relative } from "node:path";
 import {
   joinCoverage,
   mountScenarios,
@@ -9,7 +8,14 @@ import {
 } from "../analysis.js";
 import { baselinePath, writeBaseline, writeScenarioManifest } from "../baseline.js";
 import { scenarioBaseline } from "../report.js";
-import { renderCoveragePlain, renderFailuresPlain } from "../render/plain.js";
+import { buildView, flatRows } from "../render/model.js";
+import { renderFailuresPlain, renderSurfaceSummaryPlain } from "../render/plain.js";
+import {
+  displayPath,
+  scenarioStats,
+  trackReach,
+  type CapabilityReach,
+} from "../render/summary.js";
 import { write, writeError } from "../output.js";
 
 export interface SnapshotOptions {
@@ -54,15 +60,25 @@ export async function runSnapshot(options: SnapshotOptions): Promise<number> {
   for (const result of runtime.results) {
     const path = baselinePath(runtime.baselineDir, result.scenario);
     writeBaseline(path, scenarioBaseline(result));
-    write(`wrote ${relative(process.cwd(), path)}`);
+    write(`wrote ${displayPath(path)}`);
   }
   writeScenarioManifest(runtime.baselineDir, runtime.declaredScenarios);
 
-  const coverage = joinCoverage(inventory, runtime, analysis);
-  if (coverage) {
-    write("");
-    write(renderCoveragePlain(coverage));
+  const reach = new Map<string, CapabilityReach>();
+  for (const result of runtime.results) {
+    trackReach(reach, flatRows(buildView(result)), result.scenario);
   }
+  const coverage = joinCoverage(inventory, runtime, analysis);
+  write("");
+  write(
+    renderSurfaceSummaryPlain({
+      depth: options.depth,
+      ...(coverage ? { coverage } : {}),
+      scenarios: runtime.results.map(scenarioStats),
+      failures: runtime.failures.length,
+      reach,
+    }),
+  );
 
   if (runtime.failures.length > 0) {
     // A baseline written for some scenarios and not others is a baseline that

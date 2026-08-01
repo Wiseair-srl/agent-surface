@@ -121,7 +121,26 @@ agent-surface inspect
 ```
 
 ```text
-2 authored (upper bound) · 2 call sites across 3 files · domain not analyzed, it comes from the oRPC router
+SURFACE INSPECT
+Config      agent-surface.config.tsx
+Depth       full — the source is read and every scenario is mounted
+Scope       whole surface — no component-type prefix filter
+Scenarios   1 — default
+
+SURFACE SUMMARY
+Reach       2/2 authored capabilities reached
+Callable    2/2 mounted capabilities are callable in at least one scenario
+Risk        nothing mutating or destructive is on the surface · 2 read-only or local-state capabilities
+Catalog     every call site read
+Scenarios   1 mounted
+Verdict     every authored capability is reached by a scenario
+
+STATIC CATALOG
+STATUS        COMPLETE — every capability identity resolved
+Capabilities  2 authored (upper bound) · 2 resolved call sites
+Program       3 files analyzed
+Metadata      0 call sites partially read
+Domain        no authoritative oRPC manifest configured — that plane has no denominator
 
 scenario default
 2 callable, 0 visible-disabled, 0 hidden
@@ -129,11 +148,9 @@ scenario default
 CAPABILITY            KIND         EFFECT       STATE     FLAGS
 devices.filters.read  observation  —            callable  —
 devices.filters.set   action       local-state  callable  idempotent · reversible
-
-2 authored · 2 reached · 0 unreached · 1 scenario (default)
 ```
 
-The last line is the one worth reading twice. It compares what your *code* authors against what your *scenarios* reach — so a route no scenario visits shows up as `unreached` rather than as nothing at all, and [`check`](20-cli.md#check) fails on it in CI.
+Summaries first, details after: the header says what every number below it is relative to, and the summary is the part worth reading twice. `Reach` compares what your *code* authors against what your *scenarios* reach — so a route no scenario visits shows up as `unreached` rather than as nothing at all, and [`check`](20-cli.md#check) fails on it in CI. `Callable` asks the next question: of the capabilities that *were* mounted, which one could no scenario actually call?
 
 ## 5 · Hand it to an agent
 
