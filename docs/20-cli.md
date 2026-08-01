@@ -1,31 +1,9 @@
 # 20 — CLI (`@agent-surface/cli`)
 
 > [!NOTE]
-> **Status: Draft.** The binary is `agent-surface`. It answers three questions from a terminal and from CI: *what can an agent do on this page right now*, *did that change without anyone noticing*, and *did we author something no scenario ever reaches*. It is a developer tool — nothing it prints ever reaches a model.
+> **Status: Draft.** The binary is `agent-surface`. It shows you the agent surface your app exposes, and fails the build when that surface changes without review. It is a developer tool — nothing it prints ever reaches a model.
 
-## Why this isn't `--entry ./router.ts`
-
-A server router is a static export, so a server-side tool can import one file and print its catalog. A presentation **surface** is not: it is a projection of which components are **currently mounted**, on which **route**, for which **host context** and **consumer**, filtered by **policy** and by live **`when()`** state ([Core API §snapshot](03-core-api.md#snapshot)). There is nothing static to read — the surface has to be *mounted* before it exists.
-
-So the CLI mounts your app. It does not re-implement it.
-
-### The projection is dynamic; the catalog is not
-
-That argument is about the **projection**, and for a long time this document let it stand for the **catalog** as well. It does not, and the difference is what [`--depth`](#depth) exists to recover.
-
-Look at a real call site. `type` is a string literal, capability names are object keys, `description` and `effect` are literals — so the identity `view:devices.table.sort` is fully determined by source text. The only dynamic part is `instanceId`, which is not part of a capability id at all. What is genuinely a function of unbounded application state is *availability*, *policy outcome* and *binding*: the projection, exactly as described above.
-
-Inheriting "the catalog is undiscoverable" from "the projection is dynamic" cost one whole class of finding — **authored, but reached by no scenario**. A route no scenario visits, a drawer no scenario opens, a list no scenario fills: the components never register, so there is nothing to snapshot, nothing for `--explain` to iterate, and no baseline entry for `check` to miss. Scenario coverage was not merely unmeasured, it was unmeasurable.
-
-Scenarios remain required, for the projection. What they stop being is the gate on knowing *what exists*.
-
-### Two sources of truth, one command each way
-
-Recovering the catalog first arrived as two more commands — `capabilities` read it, `coverage` joined it against a mount — and that was the wrong cut. It split the command surface along an **implementation seam** (*does this boot a TypeScript program? does it need jsdom?*) rather than along the seam of a **question someone actually has**. Nobody wants "the catalog"; they want to know what an agent can reach, and what it can't.
-
-The cost was not aesthetic. `check` gated on drift alone and printed a line telling you that capabilities no scenario mounts were a different command's question — so in CI a whole unreached route sat behind a green tick, and the tool that knew said nothing. A gate that names the check it is *not* performing is a gate with a hole in it.
-
-So there is one command per question, and the depth dial says how much of the answer to compute (D38, 0.11.0):
+## Four commands
 
 | Question | Command |
 |---|---|
@@ -34,7 +12,33 @@ So there is one command per question, and the depth dial says how much of the an
 | Accept the current surface as the reviewed one. | [`snapshot`](#snapshot) |
 | Fail the build if either changed. | [`check`](#check) |
 
-`capabilities` and `coverage` were removed in 0.11 rather than aliased. Naming them still prints where their answer went.
+```bash
+agent-surface init                  # read the codebase, then scaffold a config
+agent-surface inspect [scenario]    # what an agent can reach, and what it cannot
+agent-surface snapshot [scenario]   # write/refresh the committed baseline
+agent-surface check [scenario]      # fail on drift, or on a capability no scenario reaches
+```
+
+## Two sources of truth
+
+Your app's agent surface is described in two places, and the CLI reads both.
+
+**The catalog — what your code authors.** Registration call sites are static text:
+
+```tsx
+useAgentComponent({
+  type: "devices.table",                  // string literal
+  actions: { sort: action({ … }) },       // capability name is an object key
+});
+```
+
+`view:devices.table.sort` is fully determined by source. So the catalog is readable from the TypeScript program alone — no server, no jsdom, no mount, no scenarios. The one dynamic part of that call site is `instanceId`, which is not part of a capability id.
+
+**The projection — what a mounted scenario surfaces.** Availability, policy outcome and binding are functions of unbounded application state: which components are **currently mounted**, on which **route**, for which **host context** and **consumer**, filtered by **policy** and by live **`when()`** state ([Core API §snapshot](03-core-api.md#snapshot)). None of that is in the source text. To see it, the CLI mounts your app — it does not re-implement it.
+
+**The difference between them is a finding.** A route no scenario visits, a drawer no scenario opens, a list no scenario fills: those components never register, so they appear in no snapshot, no explanation and no baseline. Reading the catalog is the only way to know they exist. `check` fails on them.
+
+[`--depth`](#depth) says which of the two to compute. Every command computes both by default.
 
 ## Configuration
 
@@ -68,9 +72,9 @@ export default defineSurface({
 
 Loading goes through **vite-node** on your own `vite.config.*`, so your aliases, plugins and TSX resolve exactly as they do in dev. The mount runs inside that same module graph — see [§one graph](#one-graph-one-react-one-core).
 
-### The scenarios are not a fixture
+### One definition, shared with your tests
 
-They are the same definition your test suite uses:
+The same scenarios drive your test suite:
 
 ```ts
 import config from "../agent-surface.config.js";
@@ -157,7 +161,7 @@ devices.disable           procedure    destructive  disabled  confirmation:requi
 
 Name a scenario to see only that one; a bare `inspect` renders **every** scenario the config defines, in the order they are listed. `AS-CLI-001` pins that the rendered view contains every capability the snapshot contains — a renderer that quietly drops one is worse than no renderer.
 
-#### Order is the design
+#### What prints, and when
 
 Three things print, and when each prints is a consequence of when it is knowable:
 
@@ -167,7 +171,7 @@ Three things print, and when each prints is a consequence of when it is knowable
 
 [`check`](#check) inverts this: it collects everything and leads with its findings, because its output is a report someone reads top-down in a pull request rather than a terminal filling up.
 
-#### A table, not paragraphs
+#### The table
 
 One capability per line, because *what is on this surface* is a scanning question and prose does not scan. Column widths come from the **content**, never from `process.stdout.columns` — a table laid out against the terminal it happened to run in is byte-stable (`AS-CLI-003`) only until two people diff the same CI log from different windows.
 
@@ -181,7 +185,7 @@ Every number here is relative to something, and `AS-CLI-007` requires the qualif
 
 - **The scenario**, always — a surface is a projection of one mounted context, never "the app".
 - **The scope**, when one is active. `scope` in the config or `--scope` on the command line filters the snapshot *and* the explanation; an unqualified `7 callable` then reads as a claim about the whole surface when it is a claim about one prefix of it. The header prints `scope devices` alongside the route, and the verdict line repeats it.
-- **`hidden`, unconditionally — and the hidden capabilities with it.** The explanation is collected on every run, so both were always computable. Printing them only under `--explain` meant a surface with a policy-hidden half rendered as a complete one: signed out, the example app showed `0 callable, 0 visible-disabled` and the words *nothing is registered* over eleven perfectly good capabilities that authority had hidden. The count moved out from behind the flag first; the rows followed in 0.11, and now that scenario renders eleven lines marked `hidden`. The *attribution* still needs `--explain`.
+- **`hidden`, unconditionally — and the hidden capabilities with it.** Signed out, the example app's surface is eleven capabilities that authority hid. Printing only `0 callable, 0 visible-disabled` would render that as an app which annotated nothing, so the rows print too, each marked `hidden`. The explanation is collected on every run, so this costs nothing. The policy *attribution* is what needs `--explain`.
 
 A hidden row prints **no reason line**. The reason a hidden capability carries is its *availability* reason, and printing "The drawer is not open" under a row marked `hidden` says the UI declined when authority did. Authority hides, state discloses (D11/D12), and the two must never look alike.
 
@@ -199,7 +203,7 @@ REJECTED — the registry refused these during the mount  (1)
 
 Duplicate `(type, instanceId)` yields a dead handle, first-wins; an `onRegister` guard rejection does the same. Neither reaches the snapshot (it never registered) nor the explanation (`explainSurface()` iterates *active* registrations), and neither appears as drift in `check`, because the baseline never contained the capability. The only diagnostic core emits goes through `devError`, which prints nothing unless the app was built `environment: "development"` — and [the config shape above](#configuration) builds it with `"test"`.
 
-So: copy-paste a component `type`, or render two instances without an `instanceId`, and a capability used to disappear with no output anywhere. The registry has always emitted `component-rejected`; the collector now reads it. `--json` carries `rejections` as an always-present array, so a consumer never has to tell "none" apart from "this CLI is too old to say".
+So a copy-pasted component `type`, or two instances rendered without an `instanceId`, would otherwise remove a capability with no output anywhere. The collector reads the registry's `component-rejected` events to catch it. `--json` carries `rejections` as an always-present array, so a consumer never has to tell "none" apart from "this CLI is too old to say".
 
 ### Why is my capability missing?
 
@@ -266,7 +270,7 @@ DRIFT — the surface changed against its baseline  (1)
 surface drift in 1 scenario — review the change, then `agent-surface snapshot` to accept it
 ```
 
-The gap leads, because it is the finding this command could not previously make at all. Drift follows, because it is the one it always could.
+The gap leads and drift follows, because a capability nothing reaches is a bigger problem than a capability that changed.
 
 Any difference counts as drift, including a description edit. Descriptions are the provider's cached prompt prefix (D28) — a silent edit re-bills every conversation, which is precisely a change a reviewer should see.
 
@@ -281,13 +285,13 @@ every authored capability is reached by a scenario
 surface matches the baseline in admin, anonymous
 ```
 
-It used to have to add that this was a statement about *these scenarios only*, and point at another command for the rest. At `--depth full` there is no rest. At `--depth runtime` there is, and the caveat is still printed — exactly where it is still true.
+At `--depth full` that is the whole answer. At `--depth runtime` the catalog was not read, so the line adds that this is a statement about *these scenarios only* — printed exactly where it is true.
 
 #### Exit codes are the contract
 
 `AS-CLI-002`: **`0`** clean · **`1`** a finding · **`2`** the command could not run.
 
-`2` widened in 0.11 from "usage error" to "could not run at all", matching [`orpc-agent`](https://orpc-agent.dev). It now covers an unknown scenario, an unreadable config, a bad `--depth`, *and* a scenario whose mount threw. A gate that answers `1` both when the surface changed and when the tool never loaded the app is a gate whose red says nothing — CI has to be able to tell those apart, because the second one passing silently is how a gate rots.
+`2` means *could not run*, not merely *bad flag*: an unknown scenario, an unreadable config, a bad `--depth`, or a scenario whose mount threw. A gate that answers `1` both when the surface changed and when the tool never loaded the app is a gate whose red says nothing — CI has to tell those apart, because the second one passing silently is how a gate rots. Same meaning as [`orpc-agent`](https://orpc-agent.dev)'s.
 
 ### The catalog (`--depth static`)
 
@@ -309,7 +313,7 @@ view:devices.table.sort   action  src/app/DevicesTable.tsx:162    partial
 
 At `--depth full` only the summary line prints here: the scenario tables below name every capability a scenario reached, and the verdict names the ones it did not, so the listing would be the same information a second time, above the answer instead of in it.
 
-This works because a registration call site is far more static than the surface it produces — see [§the projection is dynamic; the catalog is not](#the-projection-is-dynamic-the-catalog-is-not). Availability, policy outcome and binding are not claimed here; identity and authored metadata are.
+Identity and authored metadata come from source text; availability, policy outcome and binding are not claimed here — see [§two sources of truth](#two-sources-of-truth).
 
 Each entry carries how much of its call site was understood:
 
@@ -319,7 +323,7 @@ Each entry carries how much of its call site was understood:
 | `partial` | Identity resolved, some metadata dynamic. The common case: a spread `instanceId`, or a description built from a template. |
 | `unresolved` | Identity **not** resolved. Reported with its file, line and the construct that defeated the extractor — never dropped. |
 
-**`check` exits non-zero when any call site is unread**, unless `--allow-unresolved` is passed (`AS-COVER-003`) — which still prints the gap. The exit moved from `capabilities` to `check` in 0.11 along with the command; the discipline did not move, it concentrated. `inspect` prints unread call sites just as loudly and exits `0`, because it is a viewer.
+**`check` exits non-zero when any call site is unread**, unless `--allow-unresolved` is passed (`AS-COVER-003`) — which still prints the gap. `inspect` prints unread call sites just as loudly and exits `0`, because it is a viewer.
 
 *Why this is the substance of the static half:* every number downstream, the `unreached` denominator above all, is only as trustworthy as the extractor's own admission of what it could not read. A partial understanding of a codebase that reports itself as complete is the failure this exists to remove.
 
@@ -334,7 +338,7 @@ Analysis is rooted at the surface config's directory. Program files outside it �
 
 ### The verdict
 
-The set difference nothing else computes: authored, minus reached. It closes `inspect` and leads `check`, and `snapshot` prints it too (`AS-COVER-007`) — the finding used to live behind a fifth command, and the whole point of removing that command is that it now reaches every one of them.
+Authored, minus reached. Every command reports it (`AS-COVER-007`): it closes `inspect`, leads `check`, and follows the written baselines in `snapshot`.
 
 ```text
 UNREACHED — authored, and no scenario mounts it  (1)
@@ -358,7 +362,7 @@ Three buckets:
 
 #### A scope filters both halves, or neither
 
-`--scope devices` filters the mount. It has to filter the catalog by **the same predicate**, or every `app.navigation` capability is reported as one "no scenario mounts" — over two that every scenario mounts. That was a live defect until 0.11; the join now calls core's own `matchesScope` rather than a second copy of it, because a second copy drifts and the drift presents as a false finding.
+`--scope devices` filters the mount, so it filters the catalog by **the same predicate** — otherwise every `app.navigation` capability reads as one "no scenario mounts", over two that every scenario mounts. The join calls core's own `matchesScope` rather than a second copy, because a second copy drifts and the drift presents as a false finding.
 
 An allowlist entry outside the active scope is judged neither way — not waved through, not stale — and the count of them is printed, so a scoped run never reads as a verdict on the whole allowlist.
 
@@ -374,9 +378,9 @@ DID NOT MOUNT — these scenarios threw, and were skipped  (1)
 NO COVERAGE VERDICT — a scenario did not mount, so nothing reached anything  (1)
 ```
 
-The static half still prints, and so does every scenario that *did* mount. Before the commands were merged, `capabilities` was the only one that still worked on an app that would not mount; a merged command that let one bad scenario abort the run would have thrown that property away.
+The static half still prints, and so does every scenario that *did* mount — one unmountable scenario must not cost you the rest of the answer.
 
-#### The allowlist ratchets, it does not gate
+#### The allowlist ratchet
 
 A repository turning this on with 200 unreached capabilities cannot fix them in one pull request, and a check that can only be adopted big-bang is a check that never gets adopted. A committed `.agent-surface/coverage-allow.json` holds capability ids with a reason string:
 
