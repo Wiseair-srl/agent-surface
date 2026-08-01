@@ -12,8 +12,7 @@
     "surface": "agent-surface inspect",
     "surface:check": "agent-surface check",
     "surface:snapshot": "agent-surface snapshot",
-    "surface:capabilities": "agent-surface capabilities",
-    "surface:coverage": "agent-surface coverage"
+    "surface:catalog": "agent-surface inspect --depth static"
   },
   "dependencies": {
     "@agent-surface/core": "workspace:*",

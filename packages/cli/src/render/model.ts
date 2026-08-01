@@ -16,11 +16,21 @@ export interface CapabilityRow {
   capabilityId: string;
   /** Leaf name — the group heading already carries the rest of the id. */
   name: string;
+  /**
+   * The id minus its plane prefix. The table is flat, so its first column has
+   * to carry the whole path; the grouped detail view uses `name`.
+   */
+  path: string;
   kind: "observation" | "action" | "procedure";
   plane: "view" | "domain";
   outcome: "expose" | "disable" | "hide";
   description: string;
   reason?: string;
+  /** The effect, alone, for the table's own column. Observations have none. */
+  effect?: string;
+  /** What is left of `tags` once the effect has its own column. */
+  flags: string[];
+  /** Effect and flags together — what the grouped detail view prints. */
   tags: string[];
   policies?: CapabilityExplanation["policies"];
   availability?: CapabilityExplanation["availability"];
@@ -54,31 +64,45 @@ export interface ViewOptions {
   schemas?: boolean;
 }
 
+/**
+ * The table is flat — `groups` exist for the grouped detail view, which is what
+ * `--detail`, `--explain` and `--schemas` render. Flattening here rather than in
+ * each renderer keeps the two views over one order.
+ */
+export function flatRows(view: SurfaceView): CapabilityRow[] {
+  return view.groups.flatMap((group) => group.rows);
+}
+
+function pathOf(capabilityId: string): string {
+  return capabilityId.replace(/^(view|domain):/, "");
+}
+
 function leafOf(capabilityId: string): string {
-  const withoutPlane = capabilityId.replace(/^(view|domain):/, "");
+  const withoutPlane = pathOf(capabilityId);
   const dot = withoutPlane.lastIndexOf(".");
   return dot === -1 ? withoutPlane : withoutPlane.slice(dot + 1);
 }
 
-function observationTags(): string[] {
-  return ["observation"];
+/**
+ * The effect gets its own table column; everything else is a flag. An
+ * observation reads state and has no effect at all, which the table shows as
+ * an em dash rather than inventing one.
+ */
+function actionFlags(action: AgentActionDescriptor): string[] {
+  const flags: string[] = [];
+  if (action.idempotent) flags.push("idempotent");
+  if (action.reversible) flags.push("reversible");
+  if (action.confirmation !== "never") flags.push(`confirmation:${action.confirmation}`);
+  return flags;
 }
 
-function actionTags(action: AgentActionDescriptor): string[] {
-  const tags: string[] = [action.effect];
-  if (action.idempotent) tags.push("idempotent");
-  if (action.reversible) tags.push("reversible");
-  if (action.confirmation !== "never") tags.push(`confirmation:${action.confirmation}`);
-  return tags;
-}
-
-function procedureTags(procedure: AgentProcedureDescriptor): string[] {
-  const tags: string[] = [procedure.effect];
-  if (procedure.confirmation !== "never") tags.push(`confirmation:${procedure.confirmation}`);
+function procedureFlags(procedure: AgentProcedureDescriptor): string[] {
+  const flags: string[] = [];
+  if (procedure.confirmation !== "never") flags.push(`confirmation:${procedure.confirmation}`);
   for (const field of procedure.boundFields) {
-    tags.push(`${field.path} bound${field.locked ? "+locked" : ""}`);
+    flags.push(`${field.path} bound${field.locked ? "+locked" : ""}`);
   }
-  return tags;
+  return flags;
 }
 
 function explanationIndex(explanation: SurfaceExplanation): Map<string, CapabilityExplanation> {
@@ -115,7 +139,7 @@ export function buildView(result: CollectResult, options: ViewOptions = {}): Sur
     for (const observation of component.observations) {
       rows.push(
         enrich(
-          rowFor(observation, "observation", observationTags(), options, {
+          rowFor(observation, "observation", undefined, [], options, {
             input: undefined,
             output: observation.outputSchema,
           }),
@@ -127,7 +151,7 @@ export function buildView(result: CollectResult, options: ViewOptions = {}): Sur
     for (const action of component.actions) {
       rows.push(
         enrich(
-          rowFor(action, "action", actionTags(action), options, {
+          rowFor(action, "action", action.effect, actionFlags(action), options, {
             input: action.inputSchema,
             output: action.outputSchema,
           }),
@@ -154,12 +178,15 @@ export function buildView(result: CollectResult, options: ViewOptions = {}): Sur
           {
             capabilityId: procedure.procedureId,
             name: procedure.procedureId.replace(/^domain:/, ""),
+            path: pathOf(procedure.procedureId),
             kind: "procedure",
             plane: "domain",
             outcome: procedure.available ? "expose" : "disable",
             description: procedure.description,
             ...(procedure.unavailableReason ? { reason: procedure.unavailableReason } : {}),
-            tags: procedureTags(procedure),
+            effect: procedure.effect,
+            flags: procedureFlags(procedure),
+            tags: [procedure.effect, ...procedureFlags(procedure)],
             ...(options.schemas
               ? { schemas: { input: procedure.inputSchema, output: procedure.outputSchema } }
               : {}),
@@ -173,24 +200,47 @@ export function buildView(result: CollectResult, options: ViewOptions = {}): Sur
 
   // Hidden capabilities exist only in the explanation — that is the whole point
   // of it. They get their own group so nobody mistakes them for callable.
-  if (options.explain) {
-    const hidden = explanation.capabilities.filter((c) => c.outcome === "hide");
-    if (hidden.length > 0) {
-      groups.push({
-        heading: "hidden by policy (absent from the snapshot)",
-        rows: hidden.map((capability) => ({
-          capabilityId: capability.capabilityId,
-          name: leafOf(capability.capabilityId),
-          kind: capability.kind,
-          plane: capability.plane,
-          outcome: "hide" as const,
-          description: capability.description,
-          tags: [`${capability.component.type}@${capability.component.instanceId}`],
-          policies: capability.policies,
-          availability: capability.availability,
-        })),
-      });
-    }
+  //
+  // Unconditional, not behind `--explain`, for the reason `AS-CLI-007` moved
+  // the hidden *count* out from behind it: signed out, the example app rendered
+  // `0 callable, 0 visible-disabled` over eleven perfectly good capabilities
+  // that authority had hidden, and a reader who did not know to re-run with a
+  // flag read that as an app which annotated nothing. The explanation is
+  // collected on every run regardless, so this costs nothing. The policy
+  // *attribution* still needs `--explain`; only the rows moved.
+  const hidden = explanation.capabilities.filter((c) => c.outcome === "hide");
+  if (hidden.length > 0) {
+    groups.push({
+      heading: "hidden by policy (absent from the snapshot)",
+      rows: hidden.map((capability) => ({
+        capabilityId: capability.capabilityId,
+        name: leafOf(capability.capabilityId),
+        path: pathOf(capability.capabilityId),
+        kind: capability.kind,
+        plane: capability.plane,
+        outcome: "hide" as const,
+        description: capability.description,
+        // No reason line, deliberately. The reason a hidden capability carries
+        // is its *availability* reason — "The drawer is not open" — and printing
+        // that under a row marked `hidden` says the UI declined when authority
+        // did. Authority hides, state discloses (D11/D12), and the two must
+        // never look alike. Why it was hidden is a policy question, which is
+        // what `--explain` answers.
+        //
+        // A hidden capability has no snapshot entry, so there is no effect to
+        // report — the table prints an em dash rather than inventing one. The
+        // capability path already carries the component type; only a non-default
+        // instance adds anything.
+        flags:
+          capability.component.instanceId === "default"
+            ? []
+            : [`@${capability.component.instanceId}`],
+        tags: [`${capability.component.type}@${capability.component.instanceId}`],
+        ...(options.explain
+          ? { policies: capability.policies, availability: capability.availability }
+          : {}),
+      })),
+    });
   }
 
   for (const capability of explanation.capabilities) {
@@ -213,19 +263,24 @@ export function buildView(result: CollectResult, options: ViewOptions = {}): Sur
 function rowFor(
   descriptor: AgentObservationDescriptor | AgentActionDescriptor,
   kind: "observation" | "action",
-  tags: string[],
+  effect: string | undefined,
+  flags: string[],
   options: ViewOptions,
   schemas: { input?: unknown; output?: unknown },
 ): CapabilityRow {
   return {
     capabilityId: descriptor.capabilityId,
     name: descriptor.name,
+    path: pathOf(descriptor.capabilityId),
     kind,
     plane: "view",
     outcome: descriptor.available ? "expose" : "disable",
     description: descriptor.description,
     ...(descriptor.unavailableReason ? { reason: descriptor.unavailableReason } : {}),
-    tags,
+    ...(effect ? { effect } : {}),
+    flags,
+    // The grouped detail view prints one combined list, the way it always has.
+    tags: effect ? [effect, ...flags] : [kind, ...flags],
     ...(options.schemas ? { schemas } : {}),
   };
 }

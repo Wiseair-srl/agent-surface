@@ -9,7 +9,7 @@
 [![Node](https://img.shields.io/badge/node-%E2%89%A520.19-brightgreen.svg)](package.json)
 [![npm](https://img.shields.io/npm/v/%40agent-surface%2Fcore?label=npm&color=cb3837)](https://www.npmjs.com/package/@agent-surface/core)
 
-[Vision](docs/00-vision.md) · [Concepts](docs/01-concepts.md) · [Core API](docs/03-core-api.md) · [Security model](docs/06-policies-and-security.md) · [Walkthrough](docs/10-examples.md) · [Roadmap](docs/12-roadmap.md)
+[Vision](docs/00-vision.md) · [Concepts](docs/01-concepts.md) · [Core API](docs/03-core-api.md) · [Security model](docs/06-policies-and-security.md) · [Walkthrough](docs/10-examples.md) · [Roadmap](docs/project/12-roadmap.md)
 
 **Documentation: https://agent-surface-docs.vercel.app**
 
@@ -18,7 +18,7 @@
 Your components declare what an agent may observe and do while they are mounted — as typed, semantic capabilities under one set of policies, confirmations, staleness rules, and audit. Everything else on the page stays invisible to it.
 
 > [!NOTE]
-> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing), [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp) and [`cli`](https://www.npmjs.com/package/@agent-surface/cli), all at **0.9.1** on the lockstep the [release notes](.changeset/README.md) describe. The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs 381 tests across 35 files on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest ([103/103 requirements implemented](spec/conformance.json)). Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
+> **Published to npm** under `@agent-surface/*`: [`core`](https://www.npmjs.com/package/@agent-surface/core), [`react`](https://www.npmjs.com/package/@agent-surface/react), [`orpc`](https://www.npmjs.com/package/@agent-surface/orpc), [`testing`](https://www.npmjs.com/package/@agent-surface/testing), [`webmcp`](https://www.npmjs.com/package/@agent-surface/webmcp) and [`cli`](https://www.npmjs.com/package/@agent-surface/cli) — all six on one lockstep version, per the [release notes](.changeset/README.md). The specification in [`docs/`](docs) was written first and is normative; the packages implement it. CI runs the full suite on Node 20.19/22 × React 18.2/19 with no LLM anywhere, and gates the traceability manifest: every requirement in [`spec/conformance.json`](spec/conformance.json) must be `implemented` and cite a test that names it, or the build fails. Usable, and explicitly not yet *Stable* — see the [graduation criteria](docs/project/12-roadmap.md#stability-policy). The name `agent-surface` is provisional.
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
@@ -209,7 +209,7 @@ What this does not claim: **isolation between scripts in the same realm** (hosti
 | [`@agent-surface/orpc`](packages/orpc) | Contextual references to oRPC procedures exposed via `orpc-agent`, with UI-state binding |
 | [`@agent-surface/testing`](packages/testing) | Render / discover / invoke / assert, plus surface snapshots. No LLM |
 | [`@agent-surface/webmcp`](packages/webmcp) | WebMCP (`navigator.modelContext`) transport adapter — **Experimental** |
-| [`@agent-surface/cli`](packages/cli) | `agent-surface inspect` / `snapshot` / `check` — the live surface in a terminal, and drift as a CI gate |
+| [`@agent-surface/cli`](packages/cli) | `init` / `inspect` / `snapshot` / `check` — the live surface in a terminal, drift as a CI gate, and what no scenario reaches |
 
 Boundaries and data flow: [docs/02-architecture.md](docs/02-architecture.md). Every package ships ESM + `.d.ts`, `sideEffects: false`, and a size budget enforced in CI.
 
@@ -229,23 +229,37 @@ expect(s).toMatchSurfaceSnapshot(); // the reviewable "what agents can see" arti
 
 Snapshots normalize volatility (`registrationId` → `<reg#N>`), so they survive Strict Mode and remounts and every diff is a real change in reach. The matchers distinguish *hidden* from *visible-disabled* on purpose — that distinction is the security model, not a UX detail: a hidden capability must be indistinguishable from a nonexistent one, while a disabled one tells the agent why it cannot run it yet. Recipes: [docs/08-testing.md](docs/08-testing.md).
 
-The same gate without a test file, plus the question a snapshot cannot answer:
+The CLI answers the same question without a test file, and two more a snapshot cannot:
 
 ```bash
-agent-surface check                      # non-zero when the surface drifts from its baseline
-agent-surface inspect anonymous --explain
+agent-surface inspect                      # what an agent can reach, and what it cannot
+agent-surface inspect anonymous --explain  # why is my capability missing?
+agent-surface check                        # non-zero on drift, or on a capability no scenario reaches
 ```
 
 ```text
+scenario anonymous  route /devices
 0 callable, 0 visible-disabled, 11 hidden
 
 hidden by policy (absent from the snapshot)  (11)
   - set  [devices.filters@default]
-       Update one or both filters; omitted fields are unchanged.
-       policy authenticated (registry, discovery/authorize): hide
+      Update one or both filters; omitted fields are unchanged.
+      policy authenticated (registry, discovery/authorize): hide
 ```
 
-Hiding is what the security model is *for*, which is why a snapshot cannot tell you a capability was hidden, let alone by which policy — `--explain` is the developer-side answer, and it is deliberately unreachable from the package root an adapter imports. [docs/20-cli.md](docs/20-cli.md).
+Hiding is what the security model is *for*, so a snapshot cannot tell you a capability was hidden, let alone by which policy. `--explain` is the developer-side answer, and it is deliberately unreachable from the package root an adapter imports.
+
+The other gap is a route no scenario visits: it never registers, so it appears in no snapshot and drifts against no baseline — invisible to a mount by construction. So every command reads the authored catalog straight from the TypeScript program (no server, no jsdom, no mount) and subtracts what the scenarios actually reached:
+
+```text
+UNREACHED — authored, and no scenario mounts it  (1)
+CAPABILITY                ORIGIN
+view:billing.invoices.export  src/billing/Export.tsx:26
+
+12 authored · 11 reached · 1 unreached · 2 scenarios (admin, anonymous)
+```
+
+`inspect` reports that and `snapshot` reports it; **`check` fails on it**. `--depth static|runtime|full` picks which halves to compute. [docs/20-cli.md](docs/20-cli.md).
 
 ## Example
 
@@ -259,48 +273,56 @@ No agent loop, planner, prompts, or memory. No chat UI, no generative UI, no wor
 
 ## Roadmap
 
-- **v0.1** — shipped: all five packages, the example app, the conformance manifest, and the P0 protocol corrections (D21–D26).
-- **v0.2** — shipped, *trust not surface area*: meta-tools parity with direct mode, D25 concurrency groups, and a real support matrix (Node 20.19/22 × React 18.2/19, ESM + bundler smoke, Zod *and* Valibot).
-- **v0.3** — shipped, *catalog scale* (D28–D30, the first host-driven correction cycle): capability state as structured data so a provider's prompt prefix survives a click, `mode:"meta"` graduated to supported (reversed in v0.7), wire names held inside the provider's 64-character budget. The manifest reached 90/90.
-- **v0.4** — shipped, *discovery honesty* (D31): `surface_discover` marks a scope its configured floor refused, so an empty payload no longer reads as an empty surface, and the meta verbs describe their parameters. The manifest reached 91/91.
-- **v0.5** — shipped, *the split is the only composition*: the D28 compatibility flags were removed rather than flipped, so `description` never carries live state and there is one way to compose a tool. `core` back to 18.12 kB.
-- **v0.6** — shipped, *meta-mode reliability* (D32, the first cycle driven by a live model): `surface_act` validates its own envelope and types its `input`, and `decodeWireName` refuses by structure rather than by substring. The manifest reached 93/93.
-- **v0.7** — shipped, *`meta` is Experimental again* (D29 reversed): a suite pinning what the mode does differently from `direct` was read as evidence its contract had settled, and 0.6's two envelope defects showed it was not. Lockstep versioning realigned across all five packages.
-- **v0.8** — shipped, *the surface is inspectable*: `@agent-surface/cli` (`inspect` / `snapshot` / `check`) and `explainSurface()`, the developer projection that names the policy behind a hidden capability. The manifest reached 100/100.
-- **v0.9** — shipped, *the CLI meets an application that is not this one* (D34): the first defects found by hosting a real app rather than the example. `inspect` covers every scenario by default; the development audit trail moved off stdout, which had been corrupting `inspect --json`; and a finished command now exits instead of waiting on whatever the mounted app left running. The manifest reached 103/103.
-- **v0.10** — *adoption and enforcement*: API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context — the real blocker on graduating anything to Stable.
-- **Later** — MCP bridge, cross-tab and multi-window surfaces, iframe/worker isolation for third-party registrants, frameworks beyond React.
+Shipped so far, one theme per minor:
 
-Details, decision log, and open questions: [docs/12-roadmap.md](docs/12-roadmap.md) and [docs/13-open-questions.md](docs/13-open-questions.md).
+| | Theme |
+|---|---|
+| **v0.1** | All five packages, the example app, the conformance manifest, the P0 protocol corrections (D21–D26) |
+| **v0.2** | *Trust, not surface area* — meta-tools parity with direct mode, D25 concurrency groups, a real support matrix |
+| **v0.3** | *Catalog scale* (D28–D30) — capability state as structured data, so a provider's cached prompt prefix survives a click |
+| **v0.4** | *Discovery honesty* (D31) — `surface_discover` marks a scope its floor refused, so an empty payload no longer reads as an empty surface |
+| **v0.5** | *The split is the only composition* — the D28 compatibility flags removed outright rather than flipped |
+| **v0.6** | *Meta-mode reliability* (D32) — `surface_act` validates its own envelope and types its `input` |
+| **v0.7** | *`meta` is Experimental again* (D29 reversed) — two envelope defects in one minor is not what a supported label absorbs |
+| **v0.8** | *The surface is inspectable* — `@agent-surface/cli` and `explainSurface()`, which names the policy behind a hidden capability |
+| **v0.9** | *The CLI meets an application that is not this one* (D34) — the first defects found by hosting a real app rather than the example |
+| **v0.10** | *Surface coverage* (D35–D37) — the authored catalog is read without mounting anything, and what no scenario reaches is reported |
+| **v0.11** | *One command per question* (D38) — five commands became `init`/`inspect`/`snapshot`/`check` behind a `--depth` dial, and `check` now fails on a capability no scenario reaches instead of naming it as another command's problem |
+
+**Next — adoption and enforcement.** API compatibility reports, benchmark thresholds in CI, the `orpc-agent` manifest decision, a presentation-only starter example, and a second adoption context, which is the real blocker on graduating anything to Stable. **Later:** MCP bridge, cross-tab and multi-window surfaces, iframe/worker isolation for third-party registrants, frameworks beyond React.
+
+Details, decision log, and open questions: [docs/project/12-roadmap.md](docs/project/12-roadmap.md) and [docs/project/13-open-questions.md](docs/project/13-open-questions.md).
 
 ## Documentation
 
 | Doc | Content |
 |---|---|
-| [00-vision.md](docs/00-vision.md) | Why this exists, design principles |
-| [01-concepts.md](docs/01-concepts.md) | Planes, capabilities, identity, effects, availability |
-| [02-architecture.md](docs/02-architecture.md) | Packages, boundaries, data flow, runtime guarantees |
-| [03-core-api.md](docs/03-core-api.md) | `@agent-surface/core` normative API |
-| [04-react-api.md](docs/04-react-api.md) | `@agent-surface/react` normative API |
-| [05-orpc-integration.md](docs/05-orpc-integration.md) | Domain procedure references and binding |
-| [06-policies-and-security.md](docs/06-policies-and-security.md) | Policy pipeline, confirmation, threat model |
-| [07-errors.md](docs/07-errors.md) | Typed error model |
-| [08-testing.md](docs/08-testing.md) | `@agent-surface/testing` and test recipes |
-| [09-adapters.md](docs/09-adapters.md) | Adapter contract, embedded toolset, WebMCP, MCP bridge |
-| [10-examples.md](docs/10-examples.md) | End-to-end devices page walkthrough |
-| [11-non-goals.md](docs/11-non-goals.md) | What this library refuses to be, and its known limits |
-| [12-roadmap.md](docs/12-roadmap.md) | Versions and graduation criteria |
-| [13-open-questions.md](docs/13-open-questions.md) | Decision log + genuinely open questions |
-| [14-implementation-plan.md](docs/14-implementation-plan.md) | Milestones for implementing this spec |
-| [15-completeness-review.md](docs/15-completeness-review.md) | Self-review of this specification |
-| [16-mastra-assistant-ui.md](docs/16-mastra-assistant-ui.md) | Wiring a Mastra loop + assistant-ui + orpc-agent (guide, not executable) |
-| [17-maintainer-directive.md](docs/17-maintainer-directive.md) | Standing execution directive: phase gates, PR procedure |
-| [18-spec-corrections-rfc.md](docs/18-spec-corrections-rfc.md) | Accepted RFC closing the P0 protocol bugs (D21–D26) |
-| [19-catalog-scale-rfc.md](docs/19-catalog-scale-rfc.md) | Accepted RFC on catalog scale (D28–D30) |
+| [Vision](docs/00-vision.md) | Why this exists, design principles |
+| [Concepts](docs/01-concepts.md) | Planes, capabilities, identity, effects, availability |
+| [Architecture](docs/02-architecture.md) | Packages, boundaries, data flow, runtime guarantees |
+| [Core API](docs/03-core-api.md) | `@agent-surface/core` normative API |
+| [React API](docs/04-react-api.md) | `@agent-surface/react` normative API |
+| [oRPC integration](docs/05-orpc-integration.md) | Domain procedure references and binding |
+| [Policies & Security](docs/06-policies-and-security.md) | Policy pipeline, confirmation, threat model |
+| [Errors](docs/07-errors.md) | Typed error model |
+| [Testing](docs/08-testing.md) | `@agent-surface/testing` and test recipes |
+| [Adapters](docs/09-adapters.md) | Adapter contract, embedded toolset, WebMCP, MCP bridge |
+| [Examples](docs/10-examples.md) | End-to-end devices page walkthrough |
+| [Non-Goals](docs/11-non-goals.md) | What this library refuses to be, and its known limits |
+| [Roadmap](docs/project/12-roadmap.md) | Versions and graduation criteria |
+| [Decisions](docs/project/13-open-questions.md) | Decision log + genuinely open questions |
+| [Implementation plan](docs/project/14-implementation-plan.md) | Milestones for implementing this spec |
+| [Completeness review](docs/project/15-completeness-review.md) | Self-review of this specification |
+| [Mastra + assistant-ui](docs/16-mastra-assistant-ui.md) | Wiring a Mastra loop + assistant-ui + orpc-agent (guide, not executable) |
+| [Maintainer directive](docs/project/17-maintainer-directive.md) | Standing execution directive: phase gates, PR procedure |
+| [Spec Corrections RFC](docs/project/18-spec-corrections-rfc.md) | Accepted RFC closing the P0 protocol bugs (D21–D26) |
+| [Catalog Scale RFC](docs/project/19-catalog-scale-rfc.md) | Accepted RFC on catalog scale (D28–D30) |
+| [CLI](docs/20-cli.md) | `@agent-surface/cli` normative command contract |
+| [Surface Coverage RFC](docs/project/21-surface-coverage-rfc.md) | Accepted RFC on surface coverage (D35–D37) |
 
 ## Contributing
 
-Security analysis, review of the as-built code against the documented invariants, and adoption feedback from a real application are the most useful contributions right now. Start with [CONTRIBUTING.md](CONTRIBUTING.md), report vulnerabilities via [SECURITY.md](SECURITY.md) (never a public issue), and follow the [Code of Conduct](CODE_OF_CONDUCT.md). The standing execution contract for maintainers is [docs/17-maintainer-directive.md](docs/17-maintainer-directive.md). Releases go through [Changesets](.changeset/README.md): `pnpm changeset` → release PR → npm publish from CI.
+Security analysis, review of the as-built code against the documented invariants, and adoption feedback from a real application are the most useful contributions right now. Start with [CONTRIBUTING.md](CONTRIBUTING.md), report vulnerabilities via [SECURITY.md](SECURITY.md) (never a public issue), and follow the [Code of Conduct](CODE_OF_CONDUCT.md). The standing execution contract for maintainers is [docs/project/17-maintainer-directive.md](docs/project/17-maintainer-directive.md). Releases go through [Changesets](.changeset/README.md): `pnpm changeset` → release PR → npm publish from CI.
 
 ```bash
 pnpm install

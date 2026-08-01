@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSurfaceSnapshot } from "@agent-surface/core";
 import type { SurfaceExplanation } from "@agent-surface/core/explain";
-import { buildView } from "../src/render/model.js";
+import { buildView, flatRows } from "../src/render/model.js";
 import { renderSurfacePlain } from "../src/render/plain.js";
 import type { CollectResult } from "../src/collect.js";
 
@@ -138,7 +138,7 @@ function fixture(): CollectResult {
 }
 
 describe("the rendered view never loses a capability (AS-CLI-001)", () => {
-  it("shows every capability id the snapshot contains", () => {
+  it("shows every capability id the snapshot contains, and the hidden ones too", () => {
     const result = fixture();
     const view = buildView(result);
 
@@ -149,33 +149,74 @@ describe("the rendered view never loses a capability (AS-CLI-001)", () => {
       ]),
       ...result.snapshot.procedures.map((p) => p.procedureId),
     ];
-    const rendered = view.groups.flatMap((group) => group.rows.map((row) => row.capabilityId));
+    const rendered = flatRows(view).map((row) => row.capabilityId);
 
     for (const id of fromSnapshot) expect(rendered).toContain(id);
-    // Without --explain, the hidden capability must not appear at all.
-    expect(rendered).not.toContain("view:devices.admin.purge");
+
+    // Hidden capabilities appear without --explain, for the reason AS-CLI-007
+    // moved the hidden *count* out from behind it: signed out, the example app
+    // rendered `0 callable, 0 visible-disabled` over eleven capabilities that
+    // authority had hidden, and a reader who did not know to pass a flag read
+    // that as an app which annotated nothing.
+    expect(rendered).toContain("view:devices.admin.purge");
+    // The attribution is what still needs the flag.
+    expect(flatRows(view).find((r) => r.outcome === "hide")?.policies).toBeUndefined();
+  });
+
+  it("never prints an availability reason on a hidden row", () => {
+    // Authority hides, state discloses (D11/D12). The reason a hidden
+    // capability carries is its *availability* reason, and printing it under a
+    // row marked `hidden` says the UI declined when a policy did — the two
+    // failures must never look alike.
+    const result = fixture();
+    result.explanation.capabilities.push({
+      capabilityId: "view:devices.admin.wipe",
+      kind: "action",
+      plane: "view",
+      description: "Wipe",
+      registrationId: "reg_4",
+      component: { type: "devices.admin", instanceId: "default" },
+      outcome: "hide",
+      reason: "Nothing selected",
+      policies: [],
+      availability: { available: false, reason: "Nothing selected" },
+    });
+
+    const hidden = flatRows(buildView(result)).find(
+      (row) => row.capabilityId === "view:devices.admin.wipe",
+    );
+    expect(hidden?.outcome).toBe("hide");
+    expect(hidden?.reason).toBeUndefined();
   });
 
   it("carries the metadata a reviewer needs: effect, confirmation, bound fields, reason", () => {
-    const view = buildView(fixture());
-    const rows = view.groups.flatMap((group) => group.rows);
+    const rows = flatRows(buildView(fixture()));
 
     const sort = rows.find((r) => r.capabilityId === "view:devices.table.sort");
     expect(sort?.tags).toEqual(["local-state", "idempotent", "reversible"]);
+    // The table splits the effect into its own column; the detail view keeps
+    // the combined list. Both come from one model, so they cannot disagree.
+    expect(sort?.effect).toBe("local-state");
+    expect(sort?.flags).toEqual(["idempotent", "reversible"]);
+    expect(sort?.path).toBe("devices.table.sort");
     expect(sort?.outcome).toBe("expose");
 
     const clear = rows.find((r) => r.capabilityId === "view:devices.table.clear");
-    expect(clear?.tags).toContain("confirmation:required");
+    expect(clear?.flags).toContain("confirmation:required");
     expect(clear?.outcome).toBe("disable");
     expect(clear?.reason).toBe("Nothing selected");
 
     const disable = rows.find((r) => r.capabilityId === "domain:devices.disable");
-    expect(disable?.tags).toContain("destructive");
-    expect(disable?.tags).toContain("deviceIds bound+locked");
+    expect(disable?.effect).toBe("destructive");
+    expect(disable?.flags).toContain("deviceIds bound+locked");
     expect(disable?.reason).toBe("Select at least one device first");
+
+    // An observation reads state and has no effect at all — the table shows an
+    // em dash rather than inventing one.
+    expect(rows.find((r) => r.kind === "observation")?.effect).toBeUndefined();
   });
 
-  it("surfaces hidden capabilities and their policy only under --explain", () => {
+  it("attaches the policy chain only under --explain", () => {
     const view = buildView(fixture(), { explain: true });
     const hiddenGroup = view.groups.find((group) => group.heading.startsWith("hidden by policy"));
 
@@ -186,13 +227,44 @@ describe("the rendered view never loses a capability (AS-CLI-001)", () => {
     expect(view.counts).toEqual({ callable: 2, disabled: 2, hidden: 1 });
   });
 
-  it("plain rendering reports the same capabilities as the view model", () => {
+  it("the detail view reports the same capabilities as the view model", () => {
     const view = buildView(fixture(), { explain: true });
-    const text = renderSurfacePlain(view);
-    for (const row of view.groups.flatMap((group) => group.rows)) {
-      expect(text).toContain(row.name);
-    }
+    const text = renderSurfacePlain(view, { detail: true });
+    for (const row of flatRows(view)) expect(text).toContain(row.name);
     expect(text).toContain("policy has-permission(devices:admin)");
     expect(text).toContain("Select at least one device first");
+  });
+
+  it("the table reports the same capabilities, one per line", () => {
+    const view = buildView(fixture());
+    const text = renderSurfacePlain(view);
+    for (const row of flatRows(view)) expect(text).toContain(row.path);
+    expect(text).toContain("CAPABILITY");
+    // The reason is a continuation line rather than a column, so one long
+    // sentence cannot set the width of the whole grid.
+    expect(text).toContain("⤷ Nothing selected");
+  });
+
+  it("lays the table out from its content, never from the terminal (AS-CLI-003)", () => {
+    // A table sized against `process.stdout.columns` is byte-stable only until
+    // two people diff the same CI log from different windows.
+    const view = buildView(fixture());
+    const wide = { ...process.stdout, columns: 400 };
+    const narrow = { ...process.stdout, columns: 40 };
+
+    const original = Object.getOwnPropertyDescriptor(process, "stdout")!;
+    try {
+      Object.defineProperty(process, "stdout", { value: wide, configurable: true });
+      const atFourHundred = renderSurfacePlain(view);
+      Object.defineProperty(process, "stdout", { value: narrow, configurable: true });
+      expect(renderSurfacePlain(view)).toBe(atFourHundred);
+    } finally {
+      Object.defineProperty(process, "stdout", original);
+    }
+  });
+
+  it("emits no trailing whitespace, which diff tools disagree about", () => {
+    const text = renderSurfacePlain(buildView(fixture()));
+    for (const line of text.split("\n")) expect(line).toBe(line.trimEnd());
   });
 });

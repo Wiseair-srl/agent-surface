@@ -1,6 +1,6 @@
 {
   "$schema": "./conformance.schema.json",
-  "$comment": "Traceability manifest (directive §4.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs — every 'implemented' requirement must reference ≥1 existing test file that mentions the ID; 'specified' requires a justification. AS-WIRE-001..003 are intentionally unassigned: the pre-existing codec requirements are AS-ID-002 and AS-ID-004, and D30's proposed ids are kept as written rather than renumbered.",
+  "$comment": "Traceability manifest (directive \u00a74.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs \u2014 every 'implemented' requirement must reference \u22651 existing test file that mentions the ID; 'specified' requires a justification. AS-WIRE-001..003 are intentionally unassigned: the pre-existing codec requirements are AS-ID-002 and AS-ID-004, and D30's proposed ids are kept as written rather than renumbered.",
   "requirements": {
     "AS-INVOKE-001": {
       "title": "Pre-input authority policies (onAuthorize) cannot observe agent input",
@@ -22,7 +22,7 @@
     },
     "AS-INVOKE-003": {
       "title": "A malformed binding fails before a confirmation record is created",
-      "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "source": "project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/pipeline-order.test.ts"
@@ -112,7 +112,7 @@
     },
     "AS-CONFIRM-002": {
       "title": "Digest uses canonical JSON (key order irrelevant; -0 = 0; undefined omitted) and evidence matching is exact-value, never hash-only",
-      "source": "18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "source": "project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/confirmation-binding.test.ts",
@@ -220,7 +220,7 @@
       "status": "implemented"
     },
     "AS-TOPO-002": {
-      "title": "Topology defaults: embedded → wait, remote → two-phase; explicit confirmations overrides",
+      "title": "Topology defaults: embedded \u2192 wait, remote \u2192 two-phase; explicit confirmations overrides",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
       "tests": [
@@ -256,7 +256,7 @@
       "status": "implemented"
     },
     "AS-CONC-001": {
-      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — default instance, bounded parallel, per-group queue depth",
+      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) \u2014 default instance, bounded parallel, per-group queue depth",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D25",
       "tests": [
@@ -874,7 +874,7 @@
     },
     "AS-EXPLAIN-003": {
       "title": "The explanation's composed outcome always agrees with the snapshot for the same context",
-      "source": "03-core-api.md#explainsurface-developer-projection",
+      "source": "03-core-api.md#explainsurface--developer-projection",
       "decision": "D33",
       "tests": [
         "packages/core/test/conformance/explain.test.ts"
@@ -900,11 +900,12 @@
       "status": "implemented"
     },
     "AS-CLI-002": {
-      "title": "check exits 0 when the surface matches its baseline and non-zero on drift or a missing baseline",
+      "title": "Exit codes are 0 clean, 1 a finding, 2 the command could not run \u2014 and check is the only command that fails on a finding",
       "source": "20-cli.md#check",
-      "decision": "D33",
+      "decision": "D38",
       "tests": [
-        "packages/cli/test/cli.test.ts"
+        "packages/cli/test/cli.test.ts",
+        "packages/cli/test/coverage.test.ts"
       ],
       "status": "implemented"
     },
@@ -945,17 +946,28 @@
       "status": "implemented"
     },
     "AS-CLI-007": {
-      "title": "inspect and check headers name the scenarios and any active scope; counts are never printed without their qualifier",
+      "title": "Counts are never printed without their qualifier: the scenario, any active scope, and the hidden capabilities themselves",
       "source": "20-cli.md#inspect",
       "decision": "D37",
       "tests": [
-        "packages/cli/test/cli.test.ts"
+        "packages/cli/test/cli.test.ts",
+        "packages/cli/test/view-model.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-008": {
+      "title": "--depth selects which halves are computed, and every command reports which ones it did not",
+      "source": "20-cli.md#depth",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/cli.test.ts",
+        "packages/cli/test/coverage.test.ts"
       ],
       "status": "implemented"
     },
     "AS-COVER-001": {
-      "title": "Every statically resolvable registration call site in the analyzed program appears in the inventory",
-      "source": "20-cli.md#capabilities",
+      "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
+      "source": "20-cli.md#the-catalog---depth-static",
       "decision": "D35",
       "tests": [
         "packages/cli/test/coverage.test.ts"
@@ -964,7 +976,7 @@
     },
     "AS-COVER-002": {
       "title": "An unresolvable call site is emitted with resolution \"unresolved\" and an origin, never omitted",
-      "source": "20-cli.md#capabilities",
+      "source": "20-cli.md#the-catalog---depth-static",
       "decision": "D35",
       "tests": [
         "packages/cli/test/coverage.test.ts"
@@ -972,9 +984,9 @@
       "status": "implemented"
     },
     "AS-COVER-003": {
-      "title": "capabilities exits non-zero when any entry is unresolved and --allow-unresolved was not passed",
-      "source": "20-cli.md#capabilities",
-      "decision": "D35",
+      "title": "check exits non-zero when any call site is unread and --allow-unresolved was not passed",
+      "source": "20-cli.md#check",
+      "decision": "D38",
       "tests": [
         "packages/cli/test/coverage.test.ts"
       ],
@@ -982,7 +994,7 @@
     },
     "AS-COVER-004": {
       "title": "A policy-hidden capability is classified reached, because a scenario mounted it",
-      "source": "20-cli.md#coverage",
+      "source": "20-cli.md#the-verdict",
       "decision": "D36",
       "tests": [
         "packages/cli/test/coverage.test.ts"
@@ -990,8 +1002,8 @@
       "status": "implemented"
     },
     "AS-COVER-005": {
-      "title": "coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
-      "source": "20-cli.md#coverage",
+      "title": "Coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
+      "source": "20-cli.md#the-allowlist-ratchets-it-does-not-gate",
       "decision": "D36",
       "tests": [
         "packages/cli/test/coverage.test.ts"
@@ -999,9 +1011,18 @@
       "status": "implemented"
     },
     "AS-COVER-006": {
-      "title": "The static inventory is never reachable from the agent-facing package root",
-      "source": "21-surface-coverage-rfc.md#what-this-rfc-does-not-change",
+      "title": "The static catalog is never reachable from the agent-facing package root",
+      "source": "project/21-surface-coverage-rfc.md#what-this-rfc-does-not-change",
       "decision": "D35",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-007": {
+      "title": "The authored-minus-reached gap reaches inspect, snapshot and check; a scope filters the catalog by the same predicate as the mount; and a scenario that did not mount yields no verdict at all",
+      "source": "20-cli.md#the-verdict",
+      "decision": "D38",
       "tests": [
         "packages/cli/test/coverage.test.ts"
       ],

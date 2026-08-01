@@ -1,33 +1,72 @@
 import { relative } from "node:path";
-import { createSurfaceRunner } from "../load.js";
-import { baselineDirFor, baselinePath, normalize, writeBaseline } from "../baseline.js";
-import { write } from "../output.js";
+import {
+  joinCoverage,
+  mountScenarios,
+  readInventory,
+  UsageError,
+  type AnalysisOptions,
+  type Depth,
+} from "../analysis.js";
+import { baselinePath, normalize, writeBaseline } from "../baseline.js";
+import { renderCoveragePlain, renderFailuresPlain } from "../render/plain.js";
+import { write, writeError } from "../output.js";
 
 export interface SnapshotOptions {
   configPath: string;
+  depth: Depth;
   scenario?: string;
   scope?: string[];
+  tsconfig?: string;
   baselineDir?: string;
 }
 
-/** Writes (or refreshes) the committed baseline `check` compares against. */
+/**
+ * Writes (or refreshes) the committed baseline `check` compares against.
+ *
+ * It prints the coverage verdict too. This is the command you run to *accept* a
+ * change to the surface, which makes it the last moment before a reviewer sees
+ * the diff — and accepting a projection while a capability sits behind a route
+ * no scenario visits is exactly the state worth hearing about. It reports;
+ * `check` is still the only thing that fails.
+ */
 export async function runSnapshot(options: SnapshotOptions): Promise<number> {
-  const runner = await createSurfaceRunner(options.configPath);
-  try {
-    const scenarios = options.scenario ? [options.scenario] : runner.scenarioNames;
-    const dir = baselineDirFor(options.configPath, options.baselineDir ?? runner.config.baselineDir);
-
-    for (const scenario of scenarios) {
-      const result = await runner.collect({
-        scenario,
-        ...(options.scope ? { scope: options.scope } : {}),
-      });
-      const path = baselinePath(dir, scenario);
-      writeBaseline(path, normalize(result.snapshot));
-      write(`wrote ${relative(process.cwd(), path)}`);
-    }
-    return 0;
-  } finally {
-    await runner.close();
+  if (options.depth === "static") {
+    throw new UsageError(
+      "snapshot --depth static has nothing to write — a baseline is a projection, and " +
+        "at this depth nothing is mounted.",
+    );
   }
+
+  const analysis: AnalysisOptions = {
+    configPath: options.configPath,
+    depth: options.depth,
+    ...(options.scenario ? { scenario: options.scenario } : {}),
+    ...(options.scope ? { scope: options.scope } : {}),
+    ...(options.tsconfig ? { tsconfig: options.tsconfig } : {}),
+    ...(options.baselineDir ? { baselineDir: options.baselineDir } : {}),
+  };
+
+  const inventory = readInventory(analysis);
+  const runtime = await mountScenarios(analysis);
+  if (!runtime) throw new UsageError("snapshot needs a mount, and this depth performs none");
+
+  for (const result of runtime.results) {
+    const path = baselinePath(runtime.baselineDir, result.scenario);
+    writeBaseline(path, normalize(result.snapshot));
+    write(`wrote ${relative(process.cwd(), path)}`);
+  }
+
+  const coverage = joinCoverage(inventory, runtime, analysis);
+  if (coverage) {
+    write("");
+    write(renderCoveragePlain(coverage));
+  }
+
+  if (runtime.failures.length > 0) {
+    // A baseline written for some scenarios and not others is a baseline that
+    // will fail `check` for a reason that has nothing to do with the surface.
+    writeError(`\n${renderFailuresPlain(runtime.failures)}`);
+    return 2;
+  }
+  return 0;
 }

@@ -38,6 +38,19 @@ import { DEFAULT_CONSUMER, matchesScope, sortRegistrations, type SnapshotContext
 import { deepFreeze } from "./utils.js";
 
 /** Which layer of the chain contributed a policy (docs/06 §composition). */
+/**
+ * Re-exported for developer tooling that has to line a *static* view of the
+ * codebase up with a scoped projection — `@agent-surface/cli`'s coverage join,
+ * where an authored capability outside the active scope must not be reported as
+ * one no scenario reaches. A second copy of this predicate would drift, and the
+ * drift would present as a false finding.
+ *
+ * It lives on this subpath rather than the package root for the reason
+ * `AS-EXPLAIN-004` gives: the root is the agent-facing API, and this is not
+ * part of the agent contract.
+ */
+export { matchesScope } from "./snapshot.js";
+
 export type PolicyScope = "registry" | "component" | "capability";
 
 export interface PolicyAttribution {

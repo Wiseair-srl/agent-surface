@@ -53,11 +53,25 @@ export interface UnreachedCapability {
 }
 
 export interface CoverageReport {
-  /** Distinct capability ids the inventory resolved. */
+  /** Distinct capability ids the inventory resolved, within any active scope. */
   authored: number;
   /** How many of them at least one scenario surfaced. */
   reached: number;
   scenarios: string[];
+  /**
+   * The scope every number here was computed under (`AS-CLI-007`). A scope
+   * filters the catalog *and* the mount, so `10 authored` without it on screen
+   * reads as a claim about the whole codebase when it is a claim about one
+   * prefix of it.
+   */
+  scope?: string[];
+  /**
+   * Allowlist entries outside the active scope, which a scoped run cannot
+   * judge: not unreached (nothing looked), not stale (nothing reached them).
+   * Counted rather than silently dropped, so a scoped run never reads as a
+   * verdict on the whole allowlist.
+   */
+  allowlistOutOfScope: number;
   /** Authored, surfaced by no scenario, and not allowlisted — the finding. */
   unreached: UnreachedCapability[];
   /**
@@ -96,8 +110,14 @@ export interface BuildCoverageInput {
    */
   reachedIds: Set<string>;
   scenarios: string[];
+  scope?: string[];
   unresolved: AuthoredCapability[];
+  /**
+   * Already filtered to the active scope by the caller, which owns the scope
+   * predicate. Entries outside it are counted in `allowlistOutOfScope`.
+   */
   allowlist: CoverageAllowlist;
+  allowlistOutOfScope?: number;
   allowlistPath: string;
 }
 
@@ -129,6 +149,8 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
     authored: input.authored.size,
     reached: [...input.authored].filter((id) => input.reachedIds.has(id)).length,
     scenarios: input.scenarios,
+    ...(input.scope ? { scope: input.scope } : {}),
+    allowlistOutOfScope: input.allowlistOutOfScope ?? 0,
     unreached,
     undeclared,
     domainReached,
@@ -147,10 +169,19 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
  * an extractor that missed something. Failing on it would punish the honest
  * case to catch the other one. It is reported, loudly, and revisited when a
  * codebase does it deliberately.
+ *
+ * `unresolved` does fail, and `--allow-unresolved` is the only way past it
+ * (`AS-COVER-003`). A partial understanding of a codebase that reports itself
+ * as complete is the failure the whole static half exists to remove: `unreached`
+ * is computed against the catalog, so a catalog with holes in it makes that
+ * count a floor rather than an answer. Accepting the gap still prints it.
  */
-export function coverageExitCode(report: CoverageReport): number {
+export function coverageExitCode(
+  report: CoverageReport,
+  options: { allowUnresolved?: boolean } = {},
+): number {
   if (report.unreached.length > 0) return 1;
-  if (report.unresolved.length > 0) return 1;
+  if (report.unresolved.length > 0 && !options.allowUnresolved) return 1;
   if (report.staleAllowlist.length > 0) return 1;
   return 0;
 }

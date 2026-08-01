@@ -2,36 +2,51 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { DEPTHS, isDepth } from "./contract.js";
 import { installDom } from "./dom.js";
 import { findConfig } from "./load.js";
 import { writeError, write } from "./output.js";
 
-const USAGE = `agent-surface — inspect and check the agent surface your app exposes
+const USAGE = `agent-surface — the agent surface your app exposes
 
 Usage
-  agent-surface inspect      [scenario]   what an agent can see right now
-  agent-surface snapshot     [scenario]   write/refresh the committed baseline
-  agent-surface check        [scenario]   fail if the surface drifted from the baseline
-  agent-surface capabilities              what this codebase authors, without mounting
-  agent-surface coverage     [scenario]   authored capabilities no scenario reaches
+  agent-surface init                     read the codebase, then scaffold a config
+  agent-surface inspect    [scenario]    what an agent can reach, and what it cannot
+  agent-surface snapshot   [scenario]    write/refresh the committed baseline
+  agent-surface check      [scenario]    fail on drift, or on a capability no scenario reaches
 
 Every command covers all scenarios in the config unless you name one.
+
+Depth
+  --depth full          read the source AND mount the scenarios, and report the gap (default)
+  --depth static        read the source only — no Vite, no jsdom, no mount, no scenarios needed
+  --depth runtime       mount only — skip the TypeScript program on a repo wide enough to feel it
 
 Options
   --config <path>       path to agent-surface.config.* (default: nearest, searching upward)
   --baseline-dir        where baselines live (default: .agent-surface next to the config)
   --scope <prefix>      restrict to a component-type prefix (repeatable)
-  --explain             name the policies behind every decision, hidden ones included
-  --schemas             include input/output JSON Schemas
-  --tsconfig <path>     tsconfig the static inventory reads (default: nearest to the config)
-  --allow-unresolved    capabilities: exit 0 even when a call site could not be read
+  --detail              one paragraph per capability instead of the table
+  --explain             name the policies behind every decision (implies --detail)
+  --schemas             include input/output JSON Schemas (implies --detail)
+  --tsconfig <path>     tsconfig the source read uses (default: nearest to the config)
+  --allow-unresolved    check: do not fail on a call site that could not be read
+  --yes                 init: write without asking
   --json                emit data instead of a rendered view
   --plain               force plain text (implied when piped, or under CI / NO_COLOR)
   -h, --help            show this
   -v, --version         print the version
+
+Exit codes are the contract: 0 clean, 1 a finding, 2 the command could not run.
 `;
 
-const COMMANDS = ["inspect", "snapshot", "check", "capabilities", "coverage"];
+const COMMANDS = ["init", "inspect", "snapshot", "check"];
+
+/** Commands that were cut, and where their answer went (0.11.0). */
+const RETIRED: Record<string, string> = {
+  capabilities: "agent-surface inspect --depth static",
+  coverage: "agent-surface inspect (or `check`, which now fails on the gap)",
+};
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let parsed;
@@ -43,10 +58,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         config: { type: "string" },
         "baseline-dir": { type: "string" },
         scope: { type: "string", multiple: true },
+        depth: { type: "string", default: "full" },
+        detail: { type: "boolean", default: false },
         explain: { type: "boolean", default: false },
         schemas: { type: "boolean", default: false },
         tsconfig: { type: "string" },
         "allow-unresolved": { type: "boolean", default: false },
+        yes: { type: "boolean", default: false },
         json: { type: "boolean", default: false },
         plain: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
@@ -75,43 +93,62 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return 2;
   }
   if (!COMMANDS.includes(command)) {
-    writeError(`unknown command "${command}"`);
-    writeError(USAGE);
-    return 2;
-  }
-
-  const configPath = values.config ?? findConfig();
-  if (!configPath) {
+    const moved = RETIRED[command];
     writeError(
-      "no agent-surface.config.* found (searched upward from the working directory).\n" +
-        "Create one that points at your app's composition root — see https://agent-surface-docs.vercel.app/20-cli",
+      moved
+        ? `"${command}" was removed in 0.11 — its answer is now \`${moved}\`. ` +
+            "The static catalog and the live projection are one command, so the gap between " +
+            "them is reported rather than left for whoever remembers to look."
+        : `unknown command "${command}"`,
     );
+    if (!moved) writeError(USAGE);
     return 2;
   }
 
-  // A presentation surface needs a DOM to mount into, and react-dom reads these
-  // globals at import time — so this must happen before any app module loads.
-  // It stays installed for the life of the process, on purpose (see dom.ts).
-  //
-  // `capabilities` is the exception, and deliberately so: it reads the
-  // TypeScript program and mounts nothing, so it must not pay for — or be
-  // able to be affected by — a DOM it never renders into.
-  if (command !== "capabilities") installDom();
+  if (!isDepth(values.depth)) {
+    writeError(`--depth must be one of ${DEPTHS.join(", ")} — got "${values.depth}"`);
+    return 2;
+  }
+  const depth = values.depth;
+
   try {
-    if (command === "capabilities") {
-      const { runCapabilities } = await import("./commands/capabilities.js");
-      return await runCapabilities({
-        configPath,
+    if (command === "init") {
+      // Nothing to find and nothing to mount: `init` is the command that runs
+      // before a config exists.
+      const { runInit } = await import("./commands/init.js");
+      return await runInit({
+        cwd: process.cwd(),
         ...(values.tsconfig ? { tsconfig: values.tsconfig } : {}),
-        ...(values.json ? { json: true } : {}),
-        ...(values["allow-unresolved"] ? { allowUnresolved: true } : {}),
+        ...(values.yes ? { yes: true } : {}),
+        ...(values.plain ? { plain: true } : {}),
       });
     }
 
+    const configPath = values.config ?? findConfig();
+    if (!configPath) {
+      writeError(
+        "no agent-surface.config.* found (searched upward from the working directory).\n" +
+          "Run `agent-surface init`, or see https://agent-surface-docs.vercel.app/20-cli",
+      );
+      return 2;
+    }
+
+    // A presentation surface needs a DOM to mount into, and react-dom reads
+    // these globals at import time — so this must happen before any app module
+    // loads. It stays installed for the life of the process, on purpose
+    // (see dom.ts).
+    //
+    // `--depth static` is the exception, and deliberately so: it reads the
+    // TypeScript program and mounts nothing, so it must not pay for — or be
+    // able to be affected by — a DOM it never renders into.
+    if (depth !== "static") installDom();
+
     const shared = {
       configPath,
+      depth,
       ...(scenario ? { scenario } : {}),
       ...(values.scope ? { scope: values.scope } : {}),
+      ...(values.tsconfig ? { tsconfig: values.tsconfig } : {}),
       ...(values.json ? { json: true } : {}),
       ...(values.plain ? { plain: true } : {}),
       ...(values["baseline-dir"] ? { baselineDir: values["baseline-dir"] } : {}),
@@ -121,6 +158,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const { runInspect } = await import("./commands/inspect.js");
       return await runInspect({
         ...shared,
+        ...(values.detail ? { detail: true } : {}),
         ...(values.explain ? { explain: true } : {}),
         ...(values.schemas ? { schemas: true } : {}),
       });
@@ -129,21 +167,21 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       const { runSnapshot } = await import("./commands/snapshot.js");
       return await runSnapshot(shared);
     }
-    if (command === "coverage") {
-      const { runCoverage } = await import("./commands/coverage.js");
-      return await runCoverage({
-        ...shared,
-        ...(values.tsconfig ? { tsconfig: values.tsconfig } : {}),
-      });
-    }
     const { runCheck } = await import("./commands/check.js");
-    return await runCheck(shared);
+    return await runCheck({
+      ...shared,
+      ...(values["allow-unresolved"] ? { allowUnresolved: true } : {}),
+    });
   } catch (error) {
     writeError(error instanceof Error ? error.message : String(error));
     if (error instanceof Error && error.stack && process.env["AGENT_SURFACE_DEBUG"]) {
       writeError(error.stack);
     }
-    return 1;
+    // `2` — the command could not run, as opposed to running and finding
+    // something. CI has to tell those apart: a gate that exits 1 both when the
+    // surface changed and when the tool never loaded the app is a gate whose
+    // green is the only signal worth anything, and whose red says nothing.
+    return 2;
   }
 }
 
