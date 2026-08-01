@@ -13,6 +13,8 @@ Usage
   agent-surface snapshot [scenario]   write/refresh the committed baseline
   agent-surface check    [scenario]   fail if the surface drifted from the baseline
 
+Every command covers all scenarios in the config unless you name one.
+
 Options
   --config <path>   path to agent-surface.config.* (default: nearest, searching upward)
   --baseline-dir    where baselines live (default: .agent-surface next to the config)

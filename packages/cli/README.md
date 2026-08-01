@@ -42,6 +42,8 @@ agent-surface snapshot [scenario]   # write/refresh the committed baseline
 agent-surface check [scenario]      # exit non-zero when the surface drifts
 ```
 
+Every command covers all scenarios in the config unless you name one. `inspect` prints each in turn:
+
 ```text
 scenario admin  route /devices
 9 callable, 2 visible-disabled
@@ -57,6 +59,12 @@ authoritative (domain)  (1)
   ~ devices.disable  [destructive, confirmation:required, deviceIds bound+locked]
        Disable the given devices
        reason: Select at least one device first
+
+scenario anonymous  route /devices
+0 callable, 0 visible-disabled
+
+Nothing is registered for this scenario — the agent has no surface here.
+Re-run with --explain to see whether a policy hid it.
 ```
 
 ### Why is my capability missing?

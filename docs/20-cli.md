@@ -82,7 +82,9 @@ authoritative (domain)  (1)
        reason: Select at least one device first
 ```
 
-Defaults to the first scenario. `AS-CLI-001` pins that the rendered view contains every capability the snapshot contains — a renderer that quietly drops one is worse than no renderer.
+Name a scenario to see only that one; a bare `inspect` renders **every** scenario the config defines, in the order they are listed, each mounted and printed before the next is mounted. That matches bare `snapshot` and `check`, which have always covered all of them — a default that showed only the first made what you saw depend on `Object.keys` order, silently.
+
+`AS-CLI-001` pins that the rendered view contains every capability the snapshot contains — a renderer that quietly drops one is worse than no renderer.
 
 ### Why is my capability missing?
 
@@ -147,6 +149,8 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
 | `--explain` | Policy attribution, hidden capabilities included. |
 | `--schemas` | Include input/output JSON Schemas. |
 | `--json` | Emit data. Carries `explanation` only with `--explain`. |
+
+`inspect --json` always emits `{ "scenarios": [ { "scenario", "snapshot", "explanation"? } ] }` — one entry per scenario rendered, one element when you named one. One shape either way, so a consumer never branches on how the command was invoked.
 | `--plain` | Force plain text. |
 
 ## One graph, one React, one core

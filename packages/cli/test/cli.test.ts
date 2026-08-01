@@ -166,16 +166,25 @@ describe("plain output (AS-CLI-003)", () => {
     "--json emits parseable data, and only carries the explanation when asked",
     async () => {
       expect(await main(["inspect", "admin", "--config", CONFIG, "--json"])).toBe(0);
-      const plain = JSON.parse(output()) as Record<string, unknown>;
-      expect(plain["scenario"]).toBe("admin");
-      expect(plain).not.toHaveProperty("explanation");
+      // One shape whether or not a scenario was named, so a consumer never has
+      // to branch on how the command was invoked.
+      const plain = JSON.parse(output()) as { scenarios: Array<Record<string, unknown>> };
+      expect(plain.scenarios).toHaveLength(1);
+      expect(plain.scenarios[0]?.["scenario"]).toBe("admin");
+      expect(plain.scenarios[0]).not.toHaveProperty("explanation");
 
       captured = [];
       await main(["inspect", "anonymous", "--config", CONFIG, "--json", "--explain"]);
-      const explained = JSON.parse(output()) as {
-        snapshot: { components: unknown[] };
-        explanation: { capabilities: Array<{ outcome: string; policies: Array<{ name: string }> }> };
-      };
+      const explained = (
+        JSON.parse(output()) as {
+          scenarios: Array<{
+            snapshot: { components: unknown[] };
+            explanation: {
+              capabilities: Array<{ outcome: string; policies: Array<{ name: string }> }>;
+            };
+          }>;
+        }
+      ).scenarios[0]!;
       // Authority hides: nothing in the snapshot, everything in the explanation.
       expect(explained.snapshot.components).toHaveLength(0);
       expect(explained.explanation.capabilities.length).toBeGreaterThan(0);
@@ -185,6 +194,44 @@ describe("plain output (AS-CLI-003)", () => {
       expect(
         explained.explanation.capabilities[0]?.policies.map((p) => p.name),
       ).toContain("authenticated");
+    },
+    TIMEOUT,
+  );
+});
+
+describe("inspect covers every scenario by default", () => {
+  it(
+    "renders all of them, in config order, and one alone when named",
+    async () => {
+      expect(await main(["inspect", "--config", CONFIG, "--plain"])).toBe(0);
+      const all = output();
+      expect(all).toContain("scenario admin");
+      expect(all).toContain("scenario anonymous");
+      // Config order, not alphabetical — the config lists admin first.
+      expect(all.indexOf("scenario admin")).toBeLessThan(all.indexOf("scenario anonymous"));
+      // Signed out, the page offers an agent nothing: the second block is the
+      // empty surface, not a repeat of the first (D11).
+      expect(all).toContain("the agent has no surface here");
+
+      captured = [];
+      expect(await main(["inspect", "admin", "--config", CONFIG, "--plain"])).toBe(0);
+      const one = output();
+      expect(one).toContain("scenario admin");
+      expect(one).not.toContain("scenario anonymous");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "--json carries one entry per scenario",
+    async () => {
+      expect(await main(["inspect", "--config", CONFIG, "--json"])).toBe(0);
+      const data = JSON.parse(output()) as {
+        scenarios: Array<{ scenario: string; snapshot: { components: unknown[] } }>;
+      };
+      expect(data.scenarios.map((entry) => entry.scenario)).toEqual(["admin", "anonymous"]);
+      expect(data.scenarios[0]?.snapshot.components.length).toBeGreaterThan(0);
+      expect(data.scenarios[1]?.snapshot.components).toHaveLength(0);
     },
     TIMEOUT,
   );
