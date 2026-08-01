@@ -321,7 +321,23 @@ Each entry carries how much of its call site was understood:
 |---|---|
 | `static` | Identity and metadata both recovered from literals. |
 | `partial` | Identity resolved, some metadata dynamic. The common case: a spread `instanceId`, or a description built from a template. |
-| `unresolved` | Identity **not** resolved. Reported with its file, line and the construct that defeated the extractor — never dropped. |
+| `unresolved` | Identity **not** resolved, or members that cannot be enumerated. Reported with its file, line and the construct that defeated the extractor — never dropped. |
+
+#### A spread has to prove it is harmless
+
+A spread in the descriptor can carry `observations` or `actions`, and those capabilities are then beyond this program's reach:
+
+```tsx
+useAgentComponent({ type: "repro.spread", ...buildMembers() });   // unread
+```
+
+So the extractor resolves what the spread *can* contribute. When the key set is written out and holds no capability group, it stays quiet — that is the shape every example uses, and flagging it would flood the common case:
+
+```tsx
+...(props.instance ? { instanceId: props.instance } : {})        // keys: instanceId — quiet
+```
+
+When the key set cannot be read, the registration is reported unread, **even if a literal `observations` alongside it resolved perfectly** (`AS-COVER-002`). The half that resolves says nothing about the `actions` the spread may add, and a half read as a whole is the failure this half of the tool exists to prevent.
 
 **`check` exits non-zero when any call site is unread**, unless `--allow-unresolved` is passed (`AS-COVER-003`) — which still prints the gap. `inspect` prints unread call sites just as loudly and exits `0`, because it is a viewer.
 

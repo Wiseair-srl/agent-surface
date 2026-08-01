@@ -153,6 +153,74 @@ function hasSpread(object: ts.ObjectLiteralExpression): boolean {
   return object.properties.some((property) => ts.isSpreadAssignment(property));
 }
 
+/** The capability groups a spread would have to contribute to matter here. */
+const CAPABILITY_GROUPS = ["observations", "actions"] as const;
+
+/**
+ * Every key a spread could contribute, or `undefined` when that is not knowable.
+ *
+ * This exists to separate two spreads that look alike and are not:
+ *
+ * ```tsx
+ * ...(props.instance ? { instanceId: props.instance } : {})   // keys: instanceId
+ * ...buildMembers()                                            // keys: unknown
+ * ```
+ *
+ * The first cannot contribute a capability, because its key set is written out
+ * and `instanceId` is not part of a capability id. The second could contribute
+ * any number of them. Reporting both would flood the documented common case;
+ * reporting neither is what let a whole registration disappear.
+ *
+ * Resolution is deliberately shallow, matching `objectLiteralFor`'s one hop: a
+ * literal, a conditional over two knowable branches, or a same-module `const`.
+ * Anything else is unknown, and unknown is reported rather than assumed empty.
+ */
+function spreadKeys(
+  expression: ts.Expression,
+  source: ts.SourceFile,
+  depth = 0,
+): string[] | undefined {
+  if (depth > 1) return undefined;
+
+  if (ts.isParenthesizedExpression(expression)) {
+    return spreadKeys(expression.expression, source, depth);
+  }
+
+  // `cond ? { a } : {}` contributes whichever branch runs, so the key set is
+  // the union — knowable only if both branches are.
+  if (ts.isConditionalExpression(expression)) {
+    const whenTrue = spreadKeys(expression.whenTrue, source, depth);
+    const whenFalse = spreadKeys(expression.whenFalse, source, depth);
+    if (!whenTrue || !whenFalse) return undefined;
+    return [...whenTrue, ...whenFalse];
+  }
+
+  const resolved = objectLiteralFor(expression, source);
+  if (!resolved.object) return undefined;
+
+  const keys: string[] = [];
+  for (const property of resolved.object.properties) {
+    // A spread inside a spread: recurse while the hop budget allows, then admit
+    // defeat rather than reporting a partial key set as a complete one.
+    if (ts.isSpreadAssignment(property)) {
+      const nested = spreadKeys(property.expression, source, depth + 1);
+      if (!nested) return undefined;
+      keys.push(...nested);
+      continue;
+    }
+    const name =
+      ts.isPropertyAssignment(property) || ts.isMethodDeclaration(property)
+        ? propertyName(property.name)
+        : ts.isShorthandPropertyAssignment(property)
+          ? property.name.text
+          : undefined;
+    // A computed key could be anything, including a capability group.
+    if (name === undefined) return undefined;
+    keys.push(name);
+  }
+  return keys;
+}
+
 function literalText(node: ts.Expression | undefined): string | undefined {
   if (!node) return undefined;
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
@@ -392,6 +460,36 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
   const componentPartial = hasSpread(config)
     ? "the component config spreads another object, so some metadata here may be dynamic"
     : undefined;
+
+  // A spread whose key set cannot be read may carry `observations` or `actions`,
+  // and those capabilities are then nowhere in this program's reach. Left
+  // unreported, the registration disappears from *both* lists: absent from the
+  // catalog, and absent from the unread call sites that exist to say the catalog
+  // is incomplete. The count then claims a completeness it does not have, which
+  // is the one failure this whole module is built to prevent.
+  //
+  // Enumerating the literal groups below is not enough on its own, either: a
+  // config with a literal `observations` *and* an unreadable spread is missing
+  // whatever `actions` the spread contributes, and the half that resolved would
+  // otherwise read as the whole.
+  for (const property of config.properties) {
+    if (!ts.isSpreadAssignment(property)) continue;
+    const keys = spreadKeys(property.expression, source);
+    if (keys && !keys.some((key) => CAPABILITY_GROUPS.includes(key as "observations" | "actions"))) {
+      continue;
+    }
+    emit.push({
+      capabilityId: `view:${type}.${UNRESOLVED_ID}`,
+      kind: "action",
+      origin: emit.origin(property),
+      resolution: "unresolved",
+      note: keys
+        ? `"${type}" spreads ${describeConstruct(property.expression)}, which contributes \`${keys
+            .filter((key) => CAPABILITY_GROUPS.includes(key as "observations" | "actions"))
+            .join("`/`")}\` this inventory cannot name`
+        : `"${type}" spreads ${describeConstruct(property.expression)}, whose keys this inventory cannot read — it may contribute capabilities not listed here`,
+    });
+  }
 
   capabilitiesFromGroup(
     propertyOf(config, "observations"),

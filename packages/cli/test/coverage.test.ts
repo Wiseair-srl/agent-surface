@@ -28,6 +28,9 @@ const FIXTURE = fileURLToPath(
 const UNMOUNTABLE = fileURLToPath(
   new URL("./fixtures/unmountable/agent-surface.config.tsx", import.meta.url),
 );
+const SPREAD = fileURLToPath(
+  new URL("./fixtures/spread/agent-surface.config.tsx", import.meta.url),
+);
 const DEVICES = fileURLToPath(
   new URL("../../../examples/devices-app/agent-surface.config.tsx", import.meta.url),
 );
@@ -152,6 +155,51 @@ describe("an unreadable call site is reported, never dropped (AS-COVER-002)", ()
     expect(authoredIds(extractCapabilities({ root: dirname(FIXTURE) }))).not.toContain(
       "view:cov.dynamic.go",
     );
+  });
+
+  // The guarantee is not "an unreadable *call site* is reported" but "a
+  // registration this extractor cannot fully enumerate is never absent from
+  // both lists". A spread of members read the call site fine and still lost the
+  // registration from the catalog *and* from the unread entries that exist to
+  // say the catalog is incomplete (#29).
+  describe("a spread that could carry capabilities", () => {
+    const inventory = (): ReturnType<typeof extractCapabilities> =>
+      extractCapabilities({ root: dirname(SPREAD) });
+
+    it("reports a registration whose members all arrive through a spread", () => {
+      // `type` is a literal, so this is unmistakably a registration — it simply
+      // has no enumerable members. Before the fix it appeared nowhere at all.
+      const ids = authoredIds(inventory());
+      expect([...ids].some((id) => id.startsWith("view:spread.all."))).toBe(false);
+
+      const entry = unresolved(inventory()).find((c) => c.note?.includes("spread.all"));
+      expect(entry, "spread.all must not vanish from both lists").toBeDefined();
+      expect(entry?.origin.file).toBe("Shapes.tsx");
+      expect(entry?.origin.line).toBeGreaterThan(0);
+      expect(entry?.note).toContain("buildMembers()");
+    });
+
+    it("reports it even when a literal group resolved alongside the spread", () => {
+      // The half that resolves must not read as the whole: a literal
+      // `observations` says nothing about the `actions` the spread may add.
+      expect(authoredIds(inventory())).toContain("view:spread.some.read");
+      expect(
+        unresolved(inventory()).find((c) => c.note?.includes("spread.some")),
+        "a resolved half must not suppress the unread other half",
+      ).toBeDefined();
+    });
+
+    it("stays quiet when the spread's key set is knowable and carries no group", () => {
+      // `...(props.instance ? { instanceId } : {})` is the shape every example
+      // uses. Its keys are written out and `instanceId` is not part of a
+      // capability id, so reporting it would flood the documented common case.
+      expect(authoredIds(inventory())).toContain("view:spread.instance.poke");
+      expect(unresolved(inventory()).some((c) => c.note?.includes("spread.instance"))).toBe(false);
+    });
+
+    it("keeps the example app quiet, which uses exactly that shape", () => {
+      expect(unresolved(extractCapabilities({ root: dirname(DEVICES) }))).toEqual([]);
+    });
   });
 });
 
