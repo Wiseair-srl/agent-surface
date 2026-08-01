@@ -149,9 +149,28 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
 | `--explain` | Policy attribution, hidden capabilities included. |
 | `--schemas` | Include input/output JSON Schemas. |
 | `--json` | Emit data. Carries `explanation` only with `--explain`. |
+| `--plain` | Force plain text. |
 
 `inspect --json` always emits `{ "scenarios": [ { "scenario", "snapshot", "explanation"? } ] }` — one entry per scenario rendered, one element when you named one. One shape either way, so a consumer never branches on how the command was invoked.
-| `--plain` | Force plain text. |
+
+**stdout is the output; stderr is everything else** (`AS-CLI-004`). Diagnostics never share the stream the command renders into, and that includes diagnostics the *mounted app* produces: a registry built with `environment: "development"` logs an audit trail, and under Node `console.debug` is `console.log`, so an unqualified console sink lands on stdout and `--json` stops parsing. Core's own sink therefore writes to stderr ([06 §audit](06-policies-and-security.md#audit)). An app that logs to stdout itself will still corrupt `--json`, and only the app can fix that.
+
+## Exiting
+
+The command exits when it is done, rather than when Node's event loop happens to drain (`AS-CLI-005`).
+
+The distinction matters because the CLI hosts your application, and applications are not written for one-shot processes. A polling interval, a websocket, an animation loop, or a data layer whose cache timer outlives the render all keep the loop busy after the last scenario has been printed. Left alone, such a command emits its full and correct output, sets a successful exit code, and then sits there — the worst failure to diagnose, because nothing on screen is wrong.
+
+So a finished command is given a moment to end on its own. If it does not, the CLI names what is still running and exits anyway:
+
+```text
+agent-surface: the output above is complete, but 5 handle(s) are still open (Timeout) —
+something started during the mount is still running, so this command would have waited
+instead of exiting. Common causes: a polling interval, a websocket, or a data layer whose
+cache timer outlives the render. Exiting 0.
+```
+
+A tidy app never sees this: the message is written only when the command genuinely would have waited, so it is a statement about your app, not about the CLI's own teardown. It goes to stderr, and the exit code is the one the command earned — `check` still exits `1` on drift. The report is a courtesy, not a failure; if you would rather the process not hold a timer at all, that is a fix in the app (TanStack Query's `gcTime`, an interval cleared on unmount), not in the config.
 
 ## One graph, one React, one core
 

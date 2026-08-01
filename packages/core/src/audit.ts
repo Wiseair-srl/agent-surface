@@ -53,13 +53,41 @@ export function memoryAuditSink(opts?: {
   };
 }
 
+/**
+ * Development-time visibility, on the *diagnostic* stream.
+ *
+ * `console.debug` is the browser's verbose channel — the right home for a
+ * per-event trace nobody explicitly asked to see. Node has no such channel:
+ * there, `console.debug` is an alias of `console.log` and writes to **stdout**,
+ * which is the stream a host that mounts this registry renders *its own output*
+ * into. One registration is then enough to make `agent-surface inspect --json`
+ * emit something no JSON parser accepts (AS-CLI-004), and a config deriving
+ * `environment` from `import.meta.env.PROD` gets this sink under vite-node
+ * without doing anything unusual.
+ *
+ * An audit trail is a diagnostic, not program output, so under Node it goes to
+ * stderr. `console.error` rather than `process.stderr.write`: core stays
+ * runtime-neutral, and a host that already intercepts the console keeps seeing
+ * these events.
+ */
 export function consoleAuditSink(): AuditSink {
   return {
     record(event) {
       // eslint-disable-next-line no-console
-      console.debug("[agent-surface audit]", event.type, event);
+      if (isNodeLike()) console.error("[agent-surface audit]", event.type, event);
+      // eslint-disable-next-line no-console
+      else console.debug("[agent-surface audit]", event.type, event);
     },
   };
+}
+
+/**
+ * Node, not a bundler's `process` shim — only the real thing reports
+ * `versions.node`. Read off `globalThis` so `core` needs no Node types.
+ */
+function isNodeLike(): boolean {
+  const proc = (globalThis as { process?: { versions?: { node?: unknown } } }).process;
+  return typeof proc?.versions?.node === "string";
 }
 
 /** Sinks MUST NOT break the registry: exceptions are swallowed (and logged). */

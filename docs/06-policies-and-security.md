@@ -273,6 +273,8 @@ export function consoleAuditSink(): AuditSink;
 
 Levels per capability: `"none"` (no events beyond registration), `"metadata"` (identity, timing, status — default), `"full"` (adds payloads through an optional `redact` transform). Persistence, shipping to a backend, retention: host concerns — the sink interface is the seam.
 
+`environment: "development"` adds `consoleAuditSink()` alongside the in-memory one. It writes on the **diagnostic** stream, never on stdout (`AS-OBSV-002`): the browser's verbose channel through `console.debug`, and under Node `console.error`, because there `console.debug` is an alias of `console.log`. An audit trail is a diagnostic, not program output — and a registry mounted by a tool that renders its own output to stdout must not corrupt it ([20 §output modes](20-cli.md#output-modes)).
+
 ## Data minimization checklist (authoring norms)
 
 - Observations return projections, not stores; include ids + the fields an agent needs to *decide*, not to *render*.

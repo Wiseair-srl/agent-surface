@@ -548,6 +548,15 @@
       ],
       "status": "implemented"
     },
+    "AS-OBSV-002": {
+      "title": "The development console audit sink writes to the diagnostic stream, never stdout",
+      "source": "06-policies-and-security.md#audit",
+      "decision": "D33",
+      "tests": [
+        "packages/core/test/conformance/audit-stream.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-BOUND-001": {
       "title": "Tombstones are TTL- and size-bounded; expiry decays COMPONENT_UNMOUNTED to CAPABILITY_NOT_FOUND deterministically",
       "source": "03-core-api.md#registration-lifecycle",
@@ -905,6 +914,24 @@
       "decision": "D33",
       "tests": [
         "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-004": {
+      "title": "stdout carries only the command's output, so --json parses whatever the mounted app logs",
+      "source": "20-cli.md#output-modes",
+      "decision": "D33",
+      "tests": [
+        "packages/cli/test/bin-process.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-005": {
+      "title": "The command exits even when the mounted app leaves the event loop busy, naming the held handles",
+      "source": "20-cli.md#exiting",
+      "decision": "D33",
+      "tests": [
+        "packages/cli/test/bin-process.test.ts"
       ],
       "status": "implemented"
     }
