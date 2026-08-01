@@ -27,15 +27,15 @@ The twelve minimum requirements and where each is enforced:
 
 1. **No automatic UI scanning** — there is no scanning code path; the only entry is `register()`. (Architecture invariant.)
 2. **No implicit capabilities** — nothing is exposed without an explicit definition; empty registry ⇒ empty surface.
-3. **Stable capability identity** — canonical grammar, code-authored ids ([01 §identity](01-concepts.md#the-identity-ladder)).
+3. **Stable capability identity** — canonical grammar, code-authored ids ([Concepts §identity](01-concepts.md#the-identity-ladder)).
 4. **Identity independent of text/position/CSS** — grammar forbids it; React docs forbid index-derived instanceIds; nothing in core touches the DOM.
 5. **Descriptions confer no authority** — descriptions are annotations; the pipeline never branches on them.
-6. **Authority = registration + policies + authenticated context** — invocation pipeline phases 2–6 ([02](02-architecture.md#invocation-pipeline-normative-order)).
-7. **Server always re-validates** — executor forwards through the user's session; [05 §D10 table](05-orpc-integration.md#what-the-client-checks-vs-what-the-server-must-re-check-d10).
-8. **Stale invocations rejected** — `STALE_CAPABILITY`/`COMPONENT_UNMOUNTED` ([03 §versioning](03-core-api.md#versioning)).
+6. **Authority = registration + policies + authenticated context** — invocation pipeline phases 2–6 ([Architecture](02-architecture.md#invocation-pipeline-normative-order)).
+7. **Server always re-validates** — executor forwards through the user's session; [oRPC integration §D10 table](05-orpc-integration.md#what-the-client-checks-vs-what-the-server-must-re-check-d10).
+8. **Stale invocations rejected** — `STALE_CAPABILITY`/`COMPONENT_UNMOUNTED` ([Core API §versioning](03-core-api.md#versioning)).
 9. **First-party vs untrusted registrants distinguishable** — `origin` + `onRegister` guard (below).
 10. **Audit events for register/remove/invoke** — event stream + `AuditSink` (below).
-11. **Observation minimization + authorization** — policies apply to observations; output caps; hide-vs-disable rule; authoring norms ([04 anti-patterns](04-react-api.md#anti-patterns-normative-should-nots)).
+11. **Observation minimization + authorization** — policies apply to observations; output caps; hide-vs-disable rule; authoring norms ([React API anti-patterns](04-react-api.md#anti-patterns-normative-should-nots)).
 12. **No invoking outside the granted surface** — invocation re-runs the same per-consumer policy chain that filtered the snapshot; a capability hidden from consumer C at discovery is equally denied to C at invocation (`CAPABILITY_NOT_FOUND`, indistinguishable from nonexistence).
 
 ## Policy pipeline
@@ -100,15 +100,15 @@ export interface AgentInvocationPolicyContext extends AgentAuthorizationContext 
 }
 ```
 
-Policy contexts also expose `now(): number` — the registry's injectable clock. Built-in policies MUST use it; a policy reading `Date.now()` directly cannot be tested under fake timers and is a determinism defect ([08](08-testing.md#core-harness)).
+Policy contexts also expose `now(): number` — the registry's injectable clock. Built-in policies MUST use it; a policy reading `Date.now()` directly cannot be tested under fake timers and is a determinism defect ([Testing](08-testing.md#core-harness)).
 
 ### Composition and evaluation (normative)
 
 - Attachment points: registry (`RegistryOptions.policies`) → component (`definition.policies`) → capability (`def.policies`). Chains concatenate in that order; `onAuthorize` (phase 4) and `onInvoke` (phase 6) each wrap onion-style (registry outermost), `onDiscovery` runs in order with **most-restrictive-wins**: any `hide` ⇒ hidden; else any `disable` ⇒ disabled (first reason kept); else exposed.
-- **Two stages, one boundary (D21).** Phase 4 (`onAuthorize`) runs before the input phase and cannot observe agent input; phase 6 (`onInvoke`) runs after the effective input is constructed and validated, and observes *only* that. Confirmation is decided at phase 6 — over the effective input, never earlier ([18-spec-corrections-rfc.md](18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21)).
+- **Two stages, one boundary (D21).** Phase 4 (`onAuthorize`) runs before the input phase and cannot observe agent input; phase 6 (`onInvoke`) runs after the effective input is constructed and validated, and observes *only* that. Confirmation is decided at phase 6 — over the effective input, never earlier ([Spec Corrections RFC](project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21)).
 - **Re-evaluation at invocation is mandatory.** Discovery decisions are never cached into invocation: a capability discovered when valid and invoked after state changed hits the full chain again (plus `onDiscovery` re-run in the phase-4 preamble — a policy that now says `hide` yields `CAPABILITY_NOT_FOUND`, `disable` yields `CAPABILITY_NOT_AVAILABLE`).
 - The sync/async split is deliberate: discovery filtering must be computable from already-loaded client state (auth store, feature flags); anything requiring I/O is not a discovery concern — enforce it in `onAuthorize`/`onInvoke` or (authoritatively) on the server.
-- Policies MUST NOT mutate input. Input transformation is not a policy concern in v0.1 (no rewriting middleware; keeps the audit trail truthful).
+- Policies MUST NOT mutate input. Input transformation is not a policy concern in 0.x — no rewriting middleware, which keeps the audit trail truthful.
 - Built-in placement: `authenticated`, `hasPermission`, `tenantBoundary`, `environment`, `rateLimit` gate at `onAuthorize`; `audit` enriches at `onInvoke`; `requireConfirmation` contributes the phase-6 confirmation decision. An input-aware rate policy is authored as `onInvoke`.
 
 ### Hide vs disable (D11/D12, restated as the policy author's rule)
@@ -120,7 +120,7 @@ Policy contexts also expose `now(): number` — the registry's injectable clock.
 
 ### Explain is never agent-facing
 
-`hide` deletes a capability from the snapshot precisely so that its existence does not leak. That leaves the developer with no way to answer "why did my capability disappear?", which `explainSurface()` exists to fix ([03 §explainSurface](03-core-api.md#explainsurface-developer-projection)) — and which makes it, by construction, a disclosure of everything `hide` withholds.
+`hide` deletes a capability from the snapshot precisely so that its existence does not leak. That leaves the developer with no way to answer "why did my capability disappear?", which `explainSurface()` exists to fix ([Core API §explainSurface](03-core-api.md#explainsurface--developer-projection)) — and which makes it, by construction, a disclosure of everything `hide` withholds.
 
 Normative rules:
 
@@ -179,7 +179,7 @@ registry.register(
 );
 ```
 
-Concepts required by the spec and where they land: authentication (`authenticated`), authorization (`hasPermission`), tenant boundary (`tenantBoundary`), component visibility (`enabled` + [04 §visibility](04-react-api.md#visibility)), state validity (`when`/`precondition`), stale detection ([03 §versioning](03-core-api.md#versioning)), rate limiting (`rateLimit`), execution environment (`environment`), mandatory confirmation (`requireConfirmation` / `confirmation: "required"`), audit (`audit` + sinks), reversibility (declared property feeding confirmation defaults), conditional availability (`when` + `onDiscovery`).
+Concepts required by the spec and where they land: authentication (`authenticated`), authorization (`hasPermission`), tenant boundary (`tenantBoundary`), component visibility (`enabled` + [React API §visibility](04-react-api.md#visibility)), state validity (`when`/`precondition`), stale detection ([Core API §versioning](03-core-api.md#versioning)), rate limiting (`rateLimit`), execution environment (`environment`), mandatory confirmation (`requireConfirmation` / `confirmation: "required"`), audit (`audit` + sinks), reversibility (declared property feeding confirmation defaults), conditional availability (`when` + `onDiscovery`).
 
 ## Confirmation
 
@@ -212,17 +212,17 @@ sequenceDiagram
 ### Normative rules
 
 1. **Representation.** `CONFIRMATION_REQUIRED` is a typed error result (`retry: "with-confirmation"`) carrying `details: { confirmationId, summary, expiresAt, effect }`. It is a protocol step, not a failure. It is produced at pipeline phase 6 — **after** the effective input exists and validated; a malformed binding or supplied locked field fails at phase 5 before any record is created (D21).
-2. **Correlation (digest binding).** The pending record binds to the canonical request digest over `{ surfaceId, registrationId, capabilityId, consumerKey, effectiveInput, effect }`, using the canonical JSON encoding of [18 §correction 1](18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21) (sorted keys, arrays ordered, `undefined` omitted, finite numbers, `-0` → `0`). The retry MUST produce the identical digest — with the effective-input comparison exact-value, never hash-only — else `CONFIRMATION_INVALID` (`details.reason: "mismatch"`). This kills bait-and-switch (the user approves *these ids*, not "whatever the next call says") and replay across consumer, registration, capability, or page reload (the store is per-registry; a reload mints a new `surfaceId` and an empty store).
+2. **Correlation (digest binding).** The pending record binds to the canonical request digest over `{ surfaceId, registrationId, capabilityId, consumerKey, effectiveInput, effect }`, using the canonical JSON encoding of [Spec Corrections RFC §correction 1](project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21) (sorted keys, arrays ordered, `undefined` omitted, finite numbers, `-0` → `0`). The retry MUST produce the identical digest — with the effective-input comparison exact-value, never hash-only — else `CONFIRMATION_INVALID` (`details.reason: "mismatch"`). This kills bait-and-switch (the user approves *these ids*, not "whatever the next call says") and replay across consumer, registration, capability, or page reload (the store is per-registry; a reload mints a new `surfaceId` and an empty store).
 3. **Single use.** Evidence is consumed atomically by the first successful validating retry; a second use ⇒ `CONFIRMATION_INVALID` (`reason: "consumed"`).
 4. **Expiry.** Default TTL 120 s (`limits.confirmationTtlMs`); expiry emits `confirmation-resolved {outcome:"expired"}`; late retry ⇒ `CONFIRMATION_INVALID` (`reason: "expired"`). Retry while still pending (user hasn't decided) ⇒ `CONFIRMATION_REQUIRED` again with the *same* `confirmationId` (no new dialog spam).
 5. **Denial.** User denial ⇒ retry fails `CONFIRMATION_INVALID` (`reason: "denied"`, `retry: "no"`). Adapters MUST NOT auto-retry a denial.
 6. **Staleness beats confirmation.** If the owning registration died while pending, the retry fails `COMPONENT_UNMOUNTED`/`STALE_CAPABILITY` regardless of approval — an approval cannot resurrect a dead context.
 7. **Server revalidation.** For domain procedures, evidence is forwarded (via `callContext`) as *information*; the server MUST NOT treat it as authorization. orpc-agent-level approvals are an independent layer; the executor maps a server approval demand to `CONFIRMATION_REQUIRED` with `details.origin: "server"`.
 8. **Audit.** Requested/approved/denied/expired/consumed each produce an audit event with actor (`user` for resolutions), timestamps, and capability identity; `audit: "full"` capabilities include the input payload.
-9. **UX modes.** The two-phase flow above is canonical (transport-friendly, auditable). The embedded toolset's `confirmations: "wait"` mode is sugar: it performs the wait-and-retry internally so the model sees one call → one result ([03 §toolset](03-core-api.md#toolset)). Semantics and audit are identical. Mode selection is declared by topology, never defaulted globally (D26, [09 §confirmation-topology](09-adapters.md#confirmation-topology)).
+9. **UX modes.** The two-phase flow above is canonical (transport-friendly, auditable). The embedded toolset's `confirmations: "wait"` mode is sugar: it performs the wait-and-retry internally so the model sees one call → one result ([Core API §toolset](03-core-api.md#toolset)). Semantics and audit are identical. Mode selection is declared by topology, never defaulted globally (D26, [Adapters §confirmation-topology](09-adapters.md#confirmation-topology)).
 10. **Bounded store (D24).** At most `limits.maxPendingConfirmations` (32) records may be pending; an invocation that would exceed it fails `RATE_LIMITED {reason: "queue-full"}` **without creating a record** — failing closed beats silently expiring an approval the user may be reading.
 
-Extension interfaces (kept deliberately small in v0.1): custom `summary` composition, a host hook to *veto* confirmations programmatically (`confirmations.resolve(..., {approved:false, reason})` from any host logic), and per-capability TTL. A full enterprise approval workflow (roles, queues, escalation) is a non-goal ([11](11-non-goals.md)); the seam for it is the server side.
+Extension interfaces, kept deliberately small: custom `summary` composition, a host hook to *veto* confirmations programmatically (`confirmations.resolve(..., {approved:false, reason})` from any host logic), and per-capability TTL. A full enterprise approval workflow (roles, queues, escalation) is a non-goal ([Non-Goals](11-non-goals.md)); the seam for it is the server side.
 
 ## Trust model for registrants
 
@@ -234,7 +234,7 @@ export interface RegistrationCandidate {
 ```
 
 - `origin` is a claim by calling code, useful for *honest* segmentation (plugin SDKs tagging themselves); the guard (`RegistryOptions.onRegister`) can reject origins, cap their effects (e.g. reject any non-first-party `procedures`), or namespace them.
-- Limits of the mechanism (stated honestly): same-realm JS can lie about `origin`. Real containment of untrusted code requires an out-of-realm boundary (iframe/worker + postMessage adapter), which is Future work. v0.1's guard is a policy tool, not a sandbox.
+- Limits of the mechanism: same-realm JS can lie about `origin`. Real containment of untrusted code requires an out-of-realm boundary (iframe/worker + postMessage adapter), which is Future work. The guard is a policy tool, not a sandbox.
 
 ## Audit
 
@@ -273,11 +273,11 @@ export function consoleAuditSink(): AuditSink;
 
 Levels per capability: `"none"` (no events beyond registration), `"metadata"` (identity, timing, status — default), `"full"` (adds payloads through an optional `redact` transform). Persistence, shipping to a backend, retention: host concerns — the sink interface is the seam.
 
-`environment: "development"` adds `consoleAuditSink()` alongside the in-memory one. It writes on the **diagnostic** stream, never on stdout (`AS-OBSV-002`): the browser's verbose channel through `console.debug`, and under Node `console.error`, because there `console.debug` is an alias of `console.log`. An audit trail is a diagnostic, not program output — and a registry mounted by a tool that renders its own output to stdout must not corrupt it ([20 §output modes](20-cli.md#output-modes)).
+`environment: "development"` adds `consoleAuditSink()` alongside the in-memory one. It writes on the **diagnostic** stream, never on stdout (`AS-OBSV-002`): the browser's verbose channel through `console.debug`, and under Node `console.error`, because there `console.debug` is an alias of `console.log`. An audit trail is a diagnostic, not program output — and a registry mounted by a tool that renders its own output to stdout must not corrupt it ([CLI §output modes](20-cli.md#output-modes)).
 
 ## Data minimization checklist (authoring norms)
 
 - Observations return projections, not stores; include ids + the fields an agent needs to *decide*, not to *render*.
 - `meta` is for stable semantic hints, never for secrets, tokens, or PII; `internal` exists precisely so policies can use sensitive context without serializing it (and its non-serialization is a tested invariant).
-- Error messages sent to agents are written for agents: state what failed and what to do next, never stack traces, queries, or internal identifiers ([07-errors.md](07-errors.md#execution_failed)).
+- Error messages sent to agents are written for agents: state what failed and what to do next, never stack traces, queries, or internal identifiers ([Errors](07-errors.md#execution_failed)).
 - Descriptions describe; they do not promise ("can delete anything" in a description grants nothing but misleads the model — write what the capability actually does).

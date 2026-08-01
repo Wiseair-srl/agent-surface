@@ -100,21 +100,21 @@ expect(result).toFailWith("STALE_CAPABILITY", { reason: "registration-replaced" 
 expect(surface).toMatchSurfaceSnapshot();                       // semantic snapshot, below
 ```
 
-Matcher semantics are exact: `toExpose` = present **and available** for the harness consumer; `toExposeUnavailable` = present with `available: false` (+ optional reason match); absence assertions distinguish "hidden" from "disabled" because that distinction is the security model ([06 §hide-vs-disable](06-policies-and-security.md#hide-vs-disable-d11d12-restated-as-the-policy-authors-rule)).
+Matcher semantics are exact: `toExpose` = present **and available** for the harness consumer; `toExposeUnavailable` = present with `available: false` (+ optional reason match); absence assertions distinguish "hidden" from "disabled" because that distinction is the security model ([Policies & Security §hide-vs-disable](06-policies-and-security.md#hide-vs-disable-d11d12-restated-as-the-policy-authors-rule)).
 
 ## Semantic snapshots
 
 `toMatchSurfaceSnapshot()` serializes the snapshot with volatility removed so it survives Strict Mode, remounts, and re-runs:
 
 - `registrationId` → stable placeholders in first-appearance order (`<reg#1>`, `<reg#2>` …); `surfaceId`/`capturedAt` dropped; `surfaceVersion` dropped by default (opt-in via `{includeVersion: true}`);
-- components and capabilities sorted canonically ([03 §snapshot](03-core-api.md#snapshot) ordering);
+- components and capabilities sorted canonically ([Core API §snapshot](03-core-api.md#snapshot) ordering);
 - schemas included verbatim — schema drift is exactly what these snapshots are for catching.
 
 The result is a reviewable, diffable statement of "what agents can see on this page" — useful as a PR artifact for security review.
 
 ## Recipes (normative test list)
 
-These are the behaviors the spec obliges implementations and apps to be able to test; the example app's suite ([10-examples.md](10-examples.md)) implements each at least once.
+These are the behaviors the spec obliges implementations and apps to be able to test; the example app's suite ([Examples](10-examples.md)) implements each at least once.
 
 **Discovery**
 ```ts
@@ -197,8 +197,8 @@ expect(r).toFailWith("INVALID_INPUT", { lockedFields: ["deviceIds"] });
 ## CI posture
 
 - All of the above runs in jsdom/node, no browser, no network, no model.
-- Recommended app-level gate: commit the semantic surface snapshot; any diff to "what agents can see" becomes a reviewable artifact in PRs. `agent-surface check` ([20](20-cli.md#check)) is the same gate without a test file — same normalizer (`serializeSurfaceSnapshot`), committed baselines, non-zero exit on drift. Use whichever fits; the scenarios can be shared, so running both costs one definition, not two ([20 §the scenarios are not a fixture](20-cli.md#the-scenarios-are-not-a-fixture)).
+- Recommended app-level gate: commit the semantic surface snapshot; any diff to "what agents can see" becomes a reviewable artifact in PRs. `agent-surface check` ([CLI](20-cli.md#check)) is the same gate without a test file — same normalizer (`serializeSurfaceSnapshot`), committed baselines, non-zero exit on drift. Use whichever fits; the scenarios can be shared, so running both costs one definition, not two ([CLI §the scenarios are not a fixture](20-cli.md#the-scenarios-are-not-a-fixture)).
 - Library CI additionally runs the core suite under both `environment: "test"` and `"development"` (to keep dev-only diagnostics from drifting), and the React suite under Strict Mode and React 18 + 19 matrices.
 - CI also runs `scripts/check-conformance.mjs`: every requirement ID in `spec/conformance.json` must reference existing test files that mention the ID, `spec/error-matrix.json` must stay in lockstep with the implemented error enum, and a `status: "implemented"` requirement with no test fails the build (directive §4.2).
 - **Property-based invariants** (directive §6.4) live in `packages/core/test/property/` (fast-check): id grammar and wire-codec round-trips, canonical-JSON stability under key order, D19 allowlist-only acceptance, unique-live-identity preservation under arbitrary register/unregister sequences, dedupe never-double-executes, and evidence-validates-iff-digest-identical. The named race list (directive §6.3) is `packages/core/test/conformance/races.test.ts` — each race exists by its canonical name.
-- **Performance baselines** run via `pnpm bench` (`packages/core/bench/`); numbers are recorded in [02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines) and revised consciously.
+- **Performance baselines** run via `pnpm bench` (`packages/core/bench/`); numbers are recorded in [Architecture §budgets](02-architecture.md#bundle-and-performance-budgets) and revised consciously.

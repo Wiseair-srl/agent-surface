@@ -1,10 +1,10 @@
 # 03 — Core API (`@agent-surface/core`)
 
 > [!NOTE]
-> **Status: Draft** unless marked otherwise. All types are public API. Signatures here are normative; an implementation MUST NOT change them incompatibly without a spec change. Decision references (D1…D20) resolve in [13-open-questions.md](13-open-questions.md).
+> **Status: Draft** unless marked otherwise. Every type here is public API and every signature is normative: an implementation MUST NOT change one incompatibly without a spec change. `D…` references resolve in the [decision log](project/13-open-questions.md).
 
 > [!TIP]
-> This is the longest page in the spec — it is reference material, not a tutorial. First time through, read [Definitions](#definitions) (what authors write) and [Invocation](#invocation) (what happens when an agent calls), and come back for the rest. Application authors usually never touch this API directly: the React hooks in [04](04-react-api.md) wrap it.
+> **Reference material, not a tutorial** — and the longest page in the spec. First time through, read [Definitions](#definitions) (what authors write) and [Invocation](#invocation) (what happens when an agent calls); come back for the rest. Application authors rarely touch this API directly, since the [React hooks](04-react-api.md) wrap it — start at [Getting Started](getting-started.md) instead.
 
 Contents: [schemas](#schemas) · [definitions](#definitions) · [registry](#registry) · [registration lifecycle](#registration-lifecycle) · [availability](#availability) · [versioning](#versioning) · [snapshot](#snapshot) · [invocation](#invocation) · [concurrency](#concurrency-timeouts-cancellation) · [events](#events) · [confirmation surface](#confirmation-api) · [toolset](#toolset) · [limits](#limits-and-defaults)
 
@@ -82,7 +82,7 @@ Accepted keywords — anything else MUST be rejected at registration with `INVAL
 - arrays: `items` (single schema), `minItems`, `maxItems`, `uniqueItems`
 - strings: `minLength`, `maxLength`, `pattern`, `format` ∈ {`date-time`, `date`, `uuid`, `email`, `uri`}
 - numbers: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
-- unions: `anyOf` (including discriminated unions by `const` tag); `oneOf`, `allOf`, `not`, `if/then/else`, `patternProperties`, `dependent*`, `unevaluated*` are **not** supported in v0.1
+- unions: `anyOf` (including discriminated unions by `const` tag); `oneOf`, `allOf`, `not`, `if/then/else`, `patternProperties`, `dependent*`, `unevaluated*` are **not** supported in 0.x
 - annotations anywhere: `description`, `default`, `examples`, `title`, `deprecated`
 - `$defs` + internal `$ref` (`#/$defs/...`) only; remote refs rejected
 - maximum nesting depth: 8; maximum serialized schema size: 16 kB
@@ -91,7 +91,7 @@ Rationale: this is the subset current LLM tool-calling implementations handle re
 
 ### Serialization rules (D18, Draft)
 
-- All inputs/outputs MUST be `JsonValue`. Dates travel as ISO-8601 strings; binary is unsupported in v0.1 (Future: content refs).
+- All inputs/outputs MUST be `JsonValue`. Dates travel as ISO-8601 strings; binary is unsupported in 0.x (Future: content refs).
 - Type-level note: the `extends JsonValue` constraints are satisfied by schema-inferred types and type aliases; TypeScript `interface`s lack implicit index signatures and won't satisfy them — use type aliases (schema inference produces them anyway).
 - `undefined` properties are stripped (JSON semantics). Functions, symbols, bigints, and cyclic structures are defects: in development the registry probes outputs (JSON round-trip) and throws; in production the invocation settles as `EXECUTION_FAILED` with a safe message, and the defect is logged.
 - Observation/action outputs exceeding `limits.maxOutputBytes` (default 32 kB) settle as `EXECUTION_FAILED` (`details.reason: "output-too-large"`); truncation is never silent.
@@ -308,7 +308,7 @@ Lifecycle rules (normative):
 
 1. **Mount → register.** A registration is live immediately and appears in the next snapshot; `surface-changed` fires with the new version.
 2. **Structural immutability per registration (D2).** The descriptor (types, names, schemas, descriptions, effect metadata, policy chain shape) is frozen at `register()`. This is what makes `registrationId` a meaningful staleness token: an agent that discovered `reg_x` knows *exactly* what `reg_x` can do. Handlers are NOT part of the frozen descriptor — see next rule.
-3. **Handlers are read through a live reference.** `execute`/`read`/`when`/`bind` are read at invocation time from the definition object's current state, enabling the React latest-ref pattern (D3, [04-react-api.md](04-react-api.md#handler-freshness-d3--why-there-is-no-dependency-array)). Swapping handler closures neither bumps the version nor changes identity.
+3. **Handlers are read through a live reference.** `execute`/`read`/`when`/`bind` are read at invocation time from the definition object's current state, enabling the React latest-ref pattern (D3, [React API](04-react-api.md#handler-freshness-d3--why-there-is-no-dependency-array)). Swapping handler closures neither bumps the version nor changes identity.
 4. **Unmount → unregister.** All capabilities disappear from subsequent snapshots; in-flight invocations for the registration are aborted and settle `COMPONENT_UNMOUNTED` (unless the handler already resolved — first settle wins). Exception (D23): in-flight `navigation`-effect invocations are *not* settled by unregistration; they settle on handler settlement/timeout/cancel ([§concurrency](#concurrency-timeouts-cancellation)). The registry MUST NOT retain executable references after unregistration; the tombstone keeps only ids and timestamps (a pending navigation settlement holds the already-running handler promise, not a re-invocable reference).
 5. **Tombstones.** Unregistered registrationIds are remembered in a bounded structure (default 100 entries / 5 min) so late invocations get the precise `COMPONENT_UNMOUNTED` instead of the generic `CAPABILITY_NOT_FOUND`.
 6. **Post-unregister calls** on the handle are no-ops that warn in development.
@@ -339,7 +339,7 @@ available :=
 
 - `when()` is evaluated at **snapshot** time and re-evaluated at **invocation** time (phase 3). It MUST be synchronous, cheap, and exception-safe; a throwing `when` counts as `false` (dev warning).
 - Lazily-evaluated `when` changes do **not** bump `surfaceVersion` (nobody was notified). Pushed changes — `update({availability})`, `update({enabled})` — DO bump it. Framework adapters are responsible for pushing: the React package re-evaluates `when` per render and pushes on change, so in React apps availability is effectively event-driven. Pure-core users either push or accept snapshot-time freshness. This split is deliberate; see D1 remarks.
-- Policy `hide` decisions remove the capability from the snapshot entirely (see [06](06-policies-and-security.md)); availability as defined above only produces `available`/`unavailable`.
+- Policy `hide` decisions remove the capability from the snapshot entirely (see [Policies & Security](06-policies-and-security.md)); availability as defined above only produces `available`/`unavailable`.
 
 ---
 
@@ -430,7 +430,7 @@ export interface AgentActionDescriptor {
 }
 ```
 
-(`AgentProcedureDescriptor` is defined in [05-orpc-integration.md](05-orpc-integration.md#snapshot-descriptor); it lives at the snapshot top level with a `context` link back to the component that registered it, keeping the two planes visually and structurally distinct. This intentionally diverges from an early sketch that nested domain refs inside components — nesting conflated the planes.)
+(`AgentProcedureDescriptor` is defined in [oRPC integration](05-orpc-integration.md#snapshot-descriptor); it lives at the snapshot top level with a `context` link back to the component that registered it, keeping the two planes visually and structurally distinct. This intentionally diverges from an early sketch that nested domain refs inside components — nesting conflated the planes.)
 
 Snapshot semantics (normative):
 
@@ -438,14 +438,14 @@ Snapshot semantics (normative):
 - Descriptors are deep-frozen plain JSON; `internal` metadata MUST NOT appear anywhere in a snapshot (tested).
 - Ordering: components sorted by (`priority` desc, `type`, `instanceId`) — deterministic, never DOM- or mount-order-dependent.
 - **Stable and volatile text are separate** (D28). A procedure reference's contextual `describe()` output is `contextualNote`; `description` is the manifest text and never contains it. There is one composition, so no consumer has to parse a string it did not write. The 0.3–0.4 compatibility flags that could merge them were removed in 0.5.
-- Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected for v0.1 (adds traversal API surface with no consumer that needs it yet).
+- Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected: it adds traversal API surface with no consumer that needs it yet.
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
-- `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).
+- `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [Adapters §meta-tools-mode](09-adapters.md#meta-tools-mode).
 
 ### `explainSurface()` — developer projection
 
 > [!NOTE]
-> **Status: Draft** (D33). Separate entry point: `@agent-surface/core/explain`. Deliberately **not** exported from the package root — see [06 §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing) before wiring it anywhere.
+> **Status: Draft** (D33). Separate entry point: `@agent-surface/core/explain`. Deliberately **not** exported from the package root — see [Policies & Security §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing) before wiring it anywhere.
 
 ```ts
 import { explainSurface } from "@agent-surface/core/explain";
@@ -480,7 +480,7 @@ interface CapabilityExplanation {
 Semantics (normative):
 
 - It reports **every** capability the registry holds, hidden ones included. `includeUnavailable` and `budget` are ignored: withholding is the one thing an explanation must not do. `scope` and `consumer` are honoured, so it lines up with the snapshot being debugged.
-- Its composed outcome MUST equal what `snapshot()` did for the same context (`AS-EXPLAIN-003`). `evaluateDiscovery` short-circuits on the first `hide`, so explain cannot reuse it — it re-runs each `onDiscovery` individually and composes by the same rule. Re-running is safe by contract: discovery policies MUST be synchronous, cheap, and side-effect free ([06](06-policies-and-security.md#policy-pipeline)).
+- Its composed outcome MUST equal what `snapshot()` did for the same context (`AS-EXPLAIN-003`). `evaluateDiscovery` short-circuits on the first `hide`, so explain cannot reuse it — it re-runs each `onDiscovery` individually and composes by the same rule. Re-running is safe by contract: discovery policies MUST be synchronous, cheap, and side-effect free ([Policies & Security](06-policies-and-security.md#policy-pipeline)).
 - Policy attribution keeps `availability` separate from the policy votes, because *authority hides, state discloses* (D11/D12) and the two failures must not look alike.
 - It throws on a registry it did not create, or a disposed one — rather than reporting an empty surface, which is what a missing internals seam would otherwise look like.
 
@@ -532,15 +532,15 @@ export type AgentInvocationResult =
 
 Semantics:
 
-- The result is a **discriminated union, not an exception**: `invoke` only rejects on programmer misuse (e.g. called after `dispose`). Everything agent-facing — including `CONFIRMATION_REQUIRED` — is a serializable `status: "error"` payload with structured `details` and retry semantics ([07-errors.md](07-errors.md)). `CONFIRMATION_REQUIRED` is a *protocol step*, not a failure; it is encoded as an error so the wire model stays binary.
+- The result is a **discriminated union, not an exception**: `invoke` only rejects on programmer misuse (e.g. called after `dispose`). Everything agent-facing — including `CONFIRMATION_REQUIRED` — is a serializable `status: "error"` payload with structured `details` and retry semantics ([Errors](07-errors.md)). `CONFIRMATION_REQUIRED` is a *protocol step*, not a failure; it is encoded as an error so the wire model stays binary.
 - Instance resolution: if `instanceId` is omitted and exactly one live instance matches, it is used; zero → `CAPABILITY_NOT_FOUND` (or tombstone/stale variants); more than one → `AMBIGUOUS_INSTANCE` with `details.instances: string[]`.
-- The **effective input** is constructed and fully validated at phase 5 — after pre-input authorization (phase 4), before any input-aware policy or the confirmation decision (phase 6). Handlers receive the parsed (possibly defaulted) effective value; input-aware policies receive it as `ctx.effectiveInput` and can never see raw agent input ([06 §policy-pipeline](06-policies-and-security.md#policy-pipeline), D21).
+- The **effective input** is constructed and fully validated at phase 5 — after pre-input authorization (phase 4), before any input-aware policy or the confirmation decision (phase 6). Handlers receive the parsed (possibly defaulted) effective value; input-aware policies receive it as `ctx.effectiveInput` and can never see raw agent input ([Policies & Security §policy-pipeline](06-policies-and-security.md#policy-pipeline), D21).
 - Observations are invoked through the same API (`input` omitted); they skip confirmation and the action queue but pass **observation admission** (bounded concurrency, phase 8; D24).
-- Pipeline order is fixed and normative — see [02-architecture.md](02-architecture.md#invocation-pipeline-normative-order).
+- Pipeline order is fixed and normative — see [Architecture](02-architecture.md#invocation-pipeline-normative-order).
 
 ### Invocation identity, idempotency, conflict safety (D14 as corrected by D22)
 
-Provider tool-call ids are not globally unique; identity is therefore **consumer-scoped** and **request-bound** ([18-spec-corrections-rfc.md](18-spec-corrections-rfc.md#correction-2--consumer-scoped-conflict-safe-invocation-identity-d22-amends-d14)):
+Provider tool-call ids are not globally unique; identity is therefore **consumer-scoped** and **request-bound** ([Spec Corrections RFC](project/18-spec-corrections-rfc.md#correction-2--consumer-scoped-conflict-safe-invocation-identity-d22-amends-d14)):
 
 ```ts
 // per registry (surfaceId scopes page lifetimes):
@@ -552,7 +552,7 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
 - Results of **terminal** outcomes are cached per key (default 200 entries / 10 min). Terminal = `ok` and every error **except** `CONFIRMATION_REQUIRED` and `RATE_LIMITED` (expected-retry outcomes; caching them would break the retry). `INVOCATION_CONFLICT` results are never cached either — they describe the collision, not the request.
 - Re-invoke with a known in-flight key **and matching fingerprint** returns the same pending promise (join, not re-execute); with a cached terminal key + matching fingerprint, the cached result verbatim. This is what makes transport retries safe.
 - Re-invoke with a known key and a **different** fingerprint fails closed: `INVOCATION_CONFLICT` (`retry: "with-changes"` — i.e. use a fresh `invocationId` if the new request is intentional). The stored record is untouched. Reusing an id for a different request can never silently succeed.
-- Different consumers may reuse the same provider tool-call id safely (distinct keys); different page loads cannot collide (distinct registries). Anonymous invocations normalize to `embedded:anonymous` — adapters MUST pass a stable per-instance consumer id when more than one consumer addresses the registry ([09 §adapter contract](09-adapters.md#adapter-contract)).
+- Different consumers may reuse the same provider tool-call id safely (distinct keys); different page loads cannot collide (distinct registries). Anonymous invocations normalize to `embedded:anonymous` — adapters MUST pass a stable per-instance consumer id when more than one consumer addresses the registry ([Adapters §adapter contract](09-adapters.md#adapter-contract)).
 - The dedupe window is bounded (`dedupeCacheSize`, `dedupeCacheTtlMs`): an **idempotency window**, not a forever guarantee. An expired key is a new attempt.
 - Confirmation retry: reuses the **same** `invocationId` + `confirmationId`; since `CONFIRMATION_REQUIRED` was not cached as terminal, the retry executes (once).
 
@@ -560,7 +560,7 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
 
 ## Concurrency, timeouts, cancellation
 
-(D13, D15, D16 — Draft; amended by D23/D24/D25, [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md))
+(D13, D15, D16 — Draft; amended by D23/D24/D25, [Spec Corrections RFC](project/18-spec-corrections-rfc.md))
 
 - **Actions**: serialized per component instance (FIFO). One in-flight + a wait queue of `limits.actionQueueDepth` (default 2). Overflow → `RATE_LIMITED` with `details.reason: "queue-full"`, `retry: "after-delay"`.
 - **Observations**: bounded concurrency (D24). Admission gates: `maxConcurrentObservationsPerConsumer` (8) and `maxConcurrentObservationsTotal` (32), independent; a saturated consumer queues FIFO up to `maxQueuedObservationsPerConsumer` (8). Overflow → `RATE_LIMITED {reason: "queue-full", retryAfterMs}`. Observations never consume the action queue; one consumer cannot starve another below its per-consumer allowance beyond the shared global cap. Cancellation/timeout/settlement release slots; disposal drains queues as `CANCELLED`. Observations SHOULD still be synchronous reads.
@@ -579,7 +579,7 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
 - **Timeouts**: `timeoutMs` per capability, else defaults (observation 5 s, action 10 s, procedure 30 s). On timeout the registry aborts `ctx.signal`, settles `TIMEOUT`, and ignores (but logs) any late handler settlement. JS cannot force-kill the handler; cooperation via `signal` is the contract.
 - **External cancellation**: `InvokeOptions.signal` aborted → settle `CANCELLED` (same late-settlement rule).
 - **Unmount mid-flight (D16, non-navigation)**: unregistration aborts the registration's in-flight signals; the invocation settles `COMPONENT_UNMOUNTED` unless the handler settled first (first settle wins, the loser is logged as `late-settlement` in audit) — never a hang, never a zombie handler kept alive by the registry.
-- **Navigation settlement (D23)**: for actions with `effect: "navigation"`, unregistration MUST NOT settle the invocation — a navigation action's own success routinely unmounts its owner, and unmount timing must not decide the outcome. The invocation settles only on handler settlement (resolve → `ok`; reject with `ctx.signal` aborted → `CANCELLED`, otherwise `EXECUTION_FAILED`), timeout, or external cancel. Unmount **before** dispatch is still `COMPONENT_UNMOUNTED`. Authoring contract: resolve when the host router accepts/commits the transition, reject when it refuses ([01 §effects](01-concepts.md#effect-taxonomy), [04 §route-transitions](04-react-api.md)).
+- **Navigation settlement (D23)**: for actions with `effect: "navigation"`, unregistration MUST NOT settle the invocation — a navigation action's own success routinely unmounts its owner, and unmount timing must not decide the outcome. The invocation settles only on handler settlement (resolve → `ok`; reject with `ctx.signal` aborted → `CANCELLED`, otherwise `EXECUTION_FAILED`), timeout, or external cancel. Unmount **before** dispatch is still `COMPONENT_UNMOUNTED`. Authoring contract: resolve when the host router accepts/commits the transition, reject when it refuses ([Concepts §effects](01-concepts.md#effect-taxonomy), [React API §route-transitions](04-react-api.md)).
 
 ---
 
@@ -600,7 +600,7 @@ export type AgentSurfaceEvent =
   | { type: "confirmation-resolved"; confirmationId: string; outcome: "approved" | "denied" | "expired" };
 ```
 
-Ordering guarantees (D17) are specified in [02-architecture.md](02-architecture.md#concurrency-and-ordering-guarantees): total mutation order, post-mutation dispatch, listener-exception isolation, queued re-entrancy, per-invocation `started` strictly before `settled`, `confirmation-requested` strictly before its `resolved`.
+Ordering guarantees (D17) are specified in [Architecture](02-architecture.md#concurrency-and-ordering-guarantees): total mutation order, post-mutation dispatch, listener-exception isolation, queued re-entrancy, per-invocation `started` strictly before `settled`, `confirmation-requested` strictly before its `resolved`.
 
 Events are the integration point for audit sinks, adapters (re-snapshot on `surface-changed`), and confirmation UIs.
 
@@ -608,7 +608,7 @@ Events are the integration point for audit sinks, adapters (re-snapshot on `surf
 
 ## Confirmation API
 
-The full protocol (evidence binding, expiry, replay rules, server interplay) is in [06-policies-and-security.md](06-policies-and-security.md#confirmation). Core exposes:
+The full protocol (evidence binding, expiry, replay rules, server interplay) is in [Policies & Security](06-policies-and-security.md#confirmation). Core exposes:
 
 ```ts
 export interface ConfirmationController {
@@ -641,7 +641,7 @@ export interface PendingConfirmation {
 
 ## Toolset
 
-The provider-neutral projection used by the embedded adapter ([09-adapters.md](09-adapters.md#embedded-toolset-adapter-draft)):
+The provider-neutral projection used by the embedded adapter ([Adapters](09-adapters.md#embedded-toolset-adapter-draft)):
 
 ```ts
 export interface AgentToolsetOptions {

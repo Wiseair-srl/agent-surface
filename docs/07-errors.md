@@ -8,8 +8,8 @@
 
 ## Principles
 
-1. **Results, not exceptions, at the boundary.** `invoke` returns a discriminated union ([03 §invocation](03-core-api.md#invocation)); `status: "error"` carries a serializable payload. JS exceptions are reserved for programmer misuse (structural definition defects, use-after-dispose).
-2. **Typed and closed.** Agent-facing codes come from one closed enum. Adding a code is a spec change (`INVOCATION_CONFLICT` was added by [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md)). The enum, per-code production phase, retry category, and cacheability are cross-validated against the implementation from one machine-readable source: `spec/error-matrix.json` (directive §4.4).
+1. **Results, not exceptions, at the boundary.** `invoke` returns a discriminated union ([Core API §invocation](03-core-api.md#invocation)); `status: "error"` carries a serializable payload. JS exceptions are reserved for programmer misuse (structural definition defects, use-after-dispose).
+2. **Typed and closed.** Agent-facing codes come from one closed enum. Adding a code is a spec change (`INVOCATION_CONFLICT` was added by [Spec Corrections RFC](project/18-spec-corrections-rfc.md)). The enum, per-code production phase, retry category, and cacheability are cross-validated against the implementation from one machine-readable source: `spec/error-matrix.json` (directive §4.4).
 3. **Two audiences, two channels.** Every error has an *agent-safe* projection (code, message, retry, details) and an *operator* channel (cause, stack, internal context → audit/logs). The two never mix.
 4. **Actionable.** Each code defines retry semantics an agent loop can act on mechanically.
 
@@ -71,7 +71,7 @@ export class AgentSurfaceDefinitionError extends Error {
 For each: meaning · produced when · `retry` · agent-visible `details` · log-only info · adapter duty.
 
 ### `CAPABILITY_NOT_FOUND`
-- **Meaning:** the id does not exist in this consumer's surface — never registered, long gone, or hidden by authority (indistinguishable on purpose, requirement 12 in [06](06-policies-and-security.md#the-deny-by-default-requirements-mapped)).
+- **Meaning:** the id does not exist in this consumer's surface — never registered, long gone, or hidden by authority (indistinguishable on purpose, requirement 12 in [Policies & Security](06-policies-and-security.md#the-deny-by-default-requirements-mapped)).
 - **When:** resolution finds nothing and no tombstone matches.
 - **Retry:** `after-refresh`. **Details:** none (no existence leaks). **Log-only:** whether a hidden registration actually matched. **Adapter:** refresh snapshot before the model's next step.
 
@@ -98,7 +98,7 @@ For each: meaning · produced when · `retry` · agent-visible `details` · log-
 - **Retry:** `with-changes` (use a fresh `invocationId` if the new request is intentional). **Details:** `{ reason: "id-reused-with-different-request" }` — never the prior request's capability, input, or fingerprint material. **Log-only:** both fingerprints. **Adapter:** treat as an adapter/provider id-collision bug signal; mint a namespaced id and retry the *new* request. Never cached as terminal.
 
 ### `INVALID_INPUT`
-- **Meaning:** schema parse failed, or a locked bound field was supplied ([05 §binding](05-orpc-integration.md#binding-semantics-d7-d8--draft)).
+- **Meaning:** schema parse failed, or a locked bound field was supplied ([oRPC integration §binding](05-orpc-integration.md#binding-semantics-d7-d8--draft)).
 - **Retry:** `with-changes`. **Details:** `{ issues: [{ path, message }], lockedFields? }` — issue messages come from the schema layer and MUST be safe (field-level, no values echoed for fields marked sensitive via schema `format`/meta). **Log-only:** offending raw input (dev only). **Adapter:** give issues to the model verbatim.
 
 ### `NOT_AUTHENTICATED`
@@ -114,7 +114,7 @@ For each: meaning · produced when · `retry` · agent-visible `details` · log-
 - **Retry:** `with-changes` (or `after-refresh` when `details.reason: "binding-failed"`). **Details:** author-provided `{ message, …details }`; binding failures add `{ reason: "binding-failed" }`. **Adapter:** pass through.
 
 ### `CONFIRMATION_REQUIRED`
-- **Meaning:** a user approval gate is active; not a failure ([06 §confirmation](06-policies-and-security.md#confirmation)).
+- **Meaning:** a user approval gate is active; not a failure ([Policies & Security §confirmation](06-policies-and-security.md#confirmation)).
 - **Retry:** `with-confirmation`. **Details:** `{ confirmationId, summary, expiresAt, effect, origin: "client" | "server" }`. **Adapter:** in `wait` mode handle internally; in `two-phase` mode relay to the model with instructions to retry with `confirmationId` after approval. Never cached as terminal in the dedupe window.
 
 ### `CONFIRMATION_INVALID`
@@ -160,4 +160,4 @@ Adapters MUST preserve `code`, `retry`, and `details` losslessly; they MAY prepe
 | `DUPLICATE_CAPABILITY` | two capabilities with the same name in one definition |
 | `LIMIT_EXCEEDED` | description/meta size caps |
 
-Runtime rejection cases (dead handle + event, never thrown): duplicate `(type, instanceId)` under `"reject"`, guard rejection — see [03 §registry](03-core-api.md#registry).
+Runtime rejection cases (dead handle + event, never thrown): duplicate `(type, instanceId)` under `"reject"`, guard rejection — see [Core API §registry](03-core-api.md#registry).

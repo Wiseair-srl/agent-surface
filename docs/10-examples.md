@@ -1,9 +1,9 @@
 # 10 — Examples: the Devices Page, End to End
 
 > [!NOTE]
-> **Status: illustrative but normative for behavior** — every payload and transition shown here follows [03](03-core-api.md)–[07](07-errors.md), and the test suite in [08](08-testing.md) asserts them. Code marked *host app* is application code, not library code.
+> **Status: illustrative but normative for behavior** — every payload and transition shown here follows [Core API](03-core-api.md)–[Errors](07-errors.md), and the test suite in [Testing](08-testing.md) asserts them. Code marked *host app* is application code, not library code.
 
-This walkthrough is deliberately transport-agnostic: the "agent" here could be any consumer behind any adapter. It is also the repository's **only executable example** — `examples/devices-app`, runnable and covered by tests (`AS-EXAMPLE-001`). For the shape of the same page behind a server-side loop — Mastra running the loop, assistant-ui rendering it, orpc-agent governing the domain — read the wiring guide in [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md) afterwards, remembering its code is a sketch rather than a package.
+This walkthrough is deliberately transport-agnostic: the "agent" here could be any consumer behind any adapter. It is also the repository's **only executable example** — `examples/devices-app`, runnable and covered by tests (`AS-EXAMPLE-001`). For the shape of the same page behind a server-side loop — Mastra running the loop, assistant-ui rendering it, orpc-agent governing the domain — read the wiring guide in [Mastra + assistant-ui](16-mastra-assistant-ui.md) afterwards, remembering its code is a sketch rather than a package.
 
 The page: status/city filters, a devices table with multi-select and sorting, a detail drawer, a "Disable" flow backed by the existing oRPC procedure `devices.disable` (exposed via `orpc-agent`).
 
@@ -213,7 +213,7 @@ sequenceDiagram
 | # | Step | Wire reality | Owned by |
 |---|---|---|---|
 | 1 | `view:devices.filters.set` | `invoke {capabilityId, input:{status:"offline",city:"Milano"}, registrationId, invocationId}` → `{status:"ok"}` | library dispatch; handler = app |
-| 2 | UI updates, data refetch | React state → app's query layer refetches | **app entirely** (reactive consequence, [01 litmus](01-concepts.md#the-litmus-test)) |
+| 2 | UI updates, data refetch | React state → app's query layer refetches | **app entirely** (reactive consequence, [Concepts §litmus test](01-concepts.md#the-litmus-test)) |
 | 3 | `view:devices.table.readState` | → `{status:"ok", output:{visibleRows:[…3 rows], selectedIds:[], sorting}}` | library; read = app |
 | 4 | `view:devices.table.selectRows` `{ids:[d1,d2,d3]}` | precondition validates ids → ok; `when` flips ⇒ availability push, `surface-changed` v++ | library + app handler |
 | 5 | Contextual discovery of `domain:devices.disable` | next catalog shows the procedure `available:true`, `inputSchema:{}` (all bound), `boundFields:[{path:"deviceIds",locked:true}]` | library |
@@ -224,7 +224,7 @@ sequenceDiagram
 | 10 | UI update | app invalidates its devices query; agent MAY `readState` to verify | app |
 | 11 | Audit | events: registrations, availability change, inv_9 started/settled, cnf_4 requested/approved/consumed | library events; persistence = app sink |
 
-Failure branches worth knowing (all tested in [08 recipes](08-testing.md#recipes-normative-test-list)): user denies → `CONFIRMATION_INVALID {reason:"denied"}`, no retry; selection changes between approval and retry → `mismatch`; user navigates away mid-flow → `COMPONENT_UNMOUNTED`; model tries `input:{deviceIds:["victim"]}` → `INVALID_INPUT {lockedFields:["deviceIds"]}`.
+Failure branches worth knowing (all tested in [Testing §recipes](08-testing.md#recipes-normative-test-list)): user denies → `CONFIRMATION_INVALID {reason:"denied"}`, no retry; selection changes between approval and retry → `mismatch`; user navigates away mid-flow → `COMPONENT_UNMOUNTED`; model tries `input:{deviceIds:["victim"]}` → `INVALID_INPUT {lockedFields:["deviceIds"]}`.
 
 ## Smaller patterns
 

@@ -1,7 +1,7 @@
 # 19 — Catalog Scale RFC (P1)
 
 > [!IMPORTANT]
-> **Status: Accepted; implemented in 0.3 (C1's compatibility flags removed in 0.5 — see C4).** Raised by the first host to drive `@agent-surface/core` at production catalog size (a DPAS dashboard targeting ~300 domain capabilities and 40+ mounted view capabilities per route). Three corrections and one cleanup. C1 is a breaking change to `AgentTool`, gated behind a compatibility flag for one minor. Accepted as decision records **D28–D30** in [13](13-open-questions.md); requirements `AS-CACHE-001…004`, `AS-META-001…005`, `AS-WIRE-004…007` are in `spec/conformance.json`.
+> **Status: Accepted; implemented in 0.3 (C1's compatibility flags removed in 0.5 — see C4).** Raised by the first host to drive `@agent-surface/core` at production catalog size (a DPAS dashboard targeting ~300 domain capabilities and 40+ mounted view capabilities per route). Three corrections and one cleanup. C1 is a breaking change to `AgentTool`, gated behind a compatibility flag for one minor. Accepted as decision records **D28–D30** in [Decisions](13-open-questions.md); requirements `AS-CACHE-001…004`, `AS-META-001…005`, `AS-WIRE-004…007` are in `spec/conformance.json`.
 >
 > Nothing here changes the surface's security model. Discovery shaping, wire-name encoding and description composition are all *presentation* concerns; `invoke` is untouched, and every SI-tagged test stands.
 >
@@ -100,7 +100,7 @@ export interface AgentTool {
 
 `state` and `contextualNote` are populated in both modes, so a host migrates before either default moves. Defaults flip together in the following minor; flags retained one more cycle before removal.
 
-**Consequences.** Hosts that render nothing new get a tool block whose churn drops to code changes and mount-set changes. The `[currently unavailable]` signal must be re-rendered by the host or it is lost from the model's view — a real migration burden and the reason for the flags. Documented in [09](09-adapters.md) with a worked example of the trailing-state-block pattern, and in [03](03-core-api.md) for the snapshot side.
+**Consequences.** Hosts that render nothing new get a tool block whose churn drops to code changes and mount-set changes. The `[currently unavailable]` signal must be re-rendered by the host or it is lost from the model's view — a real migration burden and the reason for the flags. Documented in [Adapters](../09-adapters.md) with a worked example of the trailing-state-block pattern, and in [Core API](../03-core-api.md) for the snapshot side.
 
 **Proposed requirements.** `AS-CACHE-001` (state is absent from `description` when the flag is off), `AS-CACHE-002` (`tools()` output is byte-identical across snapshots that differ only in availability), `AS-CACHE-003` (`state.note` carries the binding `describe()` contribution), `AS-CACHE-004` (`AgentProcedureDescriptor.description` is free of contextual text when `snapshotMergesContextualNote: false`).
 
@@ -108,7 +108,7 @@ export interface AgentTool {
 
 ## Correction 2 — Graduate `mode: "meta"` (D29)
 
-**Problem.** `mode: "meta"` is implemented — `surface_discover`, `surface_read`, `surface_act`, with `budget` and the `truncated` marker wired through — and marked `[Experimental]` in [09](09-adapters.md) and in `AgentToolsetOptions`. It is the only answer the library offers for a catalog that cannot be made to fit a provider tool block, and for the accuracy problem that is independent of token cost: model tool-selection degrades on flat lists of hundreds of tools regardless of context window.
+**Problem.** `mode: "meta"` is implemented — `surface_discover`, `surface_read`, `surface_act`, with `budget` and the `truncated` marker wired through — and marked `[Experimental]` in [Adapters](../09-adapters.md) and in `AgentToolsetOptions`. It is the only answer the library offers for a catalog that cannot be made to fit a provider tool block, and for the accuracy problem that is independent of token cost: model tool-selection degrades on flat lists of hundreds of tools regardless of context window.
 
 An experimental marker means no host will adopt it for production, so the library's own scaling answer is unreachable in the situation it was designed for.
 
@@ -133,7 +133,7 @@ Keep the `budget`-rejected-in-`direct`-mode guard exactly as it is. Throwing rat
 
 ## Correction 3 — Wire names must fit the provider budget (D30)
 
-**Problem.** Provider tool names are limited to 64 characters, which [09](09-adapters.md) documents. `encodeWireNameForInstance` does not enforce it. `view_` plus four `__`-joined segments reaches ~50 characters, and the multi-instance `_at_<instanceId>` suffix pushes it over. Deep feature hierarchies (`billing.invoices.table.filters.set`) are exactly what a 300-capability application has.
+**Problem.** Provider tool names are limited to 64 characters, which [Adapters](../09-adapters.md) documents. `encodeWireNameForInstance` does not enforce it. `view_` plus four `__`-joined segments reaches ~50 characters, and the multi-instance `_at_<instanceId>` suffix pushes it over. Deep feature hierarchies (`billing.invoices.table.filters.set`) are exactly what a 300-capability application has.
 
 Two failure modes, both silent from the library's side. The provider rejects the whole request; or the host's reverse mapping fails and — depending on how defensively it is written — the canonical id degrades to the wire name, taking the audit identity with it.
 
@@ -192,7 +192,7 @@ That is O(n²) in mounted components, inside the per-step projection path. At 40
 
 1. Adopt `wireNameMap()` in place of any local wire-name reversal. Unblocks C3 and removes a class of silent audit-identity loss. *(Independent; do first.)*
 2. Render `AgentTool.state` into a trailing block outside the tool definitions. *(C1. The `descriptionIncludesState` flag this step once named was removed in 0.5 — the split is now the only composition, so there is nothing to opt into and rendering `state` is the whole migration.)*
-3. Consider `mode: "meta"` if a scoped direct catalog still exceeds the provider's practical tool count. *(C2. Experimental again since 0.7 — opt in with a pinned version, per [09 §meta-tools-mode](09-adapters.md#meta-tools-mode).)*
+3. Consider `mode: "meta"` if a scoped direct catalog still exceeds the provider's practical tool count. *(C2. Experimental again since 0.7 — opt in with a pinned version, per [Adapters §meta-tools-mode](../09-adapters.md#meta-tools-mode).)*
 
 ## Unresolved questions — as resolved on acceptance
 
