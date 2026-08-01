@@ -975,7 +975,7 @@
       "status": "implemented"
     },
     "AS-COVER-002": {
-      "title": "An unresolvable call site is emitted with resolution \"unresolved\" and an origin, never omitted",
+      "title": "A registration the extractor cannot fully enumerate is emitted with resolution \"unresolved\" and an origin \u2014 never absent from both the catalog and the unread list",
       "source": "20-cli.md#the-catalog---depth-static",
       "decision": "D35",
       "tests": [
