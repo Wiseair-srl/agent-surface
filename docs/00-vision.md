@@ -1,7 +1,7 @@
 # 00 — Vision
 
 > [!NOTE]
-> **Status:** normative context for the whole specification. Terminology defined in [01-concepts.md](01-concepts.md).
+> **Status:** normative context for the whole specification. Terminology defined in [Concepts](01-concepts.md).
 
 ## Why this library exists
 
@@ -50,7 +50,7 @@ A small set of packages providing the **data plane and primitives** for a fronte
 
 ## What agent-surface is not
 
-Not an agent framework, not a chat UI, not an RPC framework, not a browser-automation or computer-use tool, not a workflow engine, not an authorization product, and not a protocol competing with MCP/WebMCP. See [11-non-goals.md](11-non-goals.md). WebMCP in particular is treated as one possible transport for the surface, never as the foundation of the model: the library must remain valuable if WebMCP changes or fails to be adopted.
+Not an agent framework, not a chat UI, not an RPC framework, not a browser-automation or computer-use tool, not a workflow engine, not an authorization product, and not a protocol competing with MCP/WebMCP. See [Non-Goals](11-non-goals.md). WebMCP in particular is treated as one possible transport for the surface, never as the foundation of the model: the library must remain valuable if WebMCP changes or fails to be adopted.
 
 ## What success looks like
 
@@ -69,4 +69,4 @@ Not an agent framework, not a chat UI, not an RPC framework, not a browser-autom
 | Raw WebMCP tool registration | Explicit but ad-hoc, per-tool | Free-form strings | Per-tool, hand-rolled |
 | **agent-surface** | **Explicit, component-scoped, lifecycle-bound** | **Stable canonical IDs, DOM-independent** | **Composable policies, confirmation, audit, staleness** |
 
-A DOM/Playwright fallback is explicitly out of the initial scope and, if ever built, will be a separate non-core package (see [09-adapters.md](09-adapters.md#playwright--dom-fallback-future)).
+A DOM/Playwright fallback is explicitly out of the initial scope and, if ever built, will be a separate non-core package (see [Adapters](09-adapters.md#playwright--dom-fallback-future)).

@@ -10,10 +10,10 @@
 
 - **MUST / MUST NOT / SHOULD / SHOULD NOT / MAY** are used as in RFC 2119.
 - Every API and behavior in this spec carries one of three labels:
-  - **Draft** — intended for v0.1; expected to stabilize with at most minor changes.
+  - **Draft** — the intended shape for 1.0; expected to stabilize with at most minor changes.
   - **Experimental** — may change incompatibly or be removed; opt-in.
   - **Future** — described for orientation; not part of the initial implementation.
-- Nothing is labeled *Stable* yet: v0.1 is implemented and published as 0.x, and no API earns *Stable* before it survives a release cycle unchanged (see the graduation criteria in [12-roadmap.md](12-roadmap.md)).
+- Nothing is labeled *Stable* yet: the specification is implemented and published as 0.x, and no API earns *Stable* before it survives a release cycle unchanged (see the graduation criteria in [Roadmap](project/12-roadmap.md)).
 
 ## The two planes
 
@@ -24,7 +24,7 @@ Every operation an agent can perform through an application belongs to exactly o
 Operations that have meaning independently of any mounted UI: fetch devices, rename a device, disable a device, generate a report, invite a user, export data, update persistent configuration.
 
 - They live in the **backend**, defined as oRPC procedures and exposed to agents via `orpc-agent`.
-- agent-surface **MUST NOT** define, reimplement, or duplicate them. It MAY *reference* them (see [05-orpc-integration.md](05-orpc-integration.md)) to make them contextually available and to bind inputs from UI state.
+- agent-surface **MUST NOT** define, reimplement, or duplicate them. It MAY *reference* them (see [oRPC integration](05-orpc-integration.md)) to make them contextually available and to bind inputs from UI state.
 - The server is the sole authority: it re-validates authentication, authorization, input, and policy on every call, regardless of anything the frontend did.
 
 ### Presentation plane (`view:`)
@@ -53,7 +53,7 @@ flowchart TD
     D1 -- changes --> D3[Action\neffect: local-state or navigation]
 ```
 
-Consequence worth spelling out: *changing a filter that causes the app to re-query the server is still a presentation action.* The fetch is a reactive consequence mediated by the app's normal data layer — identical to what happens when the user clicks the same filter. The action's direct effect is local view state. Direct server effects are reserved for domain procedure references.
+One consequence trips people up: *changing a filter that causes the app to re-query the server is still a presentation action.* The fetch is a reactive consequence mediated by the app's normal data layer — identical to what happens when the user clicks the same filter. The action's direct effect is local view state. Direct server effects are reserved for domain procedure references.
 
 ## Capability
 
@@ -71,19 +71,19 @@ Read the semantic state of a component: visible rows, selected rows, active filt
 
 Observations:
 
-- MUST NOT produce side effects (normative contract on the author; the runtime cannot verify it, but the testing package helps enforce it — see [08-testing.md](08-testing.md));
+- MUST NOT produce side effects (normative contract on the author; the runtime cannot verify it, but the testing package helps enforce it — see [Testing](08-testing.md));
 - MUST have a typed output schema;
 - MAY be subject to policies (including hiding them from unauthorized consumers);
 - SHOULD return semantic, minimal data — never a dump of internal component state, never more than the consumer is authorized to see;
-- are executed **on demand** via invocation; they are never eagerly embedded in snapshots (see Snapshot below and decision D5 in [13-open-questions.md](13-open-questions.md)).
+- are executed **on demand** via invocation; they are never eagerly embedded in snapshots (see Snapshot below and decision D5 in [Decisions](project/13-open-questions.md)).
 
 ### Actions
 
-Change presentation state. Every action declares: canonical name, description, input schema, optional output schema, handler, effect category, idempotence, reversibility, policies, confirmation requirement, and optional preconditions. Full definition shape in [03-core-api.md](03-core-api.md).
+Change presentation state. Every action declares: canonical name, description, input schema, optional output schema, handler, effect category, idempotence, reversibility, policies, confirmation requirement, and optional preconditions. Full definition shape in [Core API](03-core-api.md).
 
 ### Procedure references
 
-A declaration that an *existing* domain procedure is relevant in the current view, optionally with UI-derived input bindings and extra frontend policy (typically confirmation UX). A procedure reference is **not a second tool**: its identity is the procedure's canonical identity, and execution flows through the normal oRPC client to the authoritative server procedure. Full model in [05-orpc-integration.md](05-orpc-integration.md).
+A declaration that an *existing* domain procedure is relevant in the current view, optionally with UI-derived input bindings and extra frontend policy (typically confirmation UX). A procedure reference is **not a second tool**: its identity is the procedure's canonical identity, and execution flows through the normal oRPC client to the authoritative server procedure. Full model in [oRPC integration](05-orpc-integration.md).
 
 ## The identity ladder
 
@@ -114,9 +114,9 @@ capability-name = lowercase-letter *( letter / digit )        ; camelCase, no do
 instance-id     = 1*( letter / digit / "-" / "_" )            ; app-chosen, data-derived
 ```
 
-- Parsing is unambiguous: the capability name is everything after the **last** dot; segments never contain uppercase, capability names never contain dots. Underscores are reserved (they are used by the wire-name encoding, [09-adapters.md](09-adapters.md#wire-names)).
+- Parsing is unambiguous: the capability name is everything after the **last** dot; segments never contain uppercase, capability names never contain dots. Underscores are reserved (they are used by the wire-name encoding, [Adapters](09-adapters.md#wire-names)).
 - For `domain:` IDs, the part after the prefix is the canonical oRPC procedure path (e.g. `devices.disable`) and is treated as opaque — agent-surface does not parse it further.
-- Maximum ID length: 128 characters. Registration MUST reject IDs violating the grammar (`INVALID_DEFINITION`, see [07-errors.md](07-errors.md)).
+- Maximum ID length: 128 characters. Registration MUST reject IDs violating the grammar (`INVALID_DEFINITION`, see [Errors](07-errors.md)).
 - Identity MUST NOT be derived from visible text, screen position, CSS selectors, or DOM structure.
 
 Examples:
@@ -130,7 +130,7 @@ domain:devices.disable
 
 ### No cross-plane duplication
 
-`domain:devices.disable` and `view:devices.disable` MUST NOT both exist. A frontend capability may *prepare, contextualize, or present* a domain operation, never redefine it. The registry detects suspicious suffix collisions between registered view capabilities and known domain procedure paths and warns (configurable to error) — see [03-core-api.md](03-core-api.md#collisions-d4) and D4.
+`domain:devices.disable` and `view:devices.disable` MUST NOT both exist. A frontend capability may *prepare, contextualize, or present* a domain operation, never redefine it. The registry detects suspicious suffix collisions between registered view capabilities and known domain procedure paths and warns (configurable to error) — see [Core API](03-core-api.md#collisions-d4) and D4.
 
 ## Effect taxonomy
 
@@ -145,9 +145,9 @@ type AgentEffect =
   | "destructive";         // procedure references only (hard to undo)
 ```
 
-**Decision (Draft, stable intent):** `server-query`, `server-mutation`, `external-side-effect`, and `destructive` are **reserved for procedure references**. View actions MUST declare `local-state` or `navigation`; registering a view action with a server effect fails with `PLANE_VIOLATION`. Rationale and alternatives in D-effects, [13-open-questions.md](13-open-questions.md). A "destructive but local" case (e.g. clearing an unsaved draft) is modeled as `local-state` with `reversible: false` and `confirmation: "required"` — the orthogonal properties below carry that weight.
+**Decision (Draft, stable intent):** `server-query`, `server-mutation`, `external-side-effect`, and `destructive` are **reserved for procedure references**. View actions MUST declare `local-state` or `navigation`; registering a view action with a server effect fails with `PLANE_VIOLATION`. Rationale and alternatives in D-effects, [Decisions](project/13-open-questions.md). A "destructive but local" case (e.g. clearing an unsaved draft) is modeled as `local-state` with `reversible: false` and `confirmation: "required"` — the orthogonal properties below carry that weight.
 
-**Navigation completion (D23, normative).** A `navigation` action's success is defined by its **handler settlement**, never by its owner's unmount timing: the handler resolves when the host router accepts or commits the transition (synchronous routers resolve trivially), and a successful navigation that unmounts its own registering component still reports `ok`. Unregistration never overwrites an in-flight navigation result; it only aborts the cooperative signal. Full rules in [03 §concurrency](03-core-api.md#concurrency-timeouts-cancellation).
+**Navigation completion (D23, normative).** A `navigation` action's success is defined by its **handler settlement**, never by its owner's unmount timing: the handler resolves when the host router accepts or commits the transition (synchronous routers resolve trivially), and a successful navigation that unmounts its own registering component still reports `ok`. Unregistration never overwrites an in-flight navigation result; it only aborts the cooperative signal. Full rules in [Core API §concurrency](03-core-api.md#concurrency-timeouts-cancellation).
 
 ### Orthogonal properties and defaults
 
@@ -199,15 +199,15 @@ A capability, at any instant, is in exactly one of three states *for a given con
 - Lack of **authorization** (the consumer/user may never do this) → **hidden**. Existence of a capability is itself information; deny-by-default means not leaking it.
 - Invalid **state** (the user could do this, but not right now: no rows selected, drawer already open) → **visible-disabled with a reason**. This is deliberately disclosed because it lets the agent plan ("select rows first, then `domain:devices.disable` becomes available").
 
-Built-in policies follow this rule; custom policies choose explicitly (`hide` vs `disable` decisions, [06-policies-and-security.md](06-policies-and-security.md)).
+Built-in policies follow this rule; custom policies choose explicitly (`hide` vs `disable` decisions, [Policies & Security](06-policies-and-security.md)).
 
-**Mounted ≠ visible.** Unmounting always removes capabilities, but some UI patterns keep components mounted while hidden (inactive tabs, off-screen virtualized content, `Activity`/keep-alive). Such components MUST gate themselves with `enabled: false` (or `when`) while not presented to the user. The React adapter documents the pattern ([04-react-api.md](04-react-api.md#visibility)).
+**Mounted ≠ visible.** Unmounting always removes capabilities, but some UI patterns keep components mounted while hidden (inactive tabs, off-screen virtualized content, `Activity`/keep-alive). Such components MUST gate themselves with `enabled: false` (or `when`) while not presented to the user. The React adapter documents the pattern ([React API](04-react-api.md#visibility)).
 
 ## Surface, snapshot, and version
 
 - The **surface** is the live set of registrations plus their availability, as filtered by policies for a given consumer.
 - A **snapshot** is an immutable, serializable capture of the surface at one instant: a catalog of components and capability *descriptors* (schemas, descriptions, availability, binding metadata) — never handlers, never eagerly-read state.
-- `surfaceId` is a random identifier minted per registry instance (per page load). `surfaceVersion` is a monotonically increasing integer (serialized as string) scoped to that `surfaceId`, incremented on every surface-affecting mutation. Together they order and scope snapshots; details and rationale in [03-core-api.md](03-core-api.md#versioning) and D1.
+- `surfaceId` is a random identifier minted per registry instance (per page load). `surfaceVersion` is a monotonically increasing integer (serialized as string) scoped to that `surfaceId`, incremented on every surface-affecting mutation. Together they order and scope snapshots; details and rationale in [Core API](03-core-api.md#versioning) and D1.
 - **Staleness**: an invocation may carry the `registrationId` (and optionally `surfaceVersion`) it discovered. If the target registration has since been replaced, the invocation fails with `STALE_CAPABILITY`; if it is gone, with `COMPONENT_UNMOUNTED`. The registry never keeps executable references to unmounted components.
 
 ### The lazy interaction model
@@ -221,19 +221,19 @@ To avoid shipping application state into the model's context, consumers follow f
 
 ## Consumers
 
-A **consumer** is the identified agent-side client of a surface: the embedded copilot, a WebMCP peer, a test harness. Consumers carry an id, a kind, and optional grants; snapshots and invocations are evaluated *per consumer*. An agent MUST NOT be able to invoke a capability that was not present in the surface granted to it — enforced because invocation re-runs the same policy pipeline that filtered the snapshot ([06-policies-and-security.md](06-policies-and-security.md)).
+A **consumer** is the identified agent-side client of a surface: the embedded copilot, a WebMCP peer, a test harness. Consumers carry an id, a kind, and optional grants; snapshots and invocations are evaluated *per consumer*. An agent MUST NOT be able to invoke a capability that was not present in the surface granted to it — enforced because invocation re-runs the same policy pipeline that filtered the snapshot ([Policies & Security](06-policies-and-security.md)).
 
 ## Policies
 
-Composable middleware attached at registry, component, or capability level, evaluated **both** at discovery (synchronously, to filter/disable) and at invocation (asynchronously, authoritatively for the client side). Discovery-time evaluation is an optimization and a UX aid; invocation-time evaluation is the client-side gate; the server remains the real gate for domain operations. Full model in [06-policies-and-security.md](06-policies-and-security.md).
+Composable middleware attached at registry, component, or capability level, evaluated **both** at discovery (synchronously, to filter/disable) and at invocation (asynchronously, authoritatively for the client side). Discovery-time evaluation is an optimization and a UX aid; invocation-time evaluation is the client-side gate; the server remains the real gate for domain operations. Full model in [Policies & Security](06-policies-and-security.md).
 
 ## Confirmation
 
-A confirmation dialog is a *representation* of policy, not the policy. The runtime returns a typed `CONFIRMATION_REQUIRED` outcome with a single-use, expiring confirmation record bound to a canonical digest of the exact request — surface, registration, capability, consumer, **validated effective input**, and effect — so what the user approves is what executes, bound values included (D21). The host renders UI; the user resolves; the agent (or the adapter on its behalf) retries with the confirmation evidence; for domain procedures the server MAY additionally require its own approval. Protocol in [06-policies-and-security.md](06-policies-and-security.md#confirmation).
+A confirmation dialog is a *representation* of policy, not the policy. The runtime returns a typed `CONFIRMATION_REQUIRED` outcome with a single-use, expiring confirmation record bound to a canonical digest of the exact request — surface, registration, capability, consumer, **validated effective input**, and effect — so what the user approves is what executes, bound values included (D21). The host renders UI; the user resolves; the agent (or the adapter on its behalf) retries with the confirmation evidence; for domain procedures the server MAY additionally require its own approval. Protocol in [Policies & Security](06-policies-and-security.md#confirmation).
 
 ## Trust of registrants
 
-Registrations are code running in the page, but not all page code is equally trusted (third-party widgets, embedded iframes with access to the app bundle, plugins). Each registration carries an `origin` label (default `"first-party"`); the registry can be configured with a registration guard that rejects or restricts registrations from other origins. This distinguishes first-party capabilities from capabilities registered by less-trusted code without pretending the browser gives real isolation — see the honest limits in [06-policies-and-security.md](06-policies-and-security.md#trust-model-for-registrants).
+Registrations are code running in the page, but not all page code is equally trusted (third-party widgets, embedded iframes with access to the app bundle, plugins). Each registration carries an `origin` label (default `"first-party"`); the registry can be configured with a registration guard that rejects or restricts registrations from other origins. This distinguishes first-party capabilities from capabilities registered by less-trusted code without pretending the browser gives real isolation — see the honest limits in [Policies & Security](06-policies-and-security.md#trust-model-for-registrants).
 
 ## Glossary (quick reference)
 

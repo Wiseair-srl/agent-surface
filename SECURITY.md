@@ -24,10 +24,10 @@ Read before reporting, to calibrate expectations:
 
 ## Supported versions
 
-Pre-1.0 (current): only the latest published 0.x minor receives fixes. Post-1.0, the policy in [12-roadmap.md](docs/12-roadmap.md) applies: latest minor receives fixes; the previous minor receives critical fixes for 6 months.
+Pre-1.0 (current): only the latest published 0.x minor receives fixes. Post-1.0, the policy in [the roadmap](docs/project/12-roadmap.md) applies: latest minor receives fixes; the previous minor receives critical fixes for 6 months.
 
 ## Security review is wanted
 
-Structured review is actively wanted. Highest-value targets: the [threat model](docs/06-policies-and-security.md#threat-model), the [10-phase invocation pipeline](docs/02-architecture.md#invocation-pipeline-normative-order), and the [confirmation protocol](docs/06-policies-and-security.md#confirmation) — the three places where a subtle ordering mistake becomes an authority mistake (see [18-spec-corrections-rfc.md](docs/18-spec-corrections-rfc.md) for the P0 corrections already found this way). Non-exploitable design critique is welcome as a public issue labeled `security-design`.
+Structured review is actively wanted. Highest-value targets: the [threat model](docs/06-policies-and-security.md#threat-model), the [10-phase invocation pipeline](docs/02-architecture.md#invocation-pipeline-normative-order), and the [confirmation protocol](docs/06-policies-and-security.md#confirmation) — the three places where a subtle ordering mistake becomes an authority mistake (see [the Spec Corrections RFC](docs/project/18-spec-corrections-rfc.md) for the P0 corrections already found this way). Non-exploitable design critique is welcome as a public issue labeled `security-design`.
 
 Every normative security guarantee is expected to have a named conformance test: `spec/conformance.json` maps requirement IDs to tests, and `pnpm check:conformance` fails the build when one is missing. A report that a guarantee is *untested* is as useful as one that it is broken.

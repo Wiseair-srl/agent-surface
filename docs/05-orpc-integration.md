@@ -1,9 +1,9 @@
 # 05 — oRPC Integration (`@agent-surface/orpc`)
 
 > [!NOTE]
-> **Status: Draft**, with the `orpc-agent` interop marked **Experimental** where noted. The interop is written against the documented API at [orpc-agent.dev](https://orpc-agent.dev) (capability registry, agent runtime, `toAISDKTools`, approvals) and is quarantined behind small interfaces so their evolution never leaks into core. Core stays oRPC-free: everything here builds on the public extension points of [03-core-api.md](03-core-api.md) (`setProcedureExecutor`, `procedures` in definitions).
+> **Status: Draft**, with the `orpc-agent` interop marked **Experimental** where noted. The interop is written against the documented API at [orpc-agent.dev](https://orpc-agent.dev) (capability registry, agent runtime, `toAISDKTools`, approvals) and is quarantined behind small interfaces so their evolution never leaks into core. Core stays oRPC-free: everything here builds on the public extension points of [Core API](03-core-api.md) (`setProcedureExecutor`, `procedures` in definitions).
 
-If [01-concepts.md](01-concepts.md) told you *never duplicate a domain operation in the frontend*, this document is the "so what do I do instead". The short answer: you **reference** the procedure — same identity, same server authority — and the reference adds the three things only the frontend can know: whether it's relevant *right now*, which inputs come from the UI state, and what the user must confirm before it runs. For the full-stack shape of this wired into a chat (Mastra + assistant-ui), see the wiring guide in [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md) — sketch code, not a runnable package.
+If [Concepts](01-concepts.md) told you *never duplicate a domain operation in the frontend*, this document is the "so what do I do instead". The short answer: you **reference** the procedure — same identity, same server authority — and the reference adds the three things only the frontend can know: whether it's relevant *right now*, which inputs come from the UI state, and what the user must confirm before it runs. For the full-stack shape of this wired into a chat (Mastra + assistant-ui), see the wiring guide in [Mastra + assistant-ui](16-mastra-assistant-ui.md) — sketch code, not a runnable package.
 
 ## Purpose and non-purpose
 
@@ -34,9 +34,9 @@ flowchart LR
 
 Three topologies, two of them supported:
 
-- **Embedded agent (v0.1 target).** The loop runs in/next to the page. The toolset merges `view:` capabilities and currently-referenced `domain:` procedures into one catalog; contextual mutations flow *through the surface*, so binding, confirmation, and staleness all apply.
-- **Server-side loop with per-turn frontend tools (supported).** The loop runs on a server (Mastra, AI SDK route) but a chat transport (assistant-ui, AI SDK `useChat`) re-declares the live surface's tools at the start of every turn and streams tool-calls back to the browser for execution. Contextual gating works because tools are pulled fresh per turn and availability is re-checked at invocation anyway. Non-contextual domain tools (reasoning queries) MAY additionally run server-side via orpc-agent directly — partition each operation to exactly one path. Wiring sketch (not executable): [16-mastra-assistant-ui.md](16-mastra-assistant-ui.md); this topology has no runnable example in the repo yet.
-- **Autonomous server-side agent, no live frontend.** Propagating frontend context (bindings, contextual availability) to an agent with no page open requires a sync protocol that is deliberately **Future** (see [13-open-questions.md](13-open-questions.md#part-b--genuinely-open-questions)). v0.1 does not pretend to gate this case.
+- **Embedded agent (supported, and the one with a runnable example).** The loop runs in/next to the page. The toolset merges `view:` capabilities and currently-referenced `domain:` procedures into one catalog; contextual mutations flow *through the surface*, so binding, confirmation, and staleness all apply.
+- **Server-side loop with per-turn frontend tools (supported).** The loop runs on a server (Mastra, AI SDK route) but a chat transport (assistant-ui, AI SDK `useChat`) re-declares the live surface's tools at the start of every turn and streams tool-calls back to the browser for execution. Contextual gating works because tools are pulled fresh per turn and availability is re-checked at invocation anyway. Non-contextual domain tools (reasoning queries) MAY additionally run server-side via orpc-agent directly — partition each operation to exactly one path. Wiring sketch (not executable): [Mastra + assistant-ui](16-mastra-assistant-ui.md); this topology has no runnable example in the repo yet.
+- **Autonomous server-side agent, no live frontend.** Propagating frontend context (bindings, contextual availability) to an agent with no page open requires a sync protocol that is deliberately **Future** (see [Decisions](project/13-open-questions.md#part-b--genuinely-open-questions)). 0.x does not pretend to gate this case.
 
 The rule the first two topologies share: an operation the user must contextually control (bound inputs, confirmation) is reachable **only** through the surface — in orpc-agent terms, `expose.aiSdk: false` on that capability, so the server-side loop cannot also see it as a direct tool.
 
@@ -184,7 +184,7 @@ Let `B` = keys produced by `bind()` (statically: `keyof TBound`).
 3. **`overridableFields`** flips specific fields to defaults: the field stays in the agent-facing schema (annotated `default` = "current UI value at execution"); an agent-supplied value wins, otherwise `bind()`'s value applies. Discouraged; remember the server authorizes whatever ids arrive regardless.
 4. **Evaluation time.** `bind()` runs during invocation phase 5 (effective input), on the live UI state — never a cached discovery-time value; a binding value that changed after discovery is therefore what the confirmation shows and what executes (D21). Discovery-time snapshots include binding *metadata*, not binding *values* (values may be sensitive and would go stale).
 5. **Effective input** = `parse(manifestSchema, merge(agentInput restricted to unlocked, bind()))` — the merged object is validated against the **full original schema** before forwarding, so a binding bug cannot ship an invalid call.
-6. **Static typing.** `TBound extends Partial<TIn>` makes wrong-typed bindings a compile error; `overridableFields` is constrained to `keyof TBound`. Top-level fields only in v0.1; deep-path binding is an open question (OQ-6).
+6. **Static typing.** `TBound extends Partial<TIn>` makes wrong-typed bindings a compile error; `overridableFields` is constrained to `keyof TBound`. Top-level fields only in 0.x; deep-path binding is an open question (OQ-6).
 
 ## Snapshot descriptor
 
@@ -220,7 +220,7 @@ export interface AgentProcedureDescriptor {
 
 Procedure descriptors live at the **top level** of the snapshot (`snapshot.procedures`), never nested inside components: the planes stay structurally distinct, and a procedure referenced by two components appears as two entries disambiguated by `registrationId`.
 
-`describe()` is the one place a *reference* contributes live text ("Currently bound to the 3 selected devices"). It is planning fuel and it changes whenever the UI does, which is why it is carried as its own field rather than concatenated into `description`: a host shipping this catalog to a provider needs the stable half to stay stable (D28, [09 §rendering-capability-state](09-adapters.md#rendering-capability-state)).
+`describe()` is the one place a *reference* contributes live text ("Currently bound to the 3 selected devices"). It is planning fuel, and it changes whenever the UI does — which is why it is a field of its own rather than concatenated into `description` (D28, [Adapters §rendering-capability-state](09-adapters.md#rendering-capability-state)).
 
 ### Multiple simultaneous references
 
@@ -228,9 +228,9 @@ Two mounted components may reference the same procedure with different bindings 
 
 ## Execution flow
 
-`invoke({capabilityId: "domain:devices.disable", …})` runs the standard pipeline ([02](02-architecture.md#invocation-pipeline-normative-order)) with these specifics:
+`invoke({capabilityId: "domain:devices.disable", …})` runs the standard pipeline ([Architecture](02-architecture.md#invocation-pipeline-normative-order)) with these specifics:
 
-1. Resolution targets the procedure *reference* registration (staleness applies to the reference: a reference from a dead snapshot ⇒ `STALE_CAPABILITY`). `destructive`/`external-side-effect` + `surfaceVersion` mismatch ⇒ `STALE_CAPABILITY` ([03 §versioning](03-core-api.md#versioning)).
+1. Resolution targets the procedure *reference* registration (staleness applies to the reference: a reference from a dead snapshot ⇒ `STALE_CAPABILITY`). `destructive`/`external-side-effect` + `surfaceVersion` mismatch ⇒ `STALE_CAPABILITY` ([Core API §versioning](03-core-api.md#versioning)).
 2. Pre-input authority policies run (`onAuthorize`: authn/authz/tenant/environment — phase 4; no agent input visible).
 3. The input phase applies the binding semantics above and produces the validated **effective input** (phase 5).
 4. Post-input policies and the confirmation decision run over the effective input (phase 6, D21) — a confirmation summary therefore always shows the bound values the server will receive; then the registry calls the installed executor (phase 9):
@@ -252,7 +252,7 @@ export interface ProcedureCallInfo {
 }
 ```
 
-5. The bridge's executor calls the oRPC client with the user's normal authenticated transport, passing `callContext(info)` if configured — this is where apps forward confirmation evidence or an `x-agent-invocation-id` header if their backend wants them. Transport/procedure errors are sanitized into `EXECUTION_FAILED` (safe message; full error to logs/audit only — see [07-errors.md](07-errors.md)). An oRPC `UNAUTHORIZED`-class error maps to `NOT_AUTHORIZED` where distinguishable.
+5. The bridge's executor calls the oRPC client with the user's normal authenticated transport, passing `callContext(info)` if configured — this is where apps forward confirmation evidence or an `x-agent-invocation-id` header if their backend wants them. Transport/procedure errors are sanitized into `EXECUTION_FAILED` (safe message; full error to logs/audit only — see [Errors](07-errors.md)). An oRPC `UNAUTHORIZED`-class error maps to `NOT_AUTHORIZED` where distinguishable.
 6. The server re-evaluates authentication, authorization, tenant, validation, rate, and its own approval policy (orpc-agent). A server-side approval requirement can surface as a structured error the executor maps to `CONFIRMATION_REQUIRED` (`details.origin: "server"`) — the frontend confirmation and the server approval are **independent layers**; passing the first never satisfies the second.
 
 ## What the client checks vs what the server must re-check (D10)
@@ -271,6 +271,6 @@ export interface ProcedureCallInfo {
 ## Anti-duplication rules (recap, normative)
 
 - A procedure reference's identity IS the procedure id. There is no "frontend variant" id, ever.
-- Registering a `view:` capability whose `type.name` equals a manifest path triggers the suffix-collision diagnostic ([03 §collisions](03-core-api.md#collisions-d4)).
-- `confirmation` and policies on a reference can only **tighten**, never loosen, what the manifest declares (`requiresApproval`, `destructive` floor from [01 defaults](01-concepts.md#orthogonal-properties-and-defaults)).
+- Registering a `view:` capability whose `type.name` equals a manifest path triggers the suffix-collision diagnostic ([Core API §collisions](03-core-api.md#collisions-d4)).
+- `confirmation` and policies on a reference can only **tighten**, never loosen, what the manifest declares (`requiresApproval`, `destructive` floor from [Concepts §defaults](01-concepts.md#orthogonal-properties-and-defaults)).
 - If you find yourself writing an `execute` handler in this package, you are duplicating the domain — there is deliberately no place to put one.

@@ -1,7 +1,7 @@
 # 04 — React API (`@agent-surface/react`)
 
 > [!NOTE]
-> **Status: Draft** unless marked otherwise. Peer dependency: `react >= 18.2` (React 19 supported). Everything here is a thin, lifecycle-correct binding over the core registry — no behavior exists here that contradicts [03-core-api.md](03-core-api.md).
+> **Status: Draft** unless marked otherwise. Peer dependency: `react >= 18.2` (React 19 supported). Everything here is a thin, lifecycle-correct binding over the core registry — no behavior exists here that contradicts [Core API](03-core-api.md).
 
 > [!TIP]
 > One rule explains most of this page: **registration happens once per mount, in an effect; handlers are read through a ref at invocation time.** That is why there are no dependency arrays, no `useCallback` requirements, and no stale-closure bugs — and why Strict Mode, Suspense, and SSR all work without special cases.
@@ -127,7 +127,7 @@ function DevicesTable() {
 
 ### Availability is reactive
 
-`when()` predicates and `enabled` are evaluated during render commit: the hook compares the evaluated availability vector against the last pushed one and calls `handle.update({availability, enabled})` on change. So in React apps, availability changes are **pushed** — the surface version bumps, `surface-changed` fires, adapters refresh. (This is the push half of the split defined in [03 §availability](03-core-api.md#availability).)
+`when()` predicates and `enabled` are evaluated during render commit: the hook compares the evaluated availability vector against the last pushed one and calls `handle.update({availability, enabled})` on change. So in React apps, availability changes are **pushed** — the surface version bumps, `surface-changed` fires, adapters refresh. (This is the push half of the split defined in [Core API §availability](03-core-api.md#availability).)
 
 ```tsx
 actions: {
@@ -153,7 +153,7 @@ Unmounting always removes capabilities. But "mounted and invisible" needs explic
 
 ## Strict Mode, Suspense, SSR, concurrency
 
-- **Strict Mode (development)**: mount → unmount → mount produces register → unregister → register: two short-lived registrationIds, two version bumps. This is correct and intentional — it proves cleanup symmetry. Tests and adapters MUST NOT assume registrationIds are stable across Strict Mode remounts; the testing package normalizes them ([08-testing.md](08-testing.md#semantic-snapshots)).
+- **Strict Mode (development)**: mount → unmount → mount produces register → unregister → register: two short-lived registrationIds, two version bumps. This is correct and intentional — it proves cleanup symmetry. Tests and adapters MUST NOT assume registrationIds are stable across Strict Mode remounts; the testing package normalizes them ([Testing](08-testing.md#semantic-snapshots)).
 - **Suspense**: a suspended component never committed, so it never registered. On unsuspend, the effect runs and registration appears. If a boundary later hides committed content, React's cleanup semantics unregister it. Net rule: *the surface contains exactly what React has committed and is showing* — no special casing needed.
 - **SSR / RSC**: hooks are client-only (`"use client"` modules). During server render nothing registers (effects don't run). No registry access during render means zero hydration mismatch by construction.
 - **Concurrent rendering**: because registration is commit-phase only and identity is data-derived, interrupted/discarded renders have no effect on the surface.
@@ -170,8 +170,8 @@ export const registry: AgentSurfaceRegistry =
 - **Dynamic lists** (a component per entity) → `instanceId: entity.id`. NEVER an array index: indices are render-order identity, which the spec forbids.
 - **Recursive components** (tree nodes) → `instanceId: node.id`, `parent: { type, instanceId: node.parentId }`. Depth is irrelevant; identity comes from data.
 - **Portals** → irrelevant. Identity is explicit; where the DOM lands does not matter.
-- **Multiple browser tabs / windows** → one registry per tab; surfaces are independent. Cross-window aggregation is Future ([12-roadmap.md](12-roadmap.md)).
-- **Route transitions** → unmount unregisters; in-flight invocations settle `COMPONENT_UNMOUNTED` — **except `navigation`-effect actions**, which settle on handler settlement so a successful transition that unmounts its own component still reports `ok` (D23, [03 §concurrency](03-core-api.md#concurrency-timeouts-cancellation)). Author navigation handlers to resolve when the router accepts the transition — `await router.navigate(...)` where available, or plain `router.push(); return;` for synchronous routers. A `navigation` action's result carries `surfaceChanged: true` when the version moved during execution, cueing the agent to re-discover before its next step.
+- **Multiple browser tabs / windows** → one registry per tab; surfaces are independent. Cross-window aggregation is Future ([Roadmap](project/12-roadmap.md)).
+- **Route transitions** → unmount unregisters; in-flight invocations settle `COMPONENT_UNMOUNTED` — **except `navigation`-effect actions**, which settle on handler settlement so a successful transition that unmounts its own component still reports `ok` (D23, [Core API §concurrency](03-core-api.md#concurrency-timeouts-cancellation)). Author navigation handlers to resolve when the router accepts the transition — `await router.navigate(...)` where available, or plain `router.push(); return;` for synchronous routers. A `navigation` action's result carries `surfaceChanged: true` when the version moved during execution, cueing the agent to re-discover before its next step.
 
 ## Granular hooks — Experimental
 
@@ -227,12 +227,12 @@ function AgentConfirmationHost() {
 }
 ```
 
-The dialog is *representation*, not policy: approving calls `registry.confirmations.resolve`, which mints the single-use evidence; everything enforceable lives in core ([06-policies-and-security.md](06-policies-and-security.md#confirmation)).
+The dialog is *representation*, not policy: approving calls `registry.confirmations.resolve`, which mints the single-use evidence; everything enforceable lives in core ([Policies & Security](06-policies-and-security.md#confirmation)).
 
 ## Anti-patterns (normative SHOULD NOTs)
 
 - Deriving `type`/`instanceId` from labels, i18n strings, DOM ids, or render order.
 - Registering one component per DOM widget out of habit — granularity follows *user intent*; a filter bar with five inputs is usually **one** `devices.filters` component with one `set` action.
 - Exposing raw internal state in observations (`read: () => wholeReduxStore`). Return the minimal semantic projection an agent needs.
-- Making a `view:` action call your API client directly. That is a domain operation: define an oRPC procedure and reference it ([05-orpc-integration.md](05-orpc-integration.md)). The plane rule (`PLANE_VIOLATION`) catches declared effects, but it cannot see inside your handler — this one is on the author and the code reviewer.
+- Making a `view:` action call your API client directly. That is a domain operation: define an oRPC procedure and reference it ([oRPC integration](05-orpc-integration.md)). The plane rule (`PLANE_VIOLATION`) catches declared effects, but it cannot see inside your handler — this one is on the author and the code reviewer.
 - Gating destructive behavior only in the UI dialog instead of `confirmation: "required"` — dialogs are bypassable representation; the policy is what the runtime enforces.

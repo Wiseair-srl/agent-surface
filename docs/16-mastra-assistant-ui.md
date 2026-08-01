@@ -1,14 +1,9 @@
 # 16 — Integration Guide: Mastra + assistant-ui + orpc-agent
 
 > [!WARNING]
-> **Status: wiring guide — NOT an executable example.** Every snippet on this page is hand-written prose-adjacent code: none of it exists in `examples/`, none is compiled, none is covered by a test. There is no Mastra server, no `AgentSurfaceChatBridge.tsx`, no orpc-agent runtime in this repository. Treat the code as a *shape to follow*, not a file to copy-run.
+> **Wiring guide, not an executable example.** Every snippet here is hand-written: none of it exists in `examples/`, none is compiled, none is covered by a test. There is no Mastra server and no orpc-agent runtime in this repository. Treat the code as a shape to follow, not a file to copy-run — and expect it to drift, because it is not type-checked (it already needed a manual patch when D26 made toolset topology explicit). Third-party APIs — `orpc-agent`, Mastra, assistant-ui — are quoted from their mid-2026 documentation and move independently; where one is load-bearing, the text says which and why.
 >
-> The repository's one executable example is [10-examples.md](10-examples.md) → `examples/devices-app` (runnable, 13 tests, the scripted end-to-end scenario, requirement `AS-EXAMPLE-001`). That app *does* use assistant-ui for its chat thread, with a local scripted loop — the server-side half described here (Mastra loop, per-turn frontend-tool transport, orpc-agent governance) is unbuilt.
->
-> Consequence to respect: because these snippets are not type-checked, they can drift silently when `@agent-surface/*` APIs change (they already needed a manual patch when D26 made toolset topology explicit). Directive [§9.3](17-maintainer-directive.md) asks for executable examples; promoting this page into a real package is tracked as future work in [15-completeness-review.md](15-completeness-review.md).
-
-> [!NOTE]
-> **Third-party APIs.** The `@agent-surface/*` code follows this spec (design phase, not yet published); the `orpc-agent`, Mastra, and assistant-ui APIs are quoted from their current documentation ([orpc-agent.dev](https://orpc-agent.dev), as of mid-2026) and may drift. Where a third-party API is load-bearing, the text says which one and why.
+> The repository's one executable example is [Examples](10-examples.md) → `examples/devices-app` (`AS-EXAMPLE-001`), which *does* use assistant-ui for its chat thread, driven by a local scripted loop. The server-side half described below — Mastra loop, per-turn frontend-tool transport, orpc-agent governance — is unbuilt. Promoting this page into a real package is tracked in [Completeness review](project/15-completeness-review.md).
 
 **The question this page answers:** *does agent-surface work with an agent framework like Mastra?*
 
@@ -21,7 +16,7 @@
 
 ## What you'll build
 
-The devices page from [10-examples.md](10-examples.md), plus a chat panel. The user types *"show the offline devices in Milan, select them and disable them"*; the model coordinates presentation tools (filters, selection — executed in the browser) and domain tools (listing for its own reasoning — executed on the server; disabling — executed through the surface with binding and confirmation).
+The devices page from [Examples](10-examples.md), plus a chat panel. The user types *"show the offline devices in Milan, select them and disable them"*; the model coordinates presentation tools (filters, selection — executed in the browser) and domain tools (listing for its own reasoning — executed on the server; disabling — executed through the surface with binding and confirmation).
 
 ```mermaid
 flowchart LR
@@ -55,7 +50,7 @@ This is the load-bearing decision of the whole page. Each tool the model sees li
 | `domain_devices__disable` | domain mutation, **contextual** | agent-surface procedure reference | **browser → oRPC client → server** | needs the selection binding + user confirmation; the server stays authoritative |
 
 > [!IMPORTANT]
-> `devices.disable` is deliberately **not** exposed to the model server-side (`expose.aiSdk: false` below). If it were, the model would see two disable tools — the duplication that [05 §anti-duplication](05-orpc-integration.md#anti-duplication-rules-recap-normative) forbids and the suffix-collision guard warns about. One operation, one path: the contextual one, with the selection bound and the human in the loop. The server governs it either way.
+> `devices.disable` is deliberately **not** exposed to the model server-side (`expose.aiSdk: false` below). If it were, the model would see two disable tools — the duplication that [oRPC integration §anti-duplication](05-orpc-integration.md#anti-duplication-rules-recap-normative) forbids and the suffix-collision guard warns about. One operation, one path: the contextual one, with the selection bound and the human in the loop. The server governs it either way.
 
 ## 1 · Backend: capabilities with orpc-agent
 
@@ -114,7 +109,7 @@ The browser reaches `devices.disable` through the app's normal authenticated oRP
 
 ## 2 · Server: the Mastra agent and the chat route
 
-The agent itself is plain Mastra. The interesting line is the instructions: the tool descriptions already carry `[view · …]` / `[domain · …]` prefixes (the toolset adds them, [09](09-adapters.md#embedded-toolset-adapter-draft)), and telling the model what the prefixes mean measurably improves its planning:
+The agent itself is plain Mastra. The interesting line is the instructions: the tool descriptions already carry `[view · …]` / `[domain · …]` prefixes (the toolset adds them, [Adapters](09-adapters.md#embedded-toolset-adapter-draft)), and telling the model what the prefixes mean measurably improves its planning:
 
 ```ts
 // src/mastra/agents/device-assistant.ts
@@ -216,7 +211,7 @@ export function AgentSurfaceChatBridge() {
     // A remote loop re-projects per turn and ships the result to a provider,
     // so it is the topology D28 was written for: render `t.state` into the
     // system message, or every availability flip re-bills the cached prefix
-    // ([09 §rendering-capability-state](09-adapters.md#rendering-capability-state)).
+    // (docs/09-adapters.md §rendering-capability-state).
     return () => { unregister(); toolset.dispose(); };
   }, [aui, registry]);
 
@@ -226,9 +221,9 @@ export function AgentSurfaceChatBridge() {
 
 Three details worth noticing:
 
-- **`toolCallId` becomes the `invocationId`**, scoped to this bridge's consumer, so a retried stream never double-executes an action — and an id accidentally reused for a *different* request fails closed with `INVOCATION_CONFLICT` ([03 §identity](03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22)).
+- **`toolCallId` becomes the `invocationId`**, scoped to this bridge's consumer, so a retried stream never double-executes an action — and an id accidentally reused for a *different* request fails closed with `INVOCATION_CONFLICT` ([Core API §identity](03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22)).
 - **Errors are returned, not thrown.** A `CAPABILITY_NOT_AVAILABLE` payload with its `reason` goes back to the model as tool output — that reason ("Select at least one device first") is exactly what the model needs to self-correct.
-- **This is a `remote` topology** (the loop streams from a server), so its default confirmation mode is `two-phase` (D26, [09 §confirmation-topology](09-adapters.md#confirmation-topology)). The example opts into `"wait"` explicitly for the simplest chat UX — one call, one final result — which holds the streaming run open across the dialog: acceptable only when your transport timeout comfortably exceeds the confirmation TTL. Drop the `confirmations` line to get the safer two-phase default, where the model receives `CONFIRMATION_REQUIRED` and retries next turn.
+- **This is a `remote` topology** (the loop streams from a server), so its default confirmation mode is `two-phase` (D26, [Adapters §confirmation-topology](09-adapters.md#confirmation-topology)). The example opts into `"wait"` explicitly for the simplest chat UX — one call, one final result — which holds the streaming run open across the dialog: acceptable only when your transport timeout comfortably exceeds the confirmation TTL. Drop the `confirmations` line to get the safer two-phase default, where the model receives `CONFIRMATION_REQUIRED` and retries next turn.
 
 The page itself composes pieces you have already seen:
 
@@ -264,21 +259,21 @@ export function DevicesWorkspace() {
 3. Model calls `view_devices__table__readState` → sees three visible rows.
 4. Model calls `view_devices__table__selectRows {ids:[…]}` → selection set; the `when` on the procedure reference flips, so the *next* turn's catalog will show `domain_devices__disable` as available. (Within this same turn the tool already exists in the catalog; only its availability changed — and availability is re-checked at invocation, not trusted from the catalog.)
 5. Model calls `domain_devices__disable {}` (input empty: `deviceIds` is bound and locked). The registry evaluates the binding against the *live* selection, hits `confirmation: "required"` → the dialog renders: *"Disable 3 devices (d1, d2, d3)?"*.
-6. User confirms. The evidence is single-use and bound to those exact ids ([06 §confirmation](06-policies-and-security.md#confirmation)); the toolset retries internally, the oRPC client executes under the user's session, the server re-validates everything, rows go grey.
+6. User confirms. The evidence is single-use and bound to those exact ids ([Policies & Security §confirmation](06-policies-and-security.md#confirmation)); the toolset retries internally, the oRPC client executes under the user's session, the server re-validates everything, rows go grey.
 7. The tool result (`ok`, with the current `surfaceVersion`) returns through the stream; the model summarizes what happened.
 
 Had the model tried `domain_devices__disable {deviceIds:["victim"]}`, the locked-binding rule would have answered `INVALID_INPUT { lockedFields: ["deviceIds"] }` — the model cannot aim the operation anywhere the user isn't looking.
 
 ## Where orpc-agent's approvals fit
 
-This example gates the destructive call with agent-surface's **frontend confirmation** — appropriate here because the human is present and the call runs under their session. orpc-agent has its own, stricter layer: policy-driven, input-hash-bound, single-use **approvals** on the server (`{ status: "approval-required", approvalId, … }` as a tool result; `runtime.approvals.decide` + `runtime.resume` to continue). The two are independent by design — [06 rule 7](06-policies-and-security.md#normative-rules): the server MUST NOT treat a frontend confirmation as authorization. Use both when the operation warrants it (the chat then shows the approval-required message and your approver UI drives `decide`); for a simple in-session app like this one, frontend confirmation plus the server's normal authorization is a reasonable floor.
+This example gates the destructive call with agent-surface's **frontend confirmation** — appropriate here because the human is present and the call runs under their session. orpc-agent has its own, stricter layer: policy-driven, input-hash-bound, single-use **approvals** on the server (`{ status: "approval-required", approvalId, … }` as a tool result; `runtime.approvals.decide` + `runtime.resume` to continue). The two are independent by design — [Policies & Security rule 7](06-policies-and-security.md#normative-rules): the server MUST NOT treat a frontend confirmation as authorization. Use both when the operation warrants it (the chat then shows the approval-required message and your approver UI drives `decide`); for a simple in-session app like this one, frontend confirmation plus the server's normal authorization is a reasonable floor.
 
 ## What this example deliberately leaves out
 
-Memory/threads (Mastra has them; orthogonal), streaming tool UI (`assistant-ui` tool render components — plug them into the same `tool()` definitions), multi-page routing (add the `app.navigation` component from [10 §patterns](10-examples.md#smaller-patterns)), and orpc-agent MCP exposure (a different surface of the same capabilities). None of it changes the bridge.
+Memory/threads (Mastra has them; orthogonal), streaming tool UI (`assistant-ui` tool render components — plug them into the same `tool()` definitions), multi-page routing (add the `app.navigation` component from [Examples §patterns](10-examples.md#smaller-patterns)), and orpc-agent MCP exposure (a different surface of the same capabilities). None of it changes the bridge.
 
 ## Takeaways
 
-- **"Is Mastra supported?" is the wrong shape of question** — nothing here is Mastra-specific except ~10 lines in the route. The same bridge serves plain AI SDK `streamText` (drop the Mastra middle), LangGraph, or an in-page loop. The adapter contract ([09](09-adapters.md)) is the support.
+- **"Is Mastra supported?" is the wrong shape of question** — nothing here is Mastra-specific except ~10 lines in the route. The same bridge serves plain AI SDK `streamText` (drop the Mastra middle), LangGraph, or an in-page loop. The adapter contract ([Adapters](09-adapters.md)) is the support.
 - **The tool partition is the architecture.** Server-reasoning tools via orpc-agent; view tools and *contextual* domain references via the surface; each operation reachable by exactly one path.
 - **Per-turn pull makes lifecycle free.** Because both assistant-ui (`getModelContext`) and this spec (snapshot-per-turn, availability re-checked at invocation) are pull-based, mounting and unmounting components just works — no tool-list synchronization code exists anywhere in this example.

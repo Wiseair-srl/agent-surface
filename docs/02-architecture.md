@@ -1,7 +1,7 @@
 # 02 — Architecture
 
 > [!NOTE]
-> **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [01-concepts.md](01-concepts.md); APIs in [03](03-core-api.md)–[05](05-orpc-integration.md).
+> **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [Concepts](01-concepts.md); APIs in [Core API](03-core-api.md)–[oRPC integration](05-orpc-integration.md).
 
 Read this page to learn three things: **where code lives** (packages and their dependency rules), **how a call flows** (registration → discovery → the ten-phase invocation pipeline), and **what the runtime guarantees** (ordering, concurrency, memory bounds). If you're deciding whether the library fits your app, the [responsibilities table](#where-responsibilities-live) at the bottom is the fastest answer to "what would be mine to build".
 
@@ -118,7 +118,7 @@ sequenceDiagram
 
 ### Invocation pipeline (normative order)
 
-For every `invoke`, the registry MUST execute exactly these phases in order; the first failing phase produces the typed error shown. The order is a protocol guarantee, corrected by [18-spec-corrections-rfc.md](18-spec-corrections-rfc.md) (D21): **the validated effective input exists before any input-aware policy or confirmation decision runs** — a confirmation can only bind to an input that has been fully constructed and validated.
+For every `invoke`, the registry MUST execute exactly these phases in order; the first failing phase produces the typed error shown. The order is a protocol guarantee, corrected by [Spec Corrections RFC](project/18-spec-corrections-rfc.md) (D21): **the validated effective input exists before any input-aware policy or confirmation decision runs** — a confirmation can only bind to an input that has been fully constructed and validated.
 
 ```text
  1. dedupe + conflict   key (consumerKey, invocationId): join in-flight / return
@@ -152,7 +152,7 @@ Availability and policies are evaluated **at invocation time**, never trusted fr
 
 ## Concurrency and ordering guarantees
 
-Normative, implementable guarantees (details and tunables in [03-core-api.md](03-core-api.md)):
+Normative, implementable guarantees (details and tunables in [Core API](03-core-api.md)):
 
 1. **Single-threaded determinism.** The registry assumes a JS event loop; all state transitions are atomic within a task.
 2. **Total order of surface mutations.** Every register/unregister/availability-change is assigned the next `surfaceVersion`. Observers can reconstruct the exact sequence from events.
@@ -165,7 +165,7 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 
 - The registry is an in-memory, per-JS-realm object. On the server (SSR/RSC) the React hooks are inert: registration happens in effects, effects don't run during server rendering, so the server-side surface is empty and no cleanup is needed. Snapshot on a server-created registry simply returns an empty surface.
 - Hydration performs registrations in mount effects after hydration completes. There is no hydration mismatch risk because registration never renders anything.
-- Multiple browser tabs/windows each have their own registry; cross-window surface aggregation is **Future** ([12-roadmap.md](12-roadmap.md)).
+- Multiple browser tabs/windows each have their own registry; cross-window surface aggregation is **Future** ([Roadmap](project/12-roadmap.md)).
 - The registry accepts an `environment` (`"development" | "production" | "test"`): development enables strict validation errors, serializability probes, and loud collision diagnostics; production degrades the same conditions to safe rejections plus audit events.
 
 ## Where responsibilities live
@@ -183,18 +183,23 @@ Normative, implementable guarantees (details and tunables in [03-core-api.md](03
 | Agent loop / model calls | ❌ never | ✅ (or external agent) | ✅ (orpc-agent) |
 | Router, data fetching, design system | ❌ never | ✅ | — |
 
-## Bundle and performance budgets (first measured baselines)
+## Bundle and performance budgets
 
-Bundle sizes are enforced by `size-limit` in CI: `core` **18.86 kB** min+brotli (budget 19.5 kB, zero runtime dependencies), `react` **2.08 kB** (budget 4 kB). The original ~10 kB core aspiration predates the invocation pipeline, confirmation store, and toolset — the budget is the enforced number, revised consciously, never silently.
+`size-limit` enforces these in CI. The budget is the number CI fails on; the measurement is what the last release shipped.
 
-> [!NOTE]
-> **Budget revised 18 → 19 kB for D31**, which is the deliberate revision the previous warning called for rather than a side effect of it. D31 ships model-facing parameter descriptions on the three meta verbs; those strings are the change, so ~430 B of the bundle is now payload the model reads, not machinery. They were trimmed to what is load-bearing first — every description names where the value comes from and nothing else — because the same bytes are re-billed in every request that carries the tool block, which is the more expensive budget of the two.
->
-> **Revised twice in 0.4–0.5, both deliberately.** D31's model-facing parameter descriptions pushed `core` past 18 kB and the budget went to 19; removing the D28 compatibility branches in 0.5 gave 210 B back, so it was retightened to 18.5 rather than left slack. Roughly 430 B of the current number is description text the model reads — payload, not machinery — and that is the more expensive budget of the two, since those bytes are re-billed in every request carrying the tool block.
->
-> **Revised again 18.5 → 19.5 kB for D32**, whose subject *is* those two budgets: the meta verbs now validate their own envelope, and `surface_act.input` is typed and its description rewritten. About 530 B of machinery (one schema-driven envelope check shared by the three verbs, plus the stringified-`input` repair) and the error strings that make a malformed envelope self-correcting; the model-facing descriptions were trimmed first, since they are re-billed per request while the validator is paid once. `core` sits at 640 B of headroom, and the standing rule holds: do not raise the limit as a side effect of an unrelated PR.
+| Entry | Measured (min+brotli) | Budget |
+|---|---|---|
+| `@agent-surface/core` | 18.86 kB | 19.5 kB |
+| `@agent-surface/core/explain` | 1.41 kB | 2 kB |
+| `@agent-surface/react` | 2.08 kB | 4 kB |
 
-Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30 — machine-local reference points, not CI thresholds yet; directive §7.2 sets thresholds after stable CI baselines):
+**A budget moves only in the PR whose feature moved it, and the PR says why.** Never as a side effect of unrelated work. Core's has moved three times — up for D31's meta-verb parameter descriptions, down when D28's compatibility branches were deleted, up again for D32's envelope validator; each is recorded in [Roadmap](project/12-roadmap.md) under the release that did it.
+
+Two kinds of bytes live in that number and they are not equally expensive. **Machinery** is paid once, at download. **Model-facing description text** — currently ~430 B of `core` — is re-billed in every request carrying the tool block, so it is trimmed first and to what is load-bearing: every description names where its value comes from and nothing else.
+
+(The original ~10 kB aspiration predates the invocation pipeline, the confirmation store, and the toolset.)
+
+Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30). Machine-local reference points, not CI thresholds — directive §7.2 sets those once CI hardware baselines are stable.
 
 | Operation | mean |
 |---|---|
