@@ -17,7 +17,12 @@ export interface InspectOptions {
 function jsonFor(result: CollectResult, explain: boolean): Record<string, unknown> {
   return {
     scenario: result.scenario,
+    ...(result.scope ? { scope: result.scope } : {}),
     snapshot: result.snapshot,
+    // Unconditional, and unconditionally present even when empty (`AS-CLI-006`):
+    // a consumer that has to distinguish "no rejections" from "this CLI predates
+    // the field" cannot rely on an absent key.
+    rejections: result.rejections,
     ...(explain ? { explanation: result.explanation } : {}),
   };
 }

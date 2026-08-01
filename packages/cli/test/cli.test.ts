@@ -210,8 +210,10 @@ describe("inspect covers every scenario by default", () => {
       // Config order, not alphabetical — the config lists admin first.
       expect(all.indexOf("scenario admin")).toBeLessThan(all.indexOf("scenario anonymous"));
       // Signed out, the page offers an agent nothing: the second block is the
-      // empty surface, not a repeat of the first (D11).
-      expect(all).toContain("the agent has no surface here");
+      // empty surface, not a repeat of the first (D11). It says so as an
+      // authority decision rather than as an absence of annotation, because the
+      // capabilities are all there — a policy hid them (AS-CLI-007).
+      expect(all).toContain("hidden by policy");
 
       captured = [];
       expect(await main(["inspect", "admin", "--config", CONFIG, "--plain"])).toBe(0);
@@ -232,6 +234,111 @@ describe("inspect covers every scenario by default", () => {
       expect(data.scenarios.map((entry) => entry.scenario)).toEqual(["admin", "anonymous"]);
       expect(data.scenarios[0]?.snapshot.components.length).toBeGreaterThan(0);
       expect(data.scenarios[1]?.snapshot.components).toHaveLength(0);
+    },
+    TIMEOUT,
+  );
+});
+
+describe("registrations rejected during a mount are reported (AS-CLI-006)", () => {
+  const REJECTED = fileURLToPath(
+    new URL("./fixtures/rejected/agent-surface.config.tsx", import.meta.url),
+  );
+
+  it(
+    "names the rejected component and why, in the rendered view",
+    async () => {
+      expect(await main(["inspect", "--config", REJECTED, "--plain"])).toBe(0);
+      const rendered = output();
+
+      // The counts line has to carry it too: a reader who stops at the header
+      // is the reader this whole correction is for.
+      expect(rendered).toContain("1 registration rejected");
+      expect(rendered).toContain("rejected during mount");
+      expect(rendered).toContain("dup.panel (default)");
+      expect(rendered).toContain("duplicate");
+
+      // The surviving registration is still reported normally — first-wins.
+      expect(rendered).toContain("ping");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "carries them in --json, and always as a present key",
+    async () => {
+      expect(await main(["inspect", "--config", REJECTED, "--json"])).toBe(0);
+      const rejected = (
+        JSON.parse(output()) as {
+          scenarios: Array<{
+            rejections: Array<{ componentType: string; instanceId: string; reason: string }>;
+          }>;
+        }
+      ).scenarios[0]!;
+      expect(rejected.rejections).toEqual([
+        { componentType: "dup.panel", instanceId: "default", reason: "duplicate" },
+      ]);
+
+      // A healthy mount reports an empty array, not a missing key: a consumer
+      // must not have to tell "none" apart from "this CLI is too old to say".
+      captured = [];
+      expect(await main(["inspect", "admin", "--config", CONFIG, "--json"])).toBe(0);
+      const healthy = (
+        JSON.parse(output()) as { scenarios: Array<{ rejections: unknown[] }> }
+      ).scenarios[0]!;
+      expect(healthy.rejections).toEqual([]);
+    },
+    TIMEOUT,
+  );
+});
+
+describe("counts are never printed without their qualifier (AS-CLI-007)", () => {
+  it(
+    "prints the hidden count without --explain, and keeps attribution behind it",
+    async () => {
+      // `anonymous` is the case the old output got wrong: every capability
+      // hidden by authority rendered as `0 callable, 0 visible-disabled`, which
+      // reads as an app that annotated nothing.
+      expect(await main(["inspect", "anonymous", "--config", CONFIG, "--plain"])).toBe(0);
+      const bare = output();
+      expect(bare).toContain("11 hidden");
+      expect(bare).not.toContain("Nothing is registered");
+      // The count moved; the attribution did not.
+      expect(bare).not.toContain("policy authenticated");
+
+      captured = [];
+      await main(["inspect", "anonymous", "--config", CONFIG, "--plain", "--explain"]);
+      expect(output()).toContain("policy authenticated");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "names the active scope, because a scope filters the counts",
+    async () => {
+      expect(
+        await main(["inspect", "admin", "--config", CONFIG, "--plain", "--scope", "devices"]),
+      ).toBe(0);
+      const scoped = output();
+      expect(scoped).toContain("scope devices");
+      // Scoped out, so the count it produced is smaller than the unscoped one.
+      expect(scoped).not.toContain("app.navigation");
+
+      captured = [];
+      await main(["inspect", "admin", "--config", CONFIG, "--plain"]);
+      expect(output()).not.toContain("scope ");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "makes check name the scenarios it compared",
+    async () => {
+      expect(await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
+      captured = [];
+      expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
+      // A green check is a statement about these scenarios, not the surface.
+      expect(output()).toContain("admin, anonymous");
+      expect(output()).toContain("coverage");
     },
     TIMEOUT,
   );

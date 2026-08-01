@@ -115,26 +115,83 @@ function Group({ group }: { group: CapabilityGroup }): ReactElement {
   );
 }
 
+/**
+ * The header states everything the counts are relative to (`AS-CLI-007`): the
+ * scenario, the route, and the scope when one is active — a scope filters both
+ * projections, so an unqualified count reads as a claim about the whole surface.
+ * `hidden` is unconditional here for the same reason it is in plain text.
+ */
 function Header({ view }: { view: SurfaceView }): ReactElement {
   return (
     <Box>
       <Text bold>{view.scenario}</Text>
       {view.route ? <Text dimColor>{`  ${view.route}`}</Text> : null}
+      {view.scope && view.scope.length > 0 ? (
+        <Text color="cyan">{`  scope ${view.scope.join(" ")}`}</Text>
+      ) : null}
       <Text dimColor>{"  ·  "}</Text>
       <Text color="green">{`${view.counts.callable} callable`}</Text>
       <Text dimColor>{", "}</Text>
       <Text color="yellow">{`${view.counts.disabled} visible-disabled`}</Text>
-      {view.explained ? (
+      <Text dimColor>{", "}</Text>
+      <Text color="red">{`${view.counts.hidden} hidden`}</Text>
+      {view.rejections.length > 0 ? (
         <>
           <Text dimColor>{", "}</Text>
-          <Text color="red">{`${view.counts.hidden} hidden`}</Text>
+          <Text color="magenta">
+            {`${view.rejections.length} registration${
+              view.rejections.length === 1 ? "" : "s"
+            } rejected`}
+          </Text>
         </>
       ) : null}
     </Box>
   );
 }
 
+/**
+ * Rejected registrations (`AS-CLI-006`). A dead handle leaves no trace in either
+ * projection, so without this block a copy-pasted component `type` removes a
+ * capability and prints nothing anywhere.
+ */
+function Rejections({ view }: { view: SurfaceView }): ReactElement {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box>
+        <Text backgroundColor="magenta" color="black" bold>
+          {" rejected during mount "}
+        </Text>
+        <Text dimColor>{`  ${view.rejections.length}`}</Text>
+      </Box>
+      {view.rejections.map((rejection) => (
+        <Box key={`${rejection.componentType}@${rejection.instanceId}-${rejection.reason}`}>
+          <Text color="magenta">{"  ! "}</Text>
+          <Text bold>{`${rejection.componentType} (${rejection.instanceId})`}</Text>
+          <Text dimColor>
+            {rejection.reason === "duplicate"
+              ? "  duplicate — an earlier registration holds this key"
+              : "  guard — onRegister rejected this registration"}
+          </Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function Empty({ view }: { view: SurfaceView }): ReactElement {
+  if (view.counts.hidden > 0) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text dimColor wrap="wrap">
+          {`Nothing is callable here — all ${view.counts.hidden} registered capabilities were hidden by policy. `}
+          The surface is empty by decision, not because nothing was annotated.
+        </Text>
+        {view.explained ? null : (
+          <Text dimColor>Re-run with --explain to see which policy hid them.</Text>
+        )}
+      </Box>
+    );
+  }
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text dimColor wrap="wrap">
@@ -170,6 +227,7 @@ export function Surface({ view }: { view: SurfaceView }): ReactElement {
         ) : (
           <Box key={block.key} flexDirection="column">
             <Header view={view} />
+            {view.rejections.length > 0 ? <Rejections view={view} /> : null}
             {populated.length === 0 ? <Empty view={view} /> : null}
           </Box>
         )

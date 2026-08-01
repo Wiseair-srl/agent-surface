@@ -72,6 +72,7 @@ export default withMermaid(
             { text: "Maintainer Directive (10/10)", link: "/17-maintainer-directive" },
             { text: "Spec Corrections RFC (P0)", link: "/18-spec-corrections-rfc" },
             { text: "Catalog Scale RFC (P1)", link: "/19-catalog-scale-rfc" },
+            { text: "Surface Coverage RFC (P1)", link: "/21-surface-coverage-rfc" },
           ],
         },
       ],

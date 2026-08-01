@@ -11,7 +11,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "surface": "agent-surface inspect",
     "surface:check": "agent-surface check",
-    "surface:snapshot": "agent-surface snapshot"
+    "surface:snapshot": "agent-surface snapshot",
+    "surface:capabilities": "agent-surface capabilities",
+    "surface:coverage": "agent-surface coverage"
   },
   "dependencies": {
     "@agent-surface/core": "workspace:*",

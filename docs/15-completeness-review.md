@@ -5,7 +5,7 @@
 
 ## P0 corrections (resolved, code-proven)
 
-The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21–D26) and — unlike the rest of this review's "must be validated" items — each landed **with** its implementation and named conformance tests in the same change: pipeline order (effective input before input-aware policy/confirmation), consumer-scoped conflict-safe invocation identity (`INVOCATION_CONFLICT`), navigation settlement under owner unmount, bounded observation concurrency + bounded pending confirmations, topology-declared confirmation modes. The action-concurrency contract (D25) was the one intentional spec-ahead-of-code item, carried as `specified` in `spec/conformance.json` until **0.2 implemented it** (`AS-CONC-001`, `test/conformance/concurrency-groups.test.ts`). No requirement is `specified` today: all 93 are `implemented`, and the manifest gate is what keeps that true.
+The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21–D26) and — unlike the rest of this review's "must be validated" items — each landed **with** its implementation and named conformance tests in the same change: pipeline order (effective input before input-aware policy/confirmation), consumer-scoped conflict-safe invocation identity (`INVOCATION_CONFLICT`), navigation settlement under owner unmount, bounded observation concurrency + bounded pending confirmations, topology-declared confirmation modes. The action-concurrency contract (D25) was the one intentional spec-ahead-of-code item, carried as `specified` in `spec/conformance.json` until **0.2 implemented it** (`AS-CONC-001`, `test/conformance/concurrency-groups.test.ts`). No requirement is `specified` today: all 111 are `implemented`, and the manifest gate is what keeps that true.
 
 ## Decisions defined
 
@@ -14,7 +14,16 @@ The directive's §3 P0 specification bugs are corrected by RFC 18 (decisions D21
 
 ## Decisions still open
 
-Tracked with leanings in [13 Part B](13-open-questions.md#part-b--genuinely-open-questions): OQ-1 orpc-agent manifest contract (the only one with a deadline — before M9); OQ-2 WebMCP drift; OQ-3 cross-tab; OQ-4 relevance/budgets; OQ-5 server-side-agent contextual gating; OQ-6 deep binding paths; OQ-7 i18n; OQ-8 snapshot hints; OQ-9 meta-tools threshold; OQ-10 streaming observations; OQ-11 Zod sugar package; OQ-12 confirmation UX weight for view actions. None blocks v0.1.
+Tracked with leanings in [13 Part B](13-open-questions.md#part-b--genuinely-open-questions): OQ-1 orpc-agent manifest contract (the only one with a deadline — before M9); OQ-2 WebMCP drift; OQ-3 cross-tab; OQ-4 relevance/budgets; OQ-5 server-side-agent contextual gating; OQ-6 deep binding paths; OQ-7 i18n; OQ-8 snapshot hints; OQ-9 meta-tools threshold; OQ-10 streaming observations; OQ-11 Zod sugar package; OQ-12 confirmation UX weight for view actions; OQ-13 static extraction of the granular React hooks; OQ-14 whether `undeclared` should fail `coverage`. None blocks v0.1.
+
+## What the tooling still cannot tell you
+
+Added with the surface-coverage work ([21](21-surface-coverage-rfc.md), D35–D37), because a coverage number is exactly the kind of figure that gets over-trusted:
+
+- **A UI affordance that was never registered is undetectable.** No capability, no call site, no registration — nothing for `capabilities` to read or `coverage` to miss. Human review of the diff is the only gate, and this is the class of gap most likely to be assumed covered.
+- **The inventory is an upper bound**, not a count of live capabilities: tsconfig include globs are wider than what a bundle reaches, so a component no route renders any more is still in it. Reported as unreached, which is a different finding from a missing scenario, and the developer decides which.
+- **The `domain:` plane is not statically analyzed at all** — it comes from the oRPC router (OQ-1). `coverage` says `not analyzed` rather than reporting zero, because zero reads as *there are none*.
+- **`capabilities` is only as good as its own admission of failure.** Every downstream number depends on `AS-COVER-002`/`003` holding: unreadable call sites reported, and a non-zero exit until someone accepts them knowingly.
 
 ## Potential inconsistencies (watch these during implementation)
 

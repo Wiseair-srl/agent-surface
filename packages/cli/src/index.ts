@@ -7,4 +7,6 @@
  */
 export { defineSurface } from "./config.js";
 export type { MountResult, ScenarioProps, SurfaceConfig } from "./config.js";
-export type { CollectResult } from "./collect.js";
+export type { CollectResult, RegistrationRejection } from "./collect.js";
+export type { AuthoredCapability, CapabilityInventory } from "./extract.js";
+export type { CoverageAllowlist, CoverageReport } from "./coverage.js";
