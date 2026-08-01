@@ -1,20 +1,36 @@
-import { createSurfaceRunner } from "../load.js";
+import {
+  joinCoverage,
+  mountScenarios,
+  readInventory,
+  type AnalysisOptions,
+  type Depth,
+} from "../analysis.js";
 import { buildView } from "../render/model.js";
-import { renderSurfacePlain } from "../render/plain.js";
-import { isPlain, loadInk, paint, transient, write } from "../output.js";
+import {
+  renderCatalogPlain,
+  renderCoveragePlain,
+  renderFailuresPlain,
+  renderNoVerdictPlain,
+  renderSurfacePlain,
+} from "../render/plain.js";
+import { isPlain, loadInk, paint, transient, write, writeError } from "../output.js";
 import type { CollectResult } from "../collect.js";
 
 export interface InspectOptions {
   configPath: string;
+  depth: Depth;
   scenario?: string;
   scope?: string[];
+  tsconfig?: string;
+  baselineDir?: string;
+  detail?: boolean;
   explain?: boolean;
   schemas?: boolean;
   json?: boolean;
   plain?: boolean;
 }
 
-function jsonFor(result: CollectResult, explain: boolean): Record<string, unknown> {
+function jsonForScenario(result: CollectResult, explain: boolean): Record<string, unknown> {
   return {
     scenario: result.scenario,
     ...(result.scope ? { scope: result.scope } : {}),
@@ -28,55 +44,99 @@ function jsonFor(result: CollectResult, explain: boolean): Record<string, unknow
 }
 
 /**
- * Renders the live surface. A bare `inspect` covers every scenario the config
- * defines, the same way bare `snapshot` and `check` do — a config lists the
- * contexts worth looking at, and picking one of them by `Object.keys` order
- * made the default silently depend on the order they happened to be written in.
+ * The whole surface: what this codebase authors, what a mount surfaces, and the
+ * difference between them.
+ *
+ * It answers findings, it does not gate on them — exit `0` whatever it reports,
+ * because `check` is the gate and a viewer that sometimes fails is a viewer
+ * nobody puts in a pipeline. The exception is `2`, which is not a finding: the
+ * command could not run at all.
+ *
+ * **Order is the design.** The catalog prints first because it is ready before
+ * anything mounts; each scenario prints as it finishes, so a config with ten of
+ * them is not ten mounts of blank terminal; the verdict prints last, because it
+ * is the only part that needs every scenario to have finished — and because a
+ * reader who stops at the bottom should stop on the finding.
  */
 export async function runInspect(options: InspectOptions): Promise<number> {
-  const runner = await createSurfaceRunner(options.configPath);
+  const analysis: AnalysisOptions = {
+    configPath: options.configPath,
+    depth: options.depth,
+    ...(options.scenario ? { scenario: options.scenario } : {}),
+    ...(options.scope ? { scope: options.scope } : {}),
+    ...(options.tsconfig ? { tsconfig: options.tsconfig } : {}),
+    ...(options.baselineDir ? { baselineDir: options.baselineDir } : {}),
+  };
+
+  // Policy chains and JSON Schemas are multi-line by nature, so asking for
+  // either is asking for the view that can hold them.
+  const detail = options.detail === true || options.explain === true || options.schemas === true;
+
+  const inventory = readInventory(analysis);
+  if (inventory && !options.json) {
+    // At `--depth static` this listing is the output. At `--depth full` the
+    // scenario tables below carry the same capabilities and the verdict names
+    // the ones they miss, so only the summary line prints here.
+    write(renderCatalogPlain(inventory, { standalone: options.depth === "static" }));
+  }
+
   // `null` when Ink cannot run here (React 18 host), which is a fallback to
   // plain text rather than a failed command — see loadInk().
   const ink = isPlain(options) ? null : await loadInk();
-  try {
-    const scenarios = options.scenario ? [options.scenario] : runner.scenarioNames;
-    const collected: Array<Record<string, unknown>> = [];
+  const scenarios: Array<Record<string, unknown>> = [];
+  let printed = 0;
 
-    for (const [index, scenario] of scenarios.entries()) {
-      const stop = ink
-        ? await transient(<ink.Loading label={`mounting ${scenario}…`} />)
-        : undefined;
-
-      let result;
-      try {
-        result = await runner.collect({
-          scenario,
-          ...(options.scope ? { scope: options.scope } : {}),
-        });
-      } finally {
-        stop?.();
-      }
-
-      // Each scenario is mounted and rendered before the next one is mounted,
-      // so a slow config prints as it goes instead of after the last mount.
-      // `--json` is the exception: one document, so it has to be complete.
-      if (options.json) {
-        collected.push(jsonFor(result, options.explain === true));
-        continue;
-      }
-
-      const view = buildView(result, {
-        ...(options.explain ? { explain: true } : {}),
-        ...(options.schemas ? { schemas: true } : {}),
-      });
-
-      if (ink) await paint(<ink.Surface view={view} />);
-      else write(index === 0 ? renderSurfacePlain(view) : `\n${renderSurfacePlain(view)}`);
+  const runtime = await mountScenarios(analysis, async (result) => {
+    if (options.json) {
+      scenarios.push(jsonForScenario(result, options.explain === true));
+      return;
     }
+    const view = buildView(result, {
+      ...(options.explain ? { explain: true } : {}),
+      ...(options.schemas ? { schemas: true } : {}),
+    });
+    if (ink) await paint(<ink.Surface view={view} detail={detail} />);
+    else {
+      const rendered = renderSurfacePlain(view, { detail });
+      write(printed === 0 && !inventory ? rendered : `\n${rendered}`);
+    }
+    printed += 1;
+  });
 
-    if (options.json) write(JSON.stringify({ scenarios: collected }, null, 2));
-    return 0;
-  } finally {
-    await runner.close();
+  const coverage = joinCoverage(inventory, runtime, analysis);
+
+  if (options.json) {
+    write(
+      JSON.stringify(
+        {
+          // One shape whatever the depth, so a consumer never branches on how
+          // the command was invoked. A half the depth did not compute is
+          // `null`, which is a different statement from `[]` or `{}`.
+          depth: options.depth,
+          catalog: inventory ?? null,
+          scenarios,
+          failures: runtime?.failures ?? [],
+          coverage: coverage ?? null,
+        },
+        null,
+        2,
+      ),
+    );
+    return runtime && runtime.failures.length > 0 ? 2 : 0;
   }
+
+  if (runtime && runtime.failures.length > 0) {
+    writeError(`\n${renderFailuresPlain(runtime.failures)}`);
+  }
+  if (coverage) {
+    write("");
+    write(renderCoveragePlain(coverage));
+  } else if (inventory && runtime && runtime.failures.length > 0) {
+    writeError(`\n${renderNoVerdictPlain(runtime.failures)}`);
+  }
+
+  // A scenario that would not mount is not a finding about the surface, it is
+  // the command failing to observe one. `2` — the same code a usage error gets,
+  // because CI has to tell both apart from "the surface changed".
+  return runtime && runtime.failures.length > 0 ? 2 : 0;
 }

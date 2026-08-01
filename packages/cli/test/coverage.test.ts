@@ -1,15 +1,17 @@
 // Conformance: AS-COVER-001 (every statically resolvable registration call site
-// appears in the inventory), AS-COVER-002 (an unresolvable call site is emitted
+// appears in the catalog), AS-COVER-002 (an unresolvable call site is emitted
 // with resolution "unresolved" and an origin, never omitted), AS-COVER-003
-// (`capabilities` exits non-zero on an unresolved entry unless
-// --allow-unresolved), AS-COVER-004 (a policy-hidden capability is classified
-// reached), AS-COVER-005 (exit codes mirror AS-CLI-002; a stale allowlist entry
-// fails), AS-COVER-006 (the inventory is never reachable from core).
+// (`check` fails on an unread call site unless --allow-unresolved), AS-COVER-004
+// (a policy-hidden capability is classified reached), AS-COVER-005 (exit codes
+// mirror AS-CLI-002; a stale allowlist entry fails), AS-COVER-006 (the catalog
+// is never reachable from core), AS-COVER-007 (the gap reaches every command,
+// and a scope filters the catalog by the same predicate as the mount),
+// AS-CLI-008 (--depth static computes the catalog and mounts nothing).
 //
 // These drive the real `main()`. The fixture app authors three components and
 // mounts one of them, which is the only shape that can prove a coverage gap:
-// an unreached capability is invisible to `inspect`, `--explain` and `check`
-// alike, because all three can only see what a scenario mounted.
+// an unreached capability is invisible to a mount, to `--explain` and to a
+// baseline alike, because all three can only see what a scenario mounted.
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -22,6 +24,9 @@ import { buildCoverageReport, coverageExitCode } from "../src/coverage.js";
 
 const FIXTURE = fileURLToPath(
   new URL("./fixtures/coverage/agent-surface.config.tsx", import.meta.url),
+);
+const UNMOUNTABLE = fileURLToPath(
+  new URL("./fixtures/unmountable/agent-surface.config.tsx", import.meta.url),
 );
 const DEVICES = fileURLToPath(
   new URL("../../../examples/devices-app/agent-surface.config.tsx", import.meta.url),
@@ -59,6 +64,20 @@ function writeAllowlist(entries: Record<string, string>): void {
   writeFileSync(join(baselineDir, "coverage-allow.json"), JSON.stringify(entries, null, 2));
 }
 
+/** The join's inputs, with only the field under test varying. */
+function report(overrides: Partial<Parameters<typeof buildCoverageReport>[0]> = {}) {
+  return buildCoverageReport({
+    authored: new Set(["view:a.b"]),
+    origins: new Map(),
+    reachedIds: new Set(["view:a.b"]),
+    scenarios: ["default"],
+    unresolved: [],
+    allowlist: {},
+    allowlistPath: "/dev/null",
+    ...overrides,
+  });
+}
+
 beforeEach(() => {
   baselineDir = mkdtempSync(join(tmpdir(), "agent-surface-coverage-"));
   capture();
@@ -70,7 +89,7 @@ afterEach(() => {
   rmSync(baselineDir, { recursive: true, force: true });
 });
 
-describe("the static inventory (AS-COVER-001)", () => {
+describe("the static catalog (AS-COVER-001)", () => {
   it("finds every capability a resolvable call site authors, without mounting anything", () => {
     const inventory = extractCapabilities({ root: dirname(FIXTURE) });
     const ids = authoredIds(inventory);
@@ -96,20 +115,30 @@ describe("the static inventory (AS-COVER-001)", () => {
 
   it("never claims to have analyzed the domain plane", () => {
     // Reporting zero domain capabilities would read as "there are none" rather
-    // than "nobody looked" — the inventory says which one it means (OQ-1).
+    // than "nobody looked" — the catalog says which one it means (OQ-1).
     expect(extractCapabilities({ root: dirname(FIXTURE) }).domain).toBe("not-analyzed");
   });
 
   it("resolves a description split across concatenated literals", () => {
     // Descriptions are the provider's cached prompt prefix (D28), so they are
     // long enough that authors wrap them. That is not a dynamic description.
-    const inventory = extractCapabilities({
-      root: dirname(DEVICES),
-    });
+    const inventory = extractCapabilities({ root: dirname(DEVICES) });
     const set = inventory.capabilities.find((c) => c.capabilityId === "view:devices.filters.set");
     expect(set?.description).toContain("omitted fields are unchanged");
     expect(set?.description).toContain("normal data fetching");
   });
+
+  it(
+    "is what --depth static prints, with no Vite server and no mount",
+    async () => {
+      expect(await main(["inspect", "--depth", "static", "--config", DEVICES, "--plain"])).toBe(0);
+      expect(output()).toContain("authored (upper bound)");
+      expect(output()).toContain("view:devices.table.sort");
+      // Nothing was mounted, so no scenario header can appear.
+      expect(output()).not.toContain("scenario admin");
+    },
+    TIMEOUT,
+  );
 });
 
 describe("an unreadable call site is reported, never dropped (AS-COVER-002)", () => {
@@ -126,30 +155,46 @@ describe("an unreadable call site is reported, never dropped (AS-COVER-002)", ()
   });
 });
 
-describe("capabilities exit codes (AS-COVER-003)", () => {
+describe("an unread call site fails the gate, not the viewer (AS-COVER-003)", () => {
   it(
-    "exits 1 when any entry is unresolved, and 0 once the gap is accepted knowingly",
+    "makes check exit 1, and 0 once the gap is accepted knowingly",
     async () => {
-      expect(await main(["capabilities", "--config", FIXTURE, "--plain"])).toBe(1);
+      // The catalog is `unreached`'s denominator, so holes in it make that count
+      // a floor rather than an answer. Accepting the gap still prints it.
+      writeAllowlist({ "view:cov.unmounted.toCsv": "a separate bucket, allowlisted here" });
+      expect(
+        await main(["check", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(1);
+      expect(output()).toContain("UNREAD CALL SITES");
       expect(output()).toContain("Dynamic.tsx");
-      expect(output()).toContain("--allow-unresolved");
 
       captured = [];
+      await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
+      captured = [];
       expect(
-        await main(["capabilities", "--config", FIXTURE, "--plain", "--allow-unresolved"]),
+        await main([
+          "check",
+          "--config",
+          FIXTURE,
+          "--baseline-dir",
+          baselineDir,
+          "--plain",
+          "--allow-unresolved",
+        ]),
       ).toBe(0);
-      // Accepting the gap must not hide it: the entry is still in the report.
       expect(output()).toContain("Dynamic.tsx");
     },
     TIMEOUT,
   );
 
   it(
-    "exits 0 on a program it fully understood",
+    "never makes inspect exit non-zero on a finding — check is the only gate",
     async () => {
-      expect(await main(["capabilities", "--config", DEVICES, "--plain"])).toBe(0);
-      expect(output()).toContain("authored (upper bound)");
-      expect(output()).toContain("view:devices.table.sort");
+      // A viewer that sometimes fails is a viewer nobody puts in a pipeline,
+      // and the discipline is preserved where it matters: the entry is printed.
+      expect(await main(["inspect", "--config", FIXTURE, "--plain"])).toBe(0);
+      expect(output()).toContain("UNREAD CALL SITES");
+      expect(output()).toContain("UNREACHED");
     },
     TIMEOUT,
   );
@@ -166,7 +211,7 @@ describe("a policy-hidden capability was still reached (AS-COVER-004)", () => {
       // scenario mounted*.
       expect(
         await main([
-          "coverage",
+          "inspect",
           "anonymous",
           "--config",
           DEVICES,
@@ -176,39 +221,44 @@ describe("a policy-hidden capability was still reached (AS-COVER-004)", () => {
         ]),
       ).toBe(0);
       expect(output()).toContain("every authored capability is reached by a scenario");
-      expect(output()).not.toContain("unreached");
+      expect(output()).not.toContain("UNREACHED");
     },
     TIMEOUT,
   );
 
   it("classifies a hidden capability as reached in the join itself", () => {
-    const report = buildCoverageReport({
+    const joined = report({
       authored: new Set(["view:a.b", "view:a.c"]),
       origins: new Map([["view:a.c", { file: "a.tsx", line: 1 }]]),
       // `view:a.b` was mounted and hidden; `view:a.c` was never mounted.
       reachedIds: new Set(["view:a.b"]),
-      scenarios: ["default"],
-      unresolved: [],
-      allowlist: {},
-      allowlistPath: "/dev/null",
     });
-    expect(report.reached).toBe(1);
-    expect(report.unreached.map((u) => u.capabilityId)).toEqual(["view:a.c"]);
+    expect(joined.reached).toBe(1);
+    expect(joined.unreached.map((u) => u.capabilityId)).toEqual(["view:a.c"]);
   });
 });
 
-describe("coverage exit codes and the allowlist ratchet (AS-COVER-005)", () => {
+describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
   it(
-    "exits 1 on a gap, naming the capability and where it was authored",
+    "makes check exit 1 on a gap, naming the capability and where it was authored",
     async () => {
+      await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
+      captured = [];
       expect(
-        await main(["coverage", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]),
+        await main([
+          "check",
+          "--config",
+          FIXTURE,
+          "--baseline-dir",
+          baselineDir,
+          "--plain",
+          "--allow-unresolved",
+        ]),
       ).toBe(1);
-      const report = output();
-      expect(report).toContain("unreached");
-      expect(report).toContain("view:cov.unmounted.toCsv");
-      expect(report).toContain("Unmounted.tsx");
-      expect(report).toContain("add a scenario, or delete the component");
+      const rendered = output();
+      expect(rendered).toContain("UNREACHED");
+      expect(rendered).toContain("view:cov.unmounted.toCsv");
+      expect(rendered).toContain("Unmounted.tsx");
     },
     TIMEOUT,
   );
@@ -216,16 +266,40 @@ describe("coverage exit codes and the allowlist ratchet (AS-COVER-005)", () => {
   it(
     "stops failing on an allowlisted capability, and keeps reporting it",
     async () => {
+      await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
       writeAllowlist({
         "view:cov.unmounted.toCsv": "legacy export screen, scheduled for deletion",
       });
-      await main(["coverage", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
-      const report = output();
-      expect(report).toContain("allowlisted");
-      // The unresolved call site is a separate gap and still fails the command,
-      // so the allowlist cannot be used to wave through an unread codebase.
-      expect(report).not.toContain("unreached  (");
-      expect(report).toContain("could not be read");
+      captured = [];
+      expect(
+        await main([
+          "check",
+          "--config",
+          FIXTURE,
+          "--baseline-dir",
+          baselineDir,
+          "--plain",
+          "--allow-unresolved",
+        ]),
+      ).toBe(0);
+      expect(output()).toContain("allowlisted");
+      expect(output()).not.toContain("UNREACHED");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "cannot be used to wave through an unread codebase",
+    async () => {
+      // The allowlist covers unreached capabilities only. `unresolved` is a
+      // separate bucket with its own, separate acceptance.
+      await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
+      writeAllowlist({ "view:cov.unmounted.toCsv": "allowlisted" });
+      captured = [];
+      expect(
+        await main(["check", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(1);
+      expect(output()).toContain("UNREAD CALL SITES");
     },
     TIMEOUT,
   );
@@ -233,72 +307,123 @@ describe("coverage exit codes and the allowlist ratchet (AS-COVER-005)", () => {
   it(
     "fails on an allowlist entry that is no longer unreached, so the list cannot rot",
     async () => {
+      await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]);
       writeAllowlist({ "view:cov.mounted.poke": "this one is reached — the entry has rotted" });
+      captured = [];
       expect(
-        await main(["coverage", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]),
+        await main([
+          "check",
+          "--config",
+          FIXTURE,
+          "--baseline-dir",
+          baselineDir,
+          "--plain",
+          "--allow-unresolved",
+        ]),
       ).toBe(1);
-      expect(output()).toContain("stale allowlist entries");
+      expect(output()).toContain("STALE ALLOWLIST");
       expect(output()).toContain("view:cov.mounted.poke");
     },
     TIMEOUT,
   );
 
   it("mirrors AS-CLI-002: 0 clean, 1 gap, and undeclared never fails on its own", () => {
-    const clean = buildCoverageReport({
-      authored: new Set(["view:a.b"]),
-      origins: new Map(),
-      reachedIds: new Set(["view:a.b"]),
-      scenarios: ["default"],
-      unresolved: [],
-      allowlist: {},
-      allowlistPath: "/dev/null",
-    });
-    expect(coverageExitCode(clean)).toBe(0);
+    expect(coverageExitCode(report())).toBe(0);
 
     // A capability registered dynamically is legitimate, and indistinguishable
     // from an extractor gap from the outside (OQ-4). Reported, not failed.
-    const undeclared = buildCoverageReport({
-      authored: new Set(["view:a.b"]),
-      origins: new Map(),
-      reachedIds: new Set(["view:a.b", "view:surprise.c"]),
-      scenarios: ["default"],
-      unresolved: [],
-      allowlist: {},
-      allowlistPath: "/dev/null",
-    });
+    const undeclared = report({ reachedIds: new Set(["view:a.b", "view:surprise.c"]) });
     expect(undeclared.undeclared).toEqual(["view:surprise.c"]);
     expect(coverageExitCode(undeclared)).toBe(0);
+
+    // An unread call site fails, and `--allow-unresolved` is the only way past.
+    const unread = report({
+      unresolved: [
+        {
+          capabilityId: "<unresolved>",
+          kind: "action",
+          origin: { file: "a.tsx", line: 1 },
+          resolution: "unresolved",
+        },
+      ],
+    });
+    expect(coverageExitCode(unread)).toBe(1);
+    expect(coverageExitCode(unread, { allowUnresolved: true })).toBe(0);
   });
 
   it("holds domain capabilities apart from undeclared ones", () => {
-    // The inventory never claimed to analyze that plane, so filing them as
-    // "no static origin" would report a stated boundary as a defect.
-    const report = buildCoverageReport({
-      authored: new Set(["view:a.b"]),
-      origins: new Map(),
-      reachedIds: new Set(["view:a.b", "domain:devices.disable"]),
-      scenarios: ["default"],
-      unresolved: [],
-      allowlist: {},
-      allowlistPath: "/dev/null",
-    });
-    expect(report.domainReached).toEqual(["domain:devices.disable"]);
-    expect(report.undeclared).toEqual([]);
-    expect(coverageExitCode(report)).toBe(0);
+    // The catalog never claimed to analyze that plane, so filing them as "no
+    // static origin" would report a stated boundary as a defect.
+    const joined = report({ reachedIds: new Set(["view:a.b", "domain:devices.disable"]) });
+    expect(joined.domainReached).toEqual(["domain:devices.disable"]);
+    expect(joined.undeclared).toEqual([]);
+    expect(coverageExitCode(joined)).toBe(0);
   });
+});
+
+describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-007)", () => {
+  it(
+    "reports it from snapshot too, because that is the command that accepts a change",
+    async () => {
+      expect(
+        await main(["snapshot", "--config", FIXTURE, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(0);
+      expect(output()).toContain("UNREACHED");
+      expect(output()).toContain("view:cov.unmounted.toCsv");
+    },
+    TIMEOUT,
+  );
 
   it(
-    "exits 2 on a usage error without reading a program",
+    "filters the catalog by the same predicate as the mount",
     async () => {
-      expect(await main(["coverage", "--config", "/nonexistent/agent-surface.config.tsx"])).toBe(1);
-      captured = [];
-      expect(await main(["capabilities", "--nonsense"])).toBe(2);
+      // A scope filters the mount, so it has to filter the catalog too.
+      // Without that, `--scope devices` reported both `app.navigation`
+      // capabilities as ones "no scenario mounts" — over two that every
+      // scenario mounts.
+      expect(
+        await main([
+          "inspect",
+          "--config",
+          DEVICES,
+          "--baseline-dir",
+          baselineDir,
+          "--plain",
+          "--scope",
+          "devices",
+        ]),
+      ).toBe(0);
+      expect(output()).not.toContain("UNREACHED");
+      expect(output()).not.toContain("view:app.navigation.goTo");
+      // Every count names the scope it was computed under (AS-CLI-007).
+      expect(output()).toContain("scope devices");
+      expect(output()).toContain("8 authored · 8 reached · 0 unreached");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "emits no verdict at all when a scenario did not mount",
+    async () => {
+      // That scenario reached nothing, so every capability it would have
+      // surfaced would be reported unreached. A verdict over a partial run is
+      // the misleading check this whole package refuses to emit.
+      expect(await main(["inspect", "--config", UNMOUNTABLE, "--plain"])).toBe(2);
+      const rendered = output();
+      expect(rendered).toContain("DID NOT MOUNT");
+      expect(rendered).toContain("broken");
+      expect(rendered).toContain("NO COVERAGE VERDICT");
+      expect(rendered).not.toContain("UNREACHED");
+      // The static half survived, and so did the scenario that does mount.
+      expect(rendered).toContain("authored (upper bound)");
+      expect(rendered).toContain("scenario ok");
+      expect(rendered).toContain("brk.panel.poke");
     },
     TIMEOUT,
   );
 });
 
-describe("the inventory is never agent-facing (AS-COVER-006)", () => {
+describe("the catalog is never agent-facing (AS-COVER-006)", () => {
   it("is absent from the package root that adapters import", () => {
     // It lives in @agent-surface/cli, which no adapter imports and no
     // application ships — mirroring AS-EXPLAIN-004. A capability catalog on the

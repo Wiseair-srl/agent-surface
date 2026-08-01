@@ -1,15 +1,59 @@
 import type { ReactElement } from "react";
-import { Box, Static, Text } from "ink";
+import { Box, Static, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import type { CapabilityRow, CapabilityGroup, SurfaceView } from "./model.js";
-import type { DiffEntry } from "../baseline.js";
-import { formatValue } from "../baseline.js";
+import { flatRows } from "./model.js";
+import type { CoverageReport } from "../coverage.js";
 
 const OUTCOME = {
-  expose: { mark: "●", color: "green" as const },
-  disable: { mark: "◐", color: "yellow" as const },
-  hide: { mark: "○", color: "red" as const },
+  expose: { mark: "●", color: "green" as const, state: "callable" },
+  disable: { mark: "◐", color: "yellow" as const, state: "disabled" },
+  hide: { mark: "○", color: "red" as const, state: "hidden" },
 };
+
+const NONE = "—";
+
+/**
+ * Same column widths as the plain renderer computes, and for the same reason:
+ * from the content, never from the terminal. A TTY table that reflows on resize
+ * and a piped table that does not would be two different renderings of one view
+ * model, which is exactly what this file exists to prevent.
+ */
+function widthsFor(headers: string[], rows: string[][]): number[] {
+  return headers.map((header, column) =>
+    Math.max(header.length, ...rows.map((row) => (row[column] ?? "").length)),
+  );
+}
+
+function pad(value: string, width: number): string {
+  return value.padEnd(width);
+}
+
+/**
+ * `init`'s one question. Enter accepts, because the answer this asks for is the
+ * one the summary above it has already made the case for — and because a
+ * scaffold is the least destructive thing this package writes.
+ */
+export function Confirm({
+  question,
+  onAnswer,
+}: {
+  question: string;
+  onAnswer: (yes: boolean) => void;
+}): ReactElement {
+  useInput((input, key) => {
+    if (key.return || input.toLowerCase() === "y") onAnswer(true);
+    else if (key.escape || input.toLowerCase() === "n" || (key.ctrl && input === "c")) {
+      onAnswer(false);
+    }
+  });
+  return (
+    <Box marginTop={1}>
+      <Text bold>{question}</Text>
+      <Text dimColor>{"  (Y/n) "}</Text>
+    </Box>
+  );
+}
 
 export function Loading({ label }: { label: string }): ReactElement {
   return (
@@ -205,10 +249,86 @@ function Empty({ view }: { view: SurfaceView }): ReactElement {
   );
 }
 
-type Block = { key: string; group?: CapabilityGroup };
+const HEADERS = ["CAPABILITY", "KIND", "EFFECT", "STATE", "FLAGS"];
 
-export function Surface({ view }: { view: SurfaceView }): ReactElement {
+function cellsFor(row: CapabilityRow): string[] {
+  return [
+    row.path,
+    row.kind,
+    row.effect ?? NONE,
+    OUTCOME[row.outcome].state,
+    row.flags.length > 0 ? row.flags.join(" · ") : NONE,
+  ];
+}
+
+function TableRow({
+  row,
+  cells,
+  widths,
+}: {
+  row: CapabilityRow;
+  cells: string[];
+  widths: number[];
+}): ReactElement {
+  const outcome = OUTCOME[row.outcome];
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Text bold>{`${pad(cells[0]!, widths[0]!)}  `}</Text>
+        <Text dimColor>{`${pad(cells[1]!, widths[1]!)}  `}</Text>
+        <Text>{`${pad(cells[2]!, widths[2]!)}  `}</Text>
+        <Text color={outcome.color}>{`${pad(cells[3]!, widths[3]!)}  `}</Text>
+        <Text dimColor>{cells[4]!}</Text>
+      </Box>
+      {row.reason ? (
+        <Box paddingLeft={4}>
+          <Text color="yellow" wrap="wrap">{`⤷ ${row.reason}`}</Text>
+        </Box>
+      ) : null}
+    </Box>
+  );
+}
+
+/**
+ * One capability per line, aligned — the scanning view, and the default. The
+ * grouped paragraphs below stay for `--detail`, `--explain` and `--schemas`,
+ * whose payloads (policy chains, JSON Schemas) cannot live in a table cell.
+ */
+function CapabilityTable({ rows }: { rows: CapabilityRow[] }): ReactElement {
+  const cells = rows.map(cellsFor);
+  const widths = widthsFor(HEADERS, cells);
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <Box>
+        {HEADERS.map((header, column) => (
+          <Text key={header} dimColor bold>
+            {column === HEADERS.length - 1 ? header : `${pad(header, widths[column]!)}  `}
+          </Text>
+        ))}
+      </Box>
+      {rows.map((row, index) => (
+        <TableRow
+          key={`${row.capabilityId}-${index}`}
+          row={row}
+          cells={cells[index]!}
+          widths={widths}
+        />
+      ))}
+    </Box>
+  );
+}
+
+type Block = { key: string; group?: CapabilityGroup; rows?: CapabilityRow[] };
+
+export function Surface({
+  view,
+  detail,
+}: {
+  view: SurfaceView;
+  detail?: boolean;
+}): ReactElement {
   const populated = view.groups.filter((group) => group.rows.length > 0);
+  const rows = flatRows(view);
 
   // Everything goes through <Static>, header included. Ink paints static output
   // once, permanently, above the live frame — and erases the live frame on
@@ -216,7 +336,11 @@ export function Surface({ view }: { view: SurfaceView }): ReactElement {
   // prints it and then wipes it, which is exactly what happened to this header.
   const blocks: Block[] = [
     { key: "__header" },
-    ...populated.map((group) => ({ key: group.heading, group })),
+    ...(detail
+      ? populated.map((group) => ({ key: group.heading, group }))
+      : rows.length > 0
+        ? [{ key: "__table", rows }]
+        : []),
   ];
 
   return (
@@ -224,11 +348,13 @@ export function Surface({ view }: { view: SurfaceView }): ReactElement {
       {(block) =>
         block.group ? (
           <Group key={block.key} group={block.group} />
+        ) : block.rows ? (
+          <CapabilityTable key={block.key} rows={block.rows} />
         ) : (
           <Box key={block.key} flexDirection="column">
             <Header view={view} />
             {view.rejections.length > 0 ? <Rejections view={view} /> : null}
-            {populated.length === 0 ? <Empty view={view} /> : null}
+            {rows.length === 0 ? <Empty view={view} /> : null}
           </Box>
         )
       }
@@ -236,40 +362,45 @@ export function Surface({ view }: { view: SurfaceView }): ReactElement {
   );
 }
 
-export function Drift({
-  scenario,
-  entries,
-}: {
-  scenario: string;
-  entries: DiffEntry[];
-}): ReactElement {
+/**
+ * The verdict — authored minus reached. The finding the command surface used to
+ * keep behind a fifth command, so it is the last thing painted and the thing a
+ * reader stops on.
+ */
+export function Coverage({ report }: { report: CoverageReport }): ReactElement {
+  const clean =
+    report.unreached.length === 0 &&
+    report.unresolved.length === 0 &&
+    report.staleAllowlist.length === 0;
+
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text backgroundColor="yellow" color="black" bold>{` ${scenario} `}</Text>
-        <Text dimColor>{`  ${entries.length} change${entries.length === 1 ? "" : "s"}`}</Text>
-      </Box>
-      {entries.map((entry) => (
-        <Box key={`${entry.kind}-${entry.path}`} flexDirection="column" paddingLeft={2}>
-          {entry.subject ? (
-            <Text bold>
-              {entry.subject}
-              <Text dimColor>{`  ${entry.path}`}</Text>
-            </Text>
+    <Static items={[{ key: "__coverage" }]}>
+      {(block) => (
+        <Box key={block.key} flexDirection="column" marginTop={1}>
+          {report.unreached.length > 0 ? (
+            <Box flexDirection="column">
+              <Box>
+                <Text backgroundColor="red" color="black" bold>
+                  {" UNREACHED "}
+                </Text>
+                <Text dimColor>{`  authored, and no scenario mounts it  ${report.unreached.length}`}</Text>
+              </Box>
+              {report.unreached.map((entry) => (
+                <Box key={entry.capabilityId} paddingLeft={2}>
+                  <Text bold>{entry.capabilityId}</Text>
+                  <Text dimColor>{`  ${entry.origin.file}:${entry.origin.line}`}</Text>
+                </Box>
+              ))}
+            </Box>
           ) : null}
-          {entry.kind === "added" ? (
-            <Text color="green" wrap="wrap">{`+ ${entry.path}  ${formatValue(entry.after)}`}</Text>
-          ) : entry.kind === "removed" ? (
-            <Text color="red" wrap="wrap">{`- ${entry.path}  ${formatValue(entry.before)}`}</Text>
-          ) : (
-            <>
-              <Text color="yellow">{`~ ${entry.path}`}</Text>
-              <Text color="red" wrap="wrap">{`    before: ${formatValue(entry.before)}`}</Text>
-              <Text color="green" wrap="wrap">{`    after:  ${formatValue(entry.after)}`}</Text>
-            </>
-          )}
+          <Box marginTop={report.unreached.length > 0 ? 1 : 0}>
+            <Text color={clean ? "green" : "red"} bold>
+              {`${report.authored} authored · ${report.reached} reached · ${report.unreached.length} unreached`}
+            </Text>
+            <Text dimColor>{`  ${report.scenarios.join(", ")}`}</Text>
+          </Box>
         </Box>
-      ))}
-    </Box>
+      )}
+    </Static>
   );
 }

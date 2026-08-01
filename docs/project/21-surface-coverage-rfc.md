@@ -1,9 +1,11 @@
 # 21 — Surface Coverage RFC (P1)
 
 > [!IMPORTANT]
-> **Status: Accepted and implemented.** Raised against 0.7 after an audit of what `agent-surface inspect` can and cannot tell a developer. All three corrections are settled as decision records **D35–D37** in [13](13-open-questions.md) and implemented in `@agent-surface/cli`, with requirements `AS-COVER-001…006` and `AS-CLI-006…007` conformance-tested in `packages/cli/test/coverage.test.ts` and `packages/cli/test/cli.test.ts`. The normative command contract now lives in [20 §capabilities](20-cli.md#capabilities), [20 §coverage](20-cli.md#coverage) and [20 §inspect](20-cli.md#inspect); this document is the rationale, not a second source of truth.
+> **Status: Accepted and implemented.** Raised against 0.7 after an audit of what `agent-surface inspect` can and cannot tell a developer. All three corrections are settled as decision records **D35–D37** in [Decisions](13-open-questions.md) and implemented in `@agent-surface/cli`, with requirements `AS-COVER-001…006` and `AS-CLI-006…007` conformance-tested in `packages/cli/test/coverage.test.ts` and `packages/cli/test/cli.test.ts`. The normative command contract now lives in [CLI §capabilities](../20-cli.md#capabilities), [CLI §coverage](../20-cli.md#coverage) and [CLI §inspect](../20-cli.md#inspect); this document is the rationale, not a second source of truth.
 >
 > **The security model is untouched.** No correction here creates a runtime exposure path, and none of them changes `snapshot()`, `invoke`, or any adapter. The new artifact is a developer projection in the same sense as `explainSurface()` — see [§what this does not change](#what-this-rfc-does-not-change), which is the section to read first if the words "automatic discovery" set off an alarm. It should.
+>
+> **Superseded in part by [§amendment](#amendment--the-command-cut-was-wrong-d38) (D38, 0.11.0):** the analysis holds, the two new commands do not — `capabilities` and `coverage` were folded into `inspect`/`check` behind a `--depth` dial.
 >
 > **What shipped differently from the proposal below:** `undeclared` holds `domain:` ids apart from genuinely-undeclared ones, since the inventory never claimed that plane and filing them as "no static origin" would report a stated boundary as a defect. The `inspect` header carries the scenario and scope but *not* the authored denominator — that would force a TypeScript program boot into every `inspect`, and the denominator is `coverage`'s to report. Descriptions concatenated from adjacent string literals resolve as `static`, not `partial`. Of the five open questions, four are resolved (see [below](#unresolved-questions)); the granular-hook one became [OQ-13](13-open-questions.md#part-b--genuinely-open-questions).
 
@@ -24,7 +26,7 @@ Nine of how many? Not eleven: `--explain` will say `0 hidden` here, so the *regi
 
 ### The conflation
 
-[20 §why this isn't `--entry ./router.ts`](20-cli.md#why-this-isnt---entry-routerts) opens with an argument that is correct and load-bearing:
+[CLI §why this isn't `--entry ./router.ts`](../20-cli.md#why-this-isnt---entry-routerts) opens with an argument that is correct and load-bearing:
 
 > A server router is a static export… A presentation surface is not: it is a projection of which components are currently mounted…
 
@@ -48,7 +50,7 @@ What is genuinely dynamic is *availability*, *policy outcome*, and *binding* —
 
 **1. Authored, but no scenario reaches it.** The surface is a projection of what is mounted. A route no scenario visits, a drawer no scenario opens, a list no scenario fills — the components never register, so there is nothing to report. `--explain` does not help: `explainSurface()` iterates active registrations only. `check` does not help either — the baseline never contained the capability, so there is no drift. Scenario coverage is unmeasured and unmeasurable with the current commands.
 
-**2. Registered, and silently rejected.** A duplicate `(type, instanceId)` yields a dead handle, first-wins; an `onRegister` guard rejection does the same. Both diagnostics go through `devError`, which prints only when `environment === "development"` — and the config shape [20 §configuration](20-cli.md#configuration) documents builds the app with `environment: "test"`. The rejected registration is absent from the snapshot **and** from the explanation. The registry does emit `component-rejected`, and the testing harness records it; the CLI's collector never reads the event stream. Copy-paste a component `type`, or render two instances without an `instanceId`, and a capability disappears with no output anywhere.
+**2. Registered, and silently rejected.** A duplicate `(type, instanceId)` yields a dead handle, first-wins; an `onRegister` guard rejection does the same. Both diagnostics go through `devError`, which prints only when `environment === "development"` — and the config shape [CLI §configuration](../20-cli.md#configuration) documents builds the app with `environment: "test"`. The rejected registration is absent from the snapshot **and** from the explanation. The registry does emit `component-rejected`, and the testing harness records it; the CLI's collector never reads the event stream. Copy-paste a component `type`, or render two instances without an `instanceId`, and a capability disappears with no output anywhere.
 
 **3. Never authored at all.** A button with no `action` behind it. **Out of scope for this RFC and for any tool in this repository** — see [§what this RFC does not change](#what-this-rfc-does-not-change). Stated here so the coverage number is not read as something it is not.
 
@@ -181,7 +183,7 @@ scenario admin  route /devices  scope devices
 
 This section is normative. C1 reads code; it does not expose anything.
 
-**Directive §2.1 stands, unweakened.** No DOM scanning. No selector, coordinate, screenshot, or accessibility-tree identity. No "expose all controls" switch. *A capability still exists only through reviewed registration code* — the extractor reads exactly that code and creates nothing. It is the tool [11 §non-goal 10](11-non-goals.md) already contemplates: "If a future DX tool suggests annotations, it outputs code for humans to review, never runtime exposure." This one does not even suggest annotations; it counts the ones that exist.
+**Directive §2.1 stands, unweakened.** No DOM scanning. No selector, coordinate, screenshot, or accessibility-tree identity. No "expose all controls" switch. *A capability still exists only through reviewed registration code* — the extractor reads exactly that code and creates nothing. It is the tool [Non-Goals §10](../11-non-goals.md) already contemplates: "If a future DX tool suggests annotations, it outputs code for humans to review, never runtime exposure." This one does not even suggest annotations; it counts the ones that exist.
 
 **The inventory is never agent-facing, and reachability is the enforcement.** It lives in `@agent-surface/cli`, which no adapter imports and no application ships. It must not be re-exported from `@agent-surface/core`, mirroring `AS-EXPLAIN-004` — the rule that keeps `explainSurface()` off the package root adapters import. `AS-COVER-006` pins it.
 
@@ -206,10 +208,41 @@ C3 needs nothing from you — `inspect` and `check` say more the moment you upgr
 
 ## Unresolved questions
 
-Four of the five are settled by D35/D36. The fifth moved to Part B of [13](13-open-questions.md#part-b--genuinely-open-questions) rather than being decided under time pressure.
+Four of the five are settled by D35/D36. The fifth moved to Part B of [Decisions](13-open-questions.md#part-b--genuinely-open-questions) rather than being decided under time pressure.
 
 1. **Which extractor?** ✅ **Resolved: the TypeScript program**, over the project's own `tsconfig`. It needs no app boot, resolves imports the way the project's type-checker does, and degrades predictably at the constructs C1 must report. The trade-off went exactly as expected — `tsconfig` include globs are broader than what a bundle reaches, which is why the output says `upper bound`. One thing the proposal did not anticipate: a workspace tsconfig aliases the *library's own source* into the program, where `registry.register(definition)` inside `useAgentComponent` reads as an unresolvable registration. Analysis is therefore rooted at the surface config's directory, and the count of files skipped for being outside it is printed rather than assumed.
 2. **How far does the extractor follow a config object?** ✅ **Resolved: one hop** to a same-module `const`, then `unresolved`. Cheap, predictable, and the limit is visible in the output rather than in the implementation. Adjacent string-literal concatenation (`"long " + "description"`) resolves too — descriptions are the provider's cached prompt prefix (D28) and therefore long enough that authors wrap them, so calling that dynamic would have reported the codebase's most common formatting choice as a defect.
 3. **Should `coverage` fold in the granular hooks?** ⏳ **Still open — now [OQ-13](13-open-questions.md#part-b--genuinely-open-questions).** Today every `useAgentAction`/`useAgentObservation` call site is reported `unresolved` with a note, which is the honest state and makes a codebase built on them fail `capabilities` until someone accepts the gap knowingly. Deciding between one extractor with two shapes and two extractors needs a real codebase using them; the example app uses `useAgentComponent` exclusively.
 4. **Does `undeclared` deserve to fail the command?** ✅ **Resolved: report, do not fail** — tracked as [OQ-14](13-open-questions.md#part-b--genuinely-open-questions) for revisiting. Failing now would punish the legitimate dynamic registration to catch the extractor gap it is indistinguishable from. Implementation added a distinction the proposal missed: `domain:` ids reached at runtime are held apart from `undeclared` entirely, because the inventory never claimed that plane and reporting them as "no static origin" would file a stated boundary as a defect.
 5. **Is the allowlist per-capability or per-component?** ✅ **Resolved: per-capability.** Per-component would be one line for a whole unmounted screen, and would hide a newly added capability inside an already-allowed component — the second failure mode is the one this RFC is about.
+
+---
+
+## Amendment — the command cut was wrong (D38)
+
+> Added 0.11.0. Everything above stands: the analysis, the three corrections, the requirements, the failure discipline. What did not stand is the shape it shipped as.
+
+This RFC recovered the catalog by adding two commands, `capabilities` and `coverage`. That split the surface along an **implementation seam** — *does this boot a TypeScript program? does it need jsdom?* — rather than along a question anybody has. Nobody wants "the catalog". They want to know what an agent can reach, and what it can't.
+
+The tell is in this document's own [§adoption](#adoption): four steps, three commands, and an instruction to wire the last one into CI *separately* from the `check` that was already there. Two gates for one question.
+
+The cost was not aesthetic. [20 §check](../20-cli.md#check) shipped this, and it is the most honest line the CLI has ever printed and the clearest statement of a hole:
+
+```text
+surface matches the baseline in admin, anonymous
+that is a statement about these scenarios only; capabilities no scenario mounts
+are `agent-surface coverage`'s question
+```
+
+A green tick, and underneath it the tool explaining which question it had declined to answer. In CI nobody reads the second line. A gate that names the check it is *not* performing is a gate with a hole in it, and this one was load-bearing: an entire unreached route passed.
+
+**The correction.** One command per question — `init` / `inspect` / `snapshot` / `check`, which is [`orpc-agent`](https://orpc-agent.dev)'s surface — and a `--depth static|runtime|full` dial for how much of the answer to compute (`AS-CLI-008`). The verdict reaches all three mounting commands (`AS-COVER-007`); `check` alone fails on it. `AS-COVER-003`'s non-zero exit moved from `capabilities` to `check`: the discipline did not weaken, it concentrated in the one place CI reads.
+
+**What the objection got right, and what it got wrong.** The note at the top of this document rejected putting the authored denominator in the `inspect` header because *"that would force a TypeScript program boot into every `inspect`"*. The cost is real and was never measured: on `examples/devices-app` it is **under a second** (`inspect` 2.1s, `capabilities` 2.5s, both 2.9s). That is an escape hatch, not a second command — and `--depth runtime` is the escape hatch, for the wide-tsconfig repository where it genuinely bites.
+
+**Two defects the merge surfaced**, both of the class this RFC exists to remove:
+
+- **A scope faked coverage gaps.** `coverage --scope devices` filtered the mount but not the catalog, so it reported both `app.navigation` capabilities as ones "no scenario mounts" — over two that every scenario mounts. The join now calls core's own `matchesScope` (re-exported from `@agent-surface/core/explain`, off the agent-facing root) rather than a second copy that would drift.
+- **A partial run still produced a verdict.** A scenario that failed to mount reached nothing, so everything it would have surfaced counted as unreached. There is now no verdict at all in that case, and the failed scenarios are named instead.
+
+**What this amendment does not change.** Every word of [§what this RFC does not change](#what-this-rfc-does-not-change). No runtime exposure path, no DOM scanning, no change to `snapshot()`, `invoke`, or any adapter, and `AS-COVER-006` still pins the catalog out of the package root adapters import.

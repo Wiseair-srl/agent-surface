@@ -1,5 +1,7 @@
-// Conformance: AS-CLI-002 (check's exit codes are the contract),
-// AS-CLI-003 (piped / --plain / CI / NO_COLOR output is plain and stable).
+// Conformance: AS-CLI-002 (the exit-code contract), AS-CLI-003 (piped /
+// --plain / CI / NO_COLOR output is plain and stable), AS-CLI-006 (rejected
+// registrations are reported), AS-CLI-007 (counts carry their qualifier),
+// AS-CLI-008 (--depth selects which halves are computed).
 //
 // These drive the real `main()` against the real example app — vite-node, a
 // real mount, a real snapshot. Anything less would not prove the exit code.
@@ -60,6 +62,9 @@ describe("check exit codes (AS-CLI-002)", () => {
       const code = await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir]);
       expect(code).toBe(1);
       expect(output()).toContain("agent-surface snapshot");
+      // "No baseline" is not drift. Filing it under a heading that says the
+      // surface changed would be a claim about a comparison that never ran.
+      expect(output()).toContain("NO BASELINE");
     },
     TIMEOUT,
   );
@@ -85,6 +90,7 @@ describe("check exit codes (AS-CLI-002)", () => {
       captured = [];
       expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(1);
       // The drift is reported against the capability, not a JSON path alone.
+      expect(output()).toContain("DRIFT");
       expect(output()).toContain(action.capabilityId);
       expect(output()).toContain("(edited)");
     },
@@ -101,11 +107,35 @@ describe("check exit codes (AS-CLI-002)", () => {
   );
 
   it(
-    "exits 1 with a named scenario that does not exist",
+    "exits 2 — not 1 — when it could not run at all",
     async () => {
-      const code = await main(["inspect", "nope", "--config", CONFIG, "--plain"]);
-      expect(code).toBe(1);
+      // `1` means the command ran and found something; `2` means it never ran.
+      // A gate that answers 1 to both is a gate whose red says nothing, and CI
+      // cannot tell "the surface changed" from "the tool never loaded the app".
+      expect(await main(["inspect", "nope", "--config", CONFIG, "--plain"])).toBe(2);
       expect(output()).toContain('unknown scenario "nope"');
+
+      captured = [];
+      expect(await main(["inspect", "--config", "/nonexistent/agent-surface.config.tsx"])).toBe(2);
+
+      captured = [];
+      expect(await main(["inspect", "--config", CONFIG, "--depth", "sideways"])).toBe(2);
+      expect(output()).toContain("--depth must be one of");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "names where a retired command's answer went, rather than only refusing it",
+    async () => {
+      // Cut clean in 0.11 — no aliases. An error that only says "unknown" makes
+      // the reader search the changelog for a command whose answer still exists.
+      expect(await main(["capabilities", "--config", CONFIG])).toBe(2);
+      expect(output()).toContain("inspect --depth static");
+
+      captured = [];
+      expect(await main(["coverage", "--config", CONFIG])).toBe(2);
+      expect(output()).toContain("check");
     },
     TIMEOUT,
   );
@@ -151,7 +181,7 @@ describe("plain output (AS-CLI-003)", () => {
     // takes the plain-text path down with it — a path that was never going to
     // draw a terminal UI in the first place. It must stay behind loadInk().
     const { readFileSync } = await import("node:fs");
-    for (const file of ["inspect.tsx", "check.tsx", "snapshot.ts"]) {
+    for (const file of ["inspect.tsx", "check.ts", "snapshot.ts", "init.tsx"]) {
       const source = readFileSync(
         fileURLToPath(new URL(`../src/commands/${file}`, import.meta.url)),
         "utf8",
@@ -162,16 +192,46 @@ describe("plain output (AS-CLI-003)", () => {
     }
   });
 
+  it("check has no rendering framework in its path at all", async () => {
+    // Its output is a report pasted into a pull request and read out of a CI
+    // log, and neither of those is a terminal. It does not even reach for Ink
+    // behind loadInk() — it is plain, always, with no branch to get wrong.
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(
+      fileURLToPath(new URL("../src/commands/check.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(source).not.toMatch(/loadInk|\bink\b/);
+  });
+
   it(
     "--json emits parseable data, and only carries the explanation when asked",
     async () => {
       expect(await main(["inspect", "admin", "--config", CONFIG, "--json"])).toBe(0);
-      // One shape whether or not a scenario was named, so a consumer never has
-      // to branch on how the command was invoked.
-      const plain = JSON.parse(output()) as { scenarios: Array<Record<string, unknown>> };
+      // One shape whatever the depth and whether or not a scenario was named,
+      // so a consumer never branches on how the command was invoked. A half the
+      // depth did not compute is `null`, which is a different statement from
+      // `[]` or `{}`.
+      const plain = JSON.parse(output()) as {
+        depth: string;
+        catalog: { capabilities: unknown[] } | null;
+        scenarios: Array<Record<string, unknown>>;
+        coverage: { unreached: unknown[] } | null;
+        failures: unknown[];
+      };
+      expect(plain.depth).toBe("full");
       expect(plain.scenarios).toHaveLength(1);
       expect(plain.scenarios[0]?.["scenario"]).toBe("admin");
       expect(plain.scenarios[0]).not.toHaveProperty("explanation");
+      expect(plain.catalog?.capabilities.length).toBeGreaterThan(0);
+      expect(plain.coverage?.unreached).toEqual([]);
+      expect(plain.failures).toEqual([]);
+
+      captured = [];
+      await main(["inspect", "admin", "--config", CONFIG, "--json", "--depth", "runtime"]);
+      const runtimeOnly = JSON.parse(output()) as { catalog: unknown; coverage: unknown };
+      expect(runtimeOnly.catalog).toBeNull();
+      expect(runtimeOnly.coverage).toBeNull();
 
       captured = [];
       await main(["inspect", "anonymous", "--config", CONFIG, "--json", "--explain"]);
@@ -212,8 +272,10 @@ describe("inspect covers every scenario by default", () => {
       // Signed out, the page offers an agent nothing: the second block is the
       // empty surface, not a repeat of the first (D11). It says so as an
       // authority decision rather than as an absence of annotation, because the
-      // capabilities are all there — a policy hid them (AS-CLI-007).
-      expect(all).toContain("hidden by policy");
+      // capabilities are all there — a policy hid them (AS-CLI-007). They now
+      // print as rows marked `hidden` rather than as a count alone.
+      expect(all).toContain("hidden");
+      expect(all.slice(all.indexOf("scenario anonymous"))).toContain("devices.table.sort");
 
       captured = [];
       expect(await main(["inspect", "admin", "--config", CONFIG, "--plain"])).toBe(0);
@@ -239,6 +301,61 @@ describe("inspect covers every scenario by default", () => {
   );
 });
 
+describe("--depth selects which halves are computed (AS-CLI-008)", () => {
+  it(
+    "computes both by default, and says so on the way past",
+    async () => {
+      expect(await main(["inspect", "admin", "--config", CONFIG, "--plain"])).toBe(0);
+      const full = output();
+      expect(full).toContain("authored (upper bound)"); // the catalog
+      expect(full).toContain("scenario admin"); // the projection
+      expect(full).toContain("reached"); // the join
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "computes only the catalog at --depth static, mounting nothing",
+    async () => {
+      expect(await main(["inspect", "--depth", "static", "--config", CONFIG, "--plain"])).toBe(0);
+      expect(output()).toContain("authored (upper bound)");
+      expect(output()).not.toContain("scenario admin");
+      // No mount ⇒ nothing reached anything ⇒ no verdict to state.
+      expect(output()).not.toContain("reached");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "computes only the projection at --depth runtime, skipping the TypeScript program",
+    async () => {
+      expect(
+        await main(["inspect", "admin", "--depth", "runtime", "--config", CONFIG, "--plain"]),
+      ).toBe(0);
+      expect(output()).toContain("scenario admin");
+      expect(output()).not.toContain("authored (upper bound)");
+      expect(output()).not.toContain("UNREACHED");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "refuses a depth that cannot answer the command",
+    async () => {
+      // A baseline is a projection. At `--depth static` nothing is mounted, so
+      // there is nothing to compare and nothing to write — and saying so beats
+      // reporting a vacuous match.
+      expect(await main(["check", "--depth", "static", "--config", CONFIG, "--plain"])).toBe(2);
+      expect(output()).toContain("nothing to compare");
+
+      captured = [];
+      expect(await main(["snapshot", "--depth", "static", "--config", CONFIG, "--plain"])).toBe(2);
+      expect(output()).toContain("nothing to write");
+    },
+    TIMEOUT,
+  );
+});
+
 describe("registrations rejected during a mount are reported (AS-CLI-006)", () => {
   const REJECTED = fileURLToPath(
     new URL("./fixtures/rejected/agent-surface.config.tsx", import.meta.url),
@@ -253,7 +370,7 @@ describe("registrations rejected during a mount are reported (AS-CLI-006)", () =
       // The counts line has to carry it too: a reader who stops at the header
       // is the reader this whole correction is for.
       expect(rendered).toContain("1 registration rejected");
-      expect(rendered).toContain("rejected during mount");
+      expect(rendered).toContain("REJECTED");
       expect(rendered).toContain("dup.panel (default)");
       expect(rendered).toContain("duplicate");
 
@@ -331,14 +448,43 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
   );
 
   it(
-    "makes check name the scenarios it compared",
+    "makes a green check name the scenarios it compared, and drop the caveat it can now answer",
     async () => {
       expect(await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
       captured = [];
       expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
-      // A green check is a statement about these scenarios, not the surface.
       expect(output()).toContain("admin, anonymous");
-      expect(output()).toContain("coverage");
+
+      // It used to have to add that this was a statement about these scenarios
+      // only, and point at a different command for the rest. At `--depth full`
+      // there is no rest: the verdict is right there, in the same output.
+      expect(output()).toContain("authored");
+      expect(output()).toContain("reached");
+      expect(output()).not.toContain("statement about these scenarios only");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "keeps the caveat exactly where it is still true",
+    async () => {
+      // `--depth runtime` skips the catalog, so this check really is a statement
+      // about these scenarios only — and has to say so.
+      await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir]);
+      captured = [];
+      expect(
+        await main([
+          "check",
+          "--config",
+          CONFIG,
+          "--baseline-dir",
+          baselineDir,
+          "--depth",
+          "runtime",
+        ]),
+      ).toBe(0);
+      expect(output()).toContain("statement about these scenarios only");
+      expect(output()).toContain("--depth full");
     },
     TIMEOUT,
   );
