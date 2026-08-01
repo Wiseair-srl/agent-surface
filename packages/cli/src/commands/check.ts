@@ -20,6 +20,7 @@ import {
 import { ALLOWLIST_FILE, coverageExitCode, UNREAD_ALLOWLIST_FILE } from "../coverage.js";
 import {
   renderCoveragePlain,
+  renderCheckOverviewPlain,
   renderDriftPlain,
   renderFailuresPlain,
   renderNoVerdictPlain,
@@ -37,6 +38,7 @@ export interface CheckOptions {
   allowUnresolved?: boolean;
   json?: boolean;
   plain?: boolean;
+  detail?: boolean;
 }
 
 interface ScenarioDrift {
@@ -167,12 +169,31 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     return couldNotRun ? 2 : ok ? 0 : 1;
   }
 
+  const overview = renderCheckOverviewPlain({
+    status: couldNotRun ? "ERROR" : ok ? "PASS" : "FAIL",
+    ...(coverage ? { coverage } : {}),
+    unresolvedAllowed: options.allowUnresolved === true,
+    baselineCurrent: Math.max(0, runtime.results.length - drifted.length),
+    baselineTotal: runtime.scenarios.length,
+    scenarioManifestOk: !scenarioManifestMismatch && staleBaselineFiles.length === 0,
+    rejected: rejected.reduce((sum, entry) => sum + entry.rejections.length, 0),
+    mountFailures: runtime.failures.length,
+    scenarios: runtime.scenarios,
+  });
+  if (ok) write(overview);
+  else writeError(overview);
+
   // The gap leads, because it is the finding this command could not previously
   // make at all. Drift follows, because it is the one it always could.
   if (coverage) {
-    const rendered = renderCoveragePlain(coverage);
-    if (coverageFailed) writeError(rendered);
-    else write(rendered);
+    const rendered = renderCoveragePlain(coverage, {
+      compact: true,
+      ...(options.detail ? { detail: true } : {}),
+    });
+    if (rendered) {
+      if (coverageFailed) writeError(`\n${rendered}`);
+      else write(`\n${rendered}`);
+    }
   }
 
   // "No baseline" is not drift, and filing it under a heading that says the
@@ -244,18 +265,6 @@ export async function runCheck(options: CheckOptions): Promise<number> {
   }
 
   if (ok) {
-    if (coverage) write("");
-    // Naming them is the point (`AS-CLI-007`). This used to have to add that it
-    // was a statement about these scenarios only, and point at another command
-    // for the rest; at `--depth full` there is no rest, so the caveat is gone
-    // along with the command it pointed at.
-    write(`surface matches the baseline in ${runtime.scenarios.join(", ")}`);
-    if (!coverage) {
-      write(
-        "that is a statement about these scenarios only — re-run at --depth full to find " +
-          "capabilities no scenario mounts",
-      );
-    }
     return 0;
   }
   return 1;

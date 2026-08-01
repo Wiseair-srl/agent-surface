@@ -179,7 +179,7 @@ One capability per line, because *what is on this surface* is a scanning questio
 
 The unavailability reason is a continuation line rather than a column, so one long sentence cannot set the width of the whole grid.
 
-`--detail` restores the grouped, one-paragraph-per-capability view. `--explain` and `--schemas` imply it: policy chains and JSON Schemas are multi-line by nature and cannot live in a cell, so asking for either is asking for the view that can hold them.
+For scenario views, `--detail` restores the grouped, one-paragraph-per-capability view. For static/check reports it expands origins, diagnostics, and non-gating inventories. `--explain` and `--schemas` imply it: policy chains and JSON Schemas are multi-line by nature and cannot live in a cell.
 
 #### The header says what the counts are relative to
 
@@ -261,11 +261,16 @@ The gate — the only command that fails on a finding, which is why every findin
 A baseline file that exists but cannot be read or parsed is *could not run* (`2`), never “missing baseline.” Scenario names must be filename-safe and cannot escape or collide inside `baselineDir`.
 
 ```text
-UNREACHED — authored, and no scenario mounts it  (1)
-CAPABILITY                ORIGIN
-view:cov.unmounted.toCsv  Unmounted.tsx:26
+SURFACE CHECK  FAIL
 
-3 authored · 2 reached · 1 unreached · 1 scenario (default)
+Coverage    FAIL   2/3 authored capabilities reached · 1 unreached
+Catalog     PASS   all static sites resolved
+Domain      PASS   1 manifest capability reached
+Baselines   FAIL   0/1 scenario baselines current
+Runtime     PASS   1 scenario mounted
+
+SCENARIOS  (1)
+  admin
 
 DRIFT — the surface changed against its baseline  (1)
   admin: 1 change
@@ -273,7 +278,6 @@ DRIFT — the surface changed against its baseline  (1)
         before: Change the table sorting
         after:  Change the table sorting order
 
-surface drift in 1 scenario — review the change, then `agent-surface snapshot` to accept it
 ```
 
 The gap leads and drift follows, because a capability nothing reaches is a bigger problem than a capability that changed.
@@ -285,11 +289,20 @@ Any difference counts as drift, including a description edit. Descriptions are t
 A green `check` names what it compared, for the same reason the `inspect` header does (`AS-CLI-007`):
 
 ```text
-3 authored · 3 reached · 0 unreached · 2 scenarios (admin, anonymous)
-every authored capability is reached by a scenario
+SURFACE CHECK  PASS
 
-surface matches the baseline in admin, anonymous
+Coverage    PASS   3/3 authored capabilities reached
+Catalog     WARN   11 unread static sites allowlisted
+Domain      PASS   2 manifest capabilities reached
+Baselines   PASS   22/22 scenario baselines current
+Runtime     PASS   22 scenarios mounted
+
+SCENARIOS  (22)
+  cashflow-overview, transactions, rules, balance, accounts, receivables-pending,
+  collections, invoices-all, contracts, …
 ```
+
+The verdict is always first. Passing checks summarize non-gating inventories; `--detail` restores undeclared runtime ids and full diagnostics. Failing findings are never suppressed.
 
 At `--depth full` that is the whole answer. At `--depth runtime` the catalog was not read, so the line adds that this is a statement about *these scenarios only* — printed exactly where it is true.
 
@@ -308,14 +321,27 @@ agent-surface inspect --depth static
 ```
 
 ```text
-10 authored (upper bound) · 10 call sites across 21 files · domain not analyzed, it comes from the oRPC router (OQ-1)
-40 program files outside the config's directory were not analyzed
+STATIC CATALOG
+STATUS        INCOMPLETE — 11 unread capability identities
+Capabilities  35 authored (upper bound) · 58 resolved call sites
+Program       126 files analyzed · 40 agent-surface implementation files excluded
+Metadata      22 call sites partially read · identity remains resolved
+Domain        not analyzed at static depth; full depth reads the oRPC manifest
 
-CAPABILITY                KIND    ORIGIN                          READ
-view:app.navigation.goTo  action  src/app/AgentNavigation.tsx:25  static
-view:devices.table.sort   action  src/app/DevicesTable.tsx:162    partial
-    ⤷ the component config spreads another object, so some metadata here may be dynamic
+COMPONENTS  (8)
+COMPONENT                CAPABILITIES  CALL SITES  DYNAMIC META
+view:reporting.revenues  4             12          4
+    ⤷ view:reporting.revenues.readColumns · view:reporting.revenues.readFilters · …
+
+UNREAD SITES  (11)
+FILE                                     REASON          SITES
+app/lib/hooks/useTableAgentComponent.ts  spread-members  11
+
+ALLOWLIST KEYS
+  allowlist key: app/lib/hooks/useTableAgentComponent.ts#spread-members#…
 ```
+
+The default preserves every resolved identity and copyable allowlist key, but summarizes repetition: capabilities are grouped under their component and unread sites by file/reason. `--detail` adds the raw call-site table, origins, diagnostic prose, and per-site notes.
 
 At `--depth full` only the summary line prints here: the scenario tables below name every capability a scenario reached, and the verdict names the ones it did not, so the listing would be the same information a second time, above the answer instead of in it.
 
@@ -501,7 +527,7 @@ Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and 
 | `--config <path>` | Config path. Default: nearest `agent-surface.config.*`, searching upward. |
 | `--baseline-dir <path>` | Override where baselines live. |
 | `--scope <prefix>` | Restrict to a component-type prefix. Repeatable. |
-| `--detail` | One paragraph per capability instead of the table. |
+| `--detail` | Full capability, origin, and diagnostic detail. On `check`, also lists non-gating runtime inventories. |
 | `--explain` | Policy attribution. Implies `--detail`. |
 | `--schemas` | Include input/output JSON Schemas. Implies `--detail`. |
 | `--tsconfig <path>` | The tsconfig the static half reads. Default: nearest to the config. |

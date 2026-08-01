@@ -68,7 +68,7 @@ devices.disable           procedure    destructive  disabled  confirmation:requi
 
 Every count names what it is relative to — the scenario always, the scope when one is active. A surface is a projection of one mounted context, never "the app".
 
-`--detail` swaps the table for one paragraph per capability; `--explain` and `--schemas` imply it.
+`--detail` shows full capability, origin, and diagnostic detail; `--explain` and `--schemas` imply it.
 
 ### Depth
 

@@ -992,6 +992,16 @@
       ],
       "status": "implemented"
     },
+    "AS-CLI-012": {
+      "title": "Human output leads with a verdict, groups complete static results compactly, and reserves raw origins and non-gating inventories for --detail",
+      "source": "20-cli.md#output-modes",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/cli.test.ts",
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-COVER-001": {
       "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
       "source": "20-cli.md#the-catalog---depth-static",

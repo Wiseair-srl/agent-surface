@@ -72,7 +72,7 @@ export async function runInspect(options: InspectOptions): Promise<number> {
     // At `--depth static` this listing is the output. At `--depth full` the
     // scenario tables below carry the same capabilities and the verdict names
     // the ones they miss, so only the summary line prints here.
-    write(renderCatalogPlain(initialInventory, { standalone: true }));
+    write(renderCatalogPlain(initialInventory, { standalone: true, detail }));
   }
 
   // `null` when Ink cannot run here (React 18 host), which is a fallback to

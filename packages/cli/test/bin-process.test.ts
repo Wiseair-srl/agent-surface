@@ -97,8 +97,9 @@ describe("AS-CLI-005 — the command exits when the app leaves handles open", ()
       expect(code).toBe(0);
       // Output is complete, not truncated by the exit.
       expect(stdout).toContain("hostile.panel");
-      expect(stderr).toContain("handle(s) are still open");
-      expect(stderr).toContain("Timeout");
+      expect(stderr).toContain("PROCESS CLEANUP  WARN");
+      expect(stderr).toContain("Open handles  1 (Timeout)");
+      expect(stderr).toContain("report complete; exit code unchanged");
     },
     TIMEOUT,
   );
@@ -112,7 +113,7 @@ describe("AS-CLI-005 — the command exits when the app leaves handles open", ()
       expect(code).toBe(0);
       // A tidy app must never be accused of a leak — in particular not of the
       // CLI's own vite server, which is still closing its socket at this point.
-      expect(stderr).not.toContain("handle(s) are still open");
+      expect(stderr).not.toContain("PROCESS CLEANUP  WARN");
     },
     TIMEOUT,
   );

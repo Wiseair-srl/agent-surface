@@ -21,6 +21,24 @@ import { unreadKey, type CoverageReport } from "../coverage.js";
 const MARK = { expose: "+", disable: "~", hide: "-" } as const;
 const STATE = { expose: "callable", disable: "disabled", hide: "hidden" } as const;
 const NONE = "—";
+const REPORT_WIDTH = 100;
+
+/** Deterministic wrapping: readable in logs, independent of terminal width. */
+function wrapText(text: string, width: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (line && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length > 0 ? lines : [""];
+}
 
 /**
  * Column widths come from the *content*, never from `process.stdout.columns`.
@@ -50,7 +68,11 @@ function renderTable(headers: string[], rows: Array<{ cells: string[]; note?: st
     // The unavailability reason is prose of unbounded length. A column for it
     // would set the table's width by its longest sentence; a continuation line
     // keeps the grid aligned and puts the reason directly under its capability.
-    if (row.note) lines.push(`    ⤷ ${row.note}`);
+    if (row.note) {
+      for (const [index, note] of wrapText(row.note, REPORT_WIDTH - 6).entries()) {
+        lines.push(`    ${index === 0 ? "⤷ " : "  "}${note}`);
+      }
+    }
   }
   return lines;
 }
@@ -245,6 +267,14 @@ export interface CatalogRenderOptions {
   standalone?: boolean;
   /** Authoritative domain manifest entries, when runtime config was loaded. */
   domainCapabilities?: number;
+  /** Show origins, notes and per-site allowlist keys. */
+  detail?: boolean;
+}
+
+function componentOf(capabilityId: string): string {
+  const path = capabilityId.replace(/^(view|domain):/, "");
+  const dot = path.lastIndexOf(".");
+  return dot === -1 ? path : path.slice(0, dot);
 }
 
 export function renderCatalogPlain(
@@ -253,53 +283,128 @@ export function renderCatalogPlain(
 ): string {
   const lines: string[] = [];
   const resolved = inventory.capabilities.filter((c) => c.resolution !== "unresolved");
+  const unreadEntries = unresolved(inventory);
+  const dynamicMetadata = resolved.filter((c) => c.resolution === "partial").length;
   const ids = authoredIds(inventory);
   const authored = ids.size + (options.domainCapabilities ?? 0);
 
+  lines.push("STATIC CATALOG");
   lines.push(
-    `${authored} authored (upper bound) · ${resolved.length} call site${
-      resolved.length === 1 ? "" : "s"
-    } across ${inventory.filesAnalyzed} file${inventory.filesAnalyzed === 1 ? "" : "s"}` +
-      (options.domainCapabilities === undefined
-        ? " · domain not analyzed without a loaded oRPC manifest"
-        : ` · ${options.domainCapabilities} domain manifest capabilit${
-            options.domainCapabilities === 1 ? "y" : "ies"
-          }`),
+    `STATUS        ${unreadEntries.length > 0 ? "INCOMPLETE" : "COMPLETE"}${
+      unreadEntries.length > 0
+        ? ` — ${unreadEntries.length} unread capability identit${unreadEntries.length === 1 ? "y" : "ies"}`
+        : " — every capability identity resolved"
+    }`,
   );
-  if (inventory.filesOutsideRoot > 0) {
-    // Relative, not absolute: plain output is byte-stable across runs
-    // (`AS-CLI-003`), and an absolute path makes it machine-specific the moment
-    // two people diff a CI log.
-    lines.push(
-      `${inventory.filesOutsideRoot} program file${
-        inventory.filesOutsideRoot === 1 ? "" : "s"
-      } from agent-surface implementation packages were excluded`,
-    );
-  }
+  lines.push(
+    `Capabilities  ${authored} authored (upper bound) · ${resolved.length} resolved call site${
+      resolved.length === 1 ? "" : "s"
+    }`,
+  );
+  lines.push(
+    `Program       ${inventory.filesAnalyzed} file${inventory.filesAnalyzed === 1 ? "" : "s"} analyzed` +
+      (inventory.filesOutsideRoot > 0
+        ? ` · ${inventory.filesOutsideRoot} agent-surface implementation file${
+            inventory.filesOutsideRoot === 1 ? "" : "s"
+          } excluded`
+        : ""),
+  );
+  lines.push(
+    `Metadata      ${dynamicMetadata} call site${dynamicMetadata === 1 ? "" : "s"} partially read` +
+      (dynamicMetadata > 0 ? " · identity remains resolved" : ""),
+  );
+  lines.push(
+    options.domainCapabilities === undefined
+      ? "Domain        not analyzed at static depth; full depth reads the oRPC manifest"
+      : `Domain        ${options.domainCapabilities} manifest capabilit${
+          options.domainCapabilities === 1 ? "y" : "ies"
+        }`,
+  );
 
   if (!options.standalone) return lines.join("\n");
 
-  const byId = [...resolved].sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
-  if (byId.length > 0) {
+  const components = new Map<
+    string,
+    { ids: Set<string>; sites: number; partial: number }
+  >();
+  for (const capability of resolved) {
+    const component = componentOf(capability.capabilityId);
+    const current = components.get(component) ?? { ids: new Set<string>(), sites: 0, partial: 0 };
+    current.ids.add(capability.capabilityId);
+    current.sites += 1;
+    if (capability.resolution === "partial") current.partial += 1;
+    components.set(component, current);
+  }
+
+  if (components.size > 0) {
     lines.push("");
+    lines.push(`COMPONENTS  (${components.size})`);
     lines.push(
       ...renderTable(
-        ["CAPABILITY", "KIND", "ORIGIN", "READ"],
-        byId.map((capability) => ({
+        ["COMPONENT", "CAPABILITIES", "CALL SITES", "DYNAMIC META"],
+        [...components.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([component, data]) => ({
           cells: [
-            capability.capabilityId,
-            capability.kind,
-            `${capability.origin.file}:${capability.origin.line}`,
-            capability.resolution,
+            `view:${component}`,
+            String(data.ids.size),
+            String(data.sites),
+            data.partial > 0 ? String(data.partial) : NONE,
           ],
-          ...(capability.note ? { note: capability.note } : {}),
+          note: [...data.ids].sort().join(" · "),
         })),
       ),
     );
   }
 
-  const unread = renderUnread(unresolved(inventory));
-  if (unread.length > 0) lines.push("", ...unread);
+  if (unreadEntries.length > 0) {
+    const groups = new Map<string, number>();
+    for (const entry of unreadEntries) {
+      const key = `${entry.origin.file}\0${entry.reason ?? "unknown"}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    lines.push("");
+    lines.push(`UNREAD SITES  (${unreadEntries.length})`);
+    lines.push("Counts above are a floor until these sites are resolved or explicitly accepted.");
+    lines.push(
+      ...renderTable(
+        ["FILE", "REASON", "SITES"],
+        [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => {
+          const [file, reason] = key.split("\0");
+          return { cells: [file ?? "?", reason ?? "unknown", String(count)] };
+        }),
+      ),
+    );
+    lines.push("", "ALLOWLIST KEYS");
+    for (const entry of unreadEntries) lines.push(`  allowlist key: ${unreadKey(entry)}`);
+  }
+
+  if (options.detail) {
+    const byId = [...resolved].sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
+    if (byId.length > 0) {
+      lines.push("");
+      lines.push(`CAPABILITY DETAILS  (${byId.length} call sites)`);
+      lines.push(
+        ...renderTable(
+          ["CAPABILITY", "KIND", "ORIGIN", "READ"],
+          byId.map((capability) => ({
+            cells: [
+              capability.capabilityId,
+              capability.kind,
+              `${capability.origin.file}:${capability.origin.line}`,
+              capability.resolution,
+            ],
+            ...(capability.note ? { note: capability.note } : {}),
+          })),
+        ),
+      );
+    }
+    const unread = renderUnread(unreadEntries);
+    if (unread.length > 0) lines.push("", ...unread);
+  } else if (unreadEntries.length > 0 || resolved.length > 0) {
+    lines.push("");
+    lines.push(
+      "Details: re-run with --detail for origins, metadata diagnostics, and allowlist keys.",
+    );
+  }
   return lines.join("\n");
 }
 
@@ -336,7 +441,17 @@ function renderUnread(entries: AuthoredCapability[]): string[] {
  * This is the finding the command surface used to hide behind a fifth command,
  * so it is the last thing printed and the thing a reader stops on.
  */
-export function renderCoveragePlain(report: CoverageReport): string {
+export interface CoverageRenderOptions {
+  /** Check already prints an executive summary; render findings only. */
+  compact?: boolean;
+  /** Include non-gating inventories such as undeclared runtime ids. */
+  detail?: boolean;
+}
+
+export function renderCoveragePlain(
+  report: CoverageReport,
+  options: CoverageRenderOptions = {},
+): string {
   const lines: string[] = [];
 
   if (report.unreached.length > 0) {
@@ -355,14 +470,22 @@ export function renderCoveragePlain(report: CoverageReport): string {
   }
 
   if (report.undeclared.length > 0) {
-    lines.push(
-      section(
-        "UNDECLARED",
-        "present at runtime with no static origin — a dynamic registration, or a gap here",
-        report.undeclared.length,
-      ),
-    );
-    for (const id of report.undeclared) lines.push(`  ${id}`);
+    if (!options.compact || options.detail) {
+      lines.push(
+        section(
+          "UNDECLARED",
+          "present at runtime with no static origin — a dynamic registration, or a gap here",
+          report.undeclared.length,
+        ),
+      );
+      for (const id of report.undeclared) lines.push(`  ${id}`);
+    } else {
+      lines.push(
+        `NOTICE — ${report.undeclared.length} runtime capabilit${
+          report.undeclared.length === 1 ? "y has" : "ies have"
+        } no static origin; re-run check with --detail to list them.`,
+      );
+    }
     lines.push("");
   }
 
@@ -406,7 +529,131 @@ export function renderCoveragePlain(report: CoverageReport): string {
     lines.push(...renderUnread(report.unresolved), "");
   }
 
-  lines.push(...renderCoverageSummary(report));
+  if (!options.compact) lines.push(...renderCoverageSummary(report));
+  return lines.join("\n");
+}
+
+export interface CheckOverview {
+  status: "PASS" | "FAIL" | "ERROR";
+  coverage?: CoverageReport;
+  unresolvedAllowed: boolean;
+  baselineCurrent: number;
+  baselineTotal: number;
+  scenarioManifestOk: boolean;
+  rejected: number;
+  mountFailures: number;
+  scenarios: string[];
+}
+
+function overviewRow(label: string, status: "PASS" | "WARN" | "FAIL" | "ERROR", text: string): string {
+  return `${label.padEnd(12)}${status.padEnd(7)}${text}`;
+}
+
+function wrappedList(items: string[]): string[] {
+  const prefix = "  ";
+  return wrapText(items.join(", "), REPORT_WIDTH - prefix.length).map((line) => `${prefix}${line}`);
+}
+
+/** First-screen answer for `check`: verdict and health dimensions before detail. */
+export function renderCheckOverviewPlain(input: CheckOverview): string {
+  const lines = [`SURFACE CHECK  ${input.status}`, ""];
+  const coverage = input.coverage;
+  if (coverage) {
+    const coverageStatus =
+      coverage.unreached.length > 0 || coverage.staleAllowlist.length > 0
+        ? "FAIL"
+        : coverage.allowed.length > 0
+          ? "WARN"
+          : "PASS";
+    lines.push(
+      overviewRow(
+        "Coverage",
+        coverageStatus,
+        `${coverage.reached}/${coverage.authored} authored capabilities reached` +
+          (coverage.unreached.length > 0 ? ` · ${coverage.unreached.length} unreached` : "") +
+          (coverage.allowed.length > 0
+            ? ` · ${coverage.allowed.length} unreached allowlisted`
+            : "") +
+          (coverage.staleAllowlist.length > 0
+            ? ` · ${coverage.staleAllowlist.length} stale allowlist entr${
+                coverage.staleAllowlist.length === 1 ? "y" : "ies"
+              }`
+            : ""),
+      ),
+    );
+    const unread = coverage.unresolved.length;
+    const accepted = coverage.allowedUnread.length;
+    const catalogStatus =
+      coverage.staleUnreadAllowlist.length > 0 || (unread > 0 && !input.unresolvedAllowed)
+        ? "FAIL"
+        : unread > 0 || accepted > 0
+          ? "WARN"
+          : "PASS";
+    lines.push(
+      overviewRow(
+        "Catalog",
+        catalogStatus,
+        coverage.staleUnreadAllowlist.length > 0
+          ? `${coverage.staleUnreadAllowlist.length} stale unread allowlist entr${
+              coverage.staleUnreadAllowlist.length === 1 ? "y" : "ies"
+            }`
+          : unread > 0
+          ? `${unread} unread static site${unread === 1 ? "" : "s"}${
+              input.unresolvedAllowed ? " accepted by --allow-unresolved" : ""
+            }`
+          : accepted > 0
+            ? `${accepted} unread static site${accepted === 1 ? "" : "s"} allowlisted`
+            : "all static sites resolved",
+      ),
+    );
+    lines.push(
+      overviewRow(
+        "Domain",
+        coverage.unmanifestedDomain.length > 0 ? "FAIL" : coverage.domainAuthoritative ? "PASS" : "WARN",
+        coverage.unmanifestedDomain.length > 0
+          ? `${coverage.unmanifestedDomain.length} mounted capabilit${
+              coverage.unmanifestedDomain.length === 1 ? "y" : "ies"
+            } absent from manifest`
+          : coverage.domainAuthoritative
+          ? `${coverage.domainReached.length} manifest capabilit${
+              coverage.domainReached.length === 1 ? "y" : "ies"
+            } reached`
+          : "authoritative manifest not configured",
+      ),
+    );
+  } else {
+    lines.push(
+      overviewRow(
+        "Coverage",
+        input.status === "ERROR" ? "ERROR" : "WARN",
+        input.status === "ERROR"
+          ? "no verdict; runtime analysis incomplete"
+          : "not evaluated — statement about these scenarios only; re-run with --depth full",
+      ),
+    );
+  }
+
+  const baselineOk = input.baselineCurrent === input.baselineTotal && input.scenarioManifestOk;
+  lines.push(
+    overviewRow(
+      "Baselines",
+      baselineOk ? "PASS" : "FAIL",
+      `${input.baselineCurrent}/${input.baselineTotal} scenario baselines current` +
+        (input.scenarioManifestOk ? "" : " · scenario manifest differs"),
+    ),
+  );
+  lines.push(
+    overviewRow(
+      "Runtime",
+      input.mountFailures > 0 ? "ERROR" : input.rejected > 0 ? "FAIL" : "PASS",
+      input.mountFailures > 0
+        ? `${input.mountFailures} scenario${input.mountFailures === 1 ? "" : "s"} did not mount`
+        : input.rejected > 0
+          ? `${input.rejected} registration${input.rejected === 1 ? "" : "s"} rejected`
+          : `${input.scenarios.length} scenario${input.scenarios.length === 1 ? "" : "s"} mounted`,
+    ),
+  );
+  lines.push("", `SCENARIOS  (${input.scenarios.length})`, ...wrappedList(input.scenarios));
   return lines.join("\n");
 }
 

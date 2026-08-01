@@ -26,7 +26,7 @@ Options
   --config <path>       path to agent-surface.config.* (default: nearest, searching upward)
   --baseline-dir        where baselines live (default: .agent-surface next to the config)
   --scope <prefix>      restrict to a component-type prefix (repeatable)
-  --detail              one paragraph per capability instead of the table
+  --detail              full capability, origin, and diagnostic detail
   --explain             name the policies behind every decision (implies --detail)
   --schemas             include input/output JSON Schemas (implies --detail)
   --tsconfig <path>     tsconfig the source read uses (default: nearest to the config)
@@ -170,6 +170,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     const { runCheck } = await import("./commands/check.js");
     return await runCheck({
       ...shared,
+      ...(values.detail ? { detail: true } : {}),
       ...(values["allow-unresolved"] ? { allowUnresolved: true } : {}),
     });
   } catch (error) {
@@ -288,10 +289,14 @@ function exitWhenWedged(code: number): void {
     if (held.length > 0) {
       const kinds = [...new Set(held)].sort().join(", ");
       writeError(
-        `agent-surface: the output above is complete, but ${held.length} handle(s) are still ` +
-          `open (${kinds}) — something started during the mount is still running, so this ` +
-          `command would have waited instead of exiting. Common causes: a polling interval, a ` +
-          `websocket, or a data layer whose cache timer outlives the render. Exiting ${code}.`,
+        [
+          "",
+          "PROCESS CLEANUP  WARN",
+          `Open handles  ${held.length} (${kinds})`,
+          "Impact        report complete; exit code unchanged; process exit forced",
+          "Likely cause  polling, websocket, or a cache timer created during mount",
+          `Exit          ${code}`,
+        ].join("\n"),
       );
     }
     void flushOutput().then(() => process.exit(code));
