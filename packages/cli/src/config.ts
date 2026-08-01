@@ -1,6 +1,11 @@
 import type { ReactElement } from "react";
 import type { AgentConsumer, AgentSurfaceRegistry } from "@agent-surface/core";
 
+/** Structural subset of the authoritative orpc-agent manifest the CLI consumes. */
+export interface SurfaceDomainManifest {
+  tools: Record<string, { description: string }>;
+}
+
 /** What `mount()` hands back: the app's own registry and its rendered tree. */
 export interface MountResult<TApp = unknown> {
   registry: AgentSurfaceRegistry;
@@ -45,6 +50,9 @@ export interface SurfaceConfig<TScenario extends ScenarioProps = ScenarioProps, 
 
   /** Component-type prefixes to restrict to, same meaning as `SnapshotContext.scope`. */
   scope?: string[];
+
+  /** Authoritative domain denominator. Full analysis joins every manifest tool. */
+  manifest?: SurfaceDomainManifest;
 
   /** Where `snapshot`/`check` keep baselines. Default `.agent-surface`, relative to the config. */
   baselineDir?: string;

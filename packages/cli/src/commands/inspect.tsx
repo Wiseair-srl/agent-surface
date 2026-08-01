@@ -2,10 +2,14 @@ import {
   joinCoverage,
   mountScenarios,
   readInventory,
+  scopeCapabilityIds,
+  scopeInventory,
+  staticConfigScope,
   type AnalysisOptions,
   type Depth,
 } from "../analysis.js";
 import { buildView } from "../render/model.js";
+import { authoredIds } from "../extract.js";
 import {
   renderCatalogPlain,
   renderCoveragePlain,
@@ -13,8 +17,13 @@ import {
   renderNoVerdictPlain,
   renderSurfacePlain,
 } from "../render/plain.js";
-import { isPlain, loadInk, paint, transient, write, writeError } from "../output.js";
-import type { CollectResult } from "../collect.js";
+import { isPlain, loadInk, paint, write, writeError } from "../output.js";
+import {
+  coverageReport,
+  inventoryReport,
+  scenarioReport,
+  type ScenarioReport,
+} from "../report.js";
 
 export interface InspectOptions {
   configPath: string;
@@ -30,19 +39,6 @@ export interface InspectOptions {
   plain?: boolean;
 }
 
-function jsonForScenario(result: CollectResult, explain: boolean): Record<string, unknown> {
-  return {
-    scenario: result.scenario,
-    ...(result.scope ? { scope: result.scope } : {}),
-    snapshot: result.snapshot,
-    // Unconditional, and unconditionally present even when empty (`AS-CLI-006`):
-    // a consumer that has to distinguish "no rejections" from "this CLI predates
-    // the field" cannot rely on an absent key.
-    rejections: result.rejections,
-    ...(explain ? { explanation: result.explanation } : {}),
-  };
-}
-
 /**
  * The whole surface: what this codebase authors, what a mount surfaces, and the
  * difference between them.
@@ -52,11 +48,9 @@ function jsonForScenario(result: CollectResult, explain: boolean): Record<string
  * nobody puts in a pipeline. The exception is `2`, which is not a finding: the
  * command could not run at all.
  *
- * **Order is the design.** The catalog prints first because it is ready before
- * anything mounts; each scenario prints as it finishes, so a config with ten of
- * them is not ten mounts of blank terminal; the verdict prints last, because it
- * is the only part that needs every scenario to have finished — and because a
- * reader who stops at the bottom should stop on the finding.
+ * Each scenario prints as it finishes, so a config with ten of them is not ten
+ * mounts of blank terminal. The normalized catalog summary and verdict follow
+ * once effective config scope and the domain manifest are known.
  */
 export async function runInspect(options: InspectOptions): Promise<number> {
   const analysis: AnalysisOptions = {
@@ -73,22 +67,28 @@ export async function runInspect(options: InspectOptions): Promise<number> {
   const detail = options.detail === true || options.explain === true || options.schemas === true;
 
   const inventory = readInventory(analysis);
-  if (inventory && !options.json) {
+  const initialInventory = scopeInventory(inventory, staticConfigScope(analysis));
+  if (initialInventory && !options.json && options.depth === "static") {
     // At `--depth static` this listing is the output. At `--depth full` the
     // scenario tables below carry the same capabilities and the verdict names
     // the ones they miss, so only the summary line prints here.
-    write(renderCatalogPlain(inventory, { standalone: options.depth === "static" }));
+    write(renderCatalogPlain(initialInventory, { standalone: true }));
   }
 
   // `null` when Ink cannot run here (React 18 host), which is a fallback to
   // plain text rather than a failed command — see loadInk().
   const ink = isPlain(options) ? null : await loadInk();
-  const scenarios: Array<Record<string, unknown>> = [];
+  const scenarios: ScenarioReport[] = [];
   let printed = 0;
 
   const runtime = await mountScenarios(analysis, async (result) => {
     if (options.json) {
-      scenarios.push(jsonForScenario(result, options.explain === true));
+      scenarios.push(
+        scenarioReport(result, {
+          ...(options.explain ? { attribution: true } : {}),
+          ...(options.schemas ? { schemas: true } : {}),
+        }),
+      );
       return;
     }
     const view = buildView(result, {
@@ -103,7 +103,21 @@ export async function runInspect(options: InspectOptions): Promise<number> {
     printed += 1;
   });
 
+  const effectiveScope = options.scope ?? runtime?.scope ?? staticConfigScope(analysis);
+  const reportInventory = scopeInventory(inventory, effectiveScope);
+  const reportDomain = runtime?.domainManifestConfigured
+    ? scopeCapabilityIds(runtime.domainCapabilities, effectiveScope)
+    : undefined;
   const coverage = joinCoverage(inventory, runtime, analysis);
+  if (reportInventory && !options.json && options.depth === "full") {
+    write(
+      `${printed > 0 ? "\n" : ""}${renderCatalogPlain(reportInventory, {
+        ...(coverage && runtime?.domainManifestConfigured
+          ? { domainCapabilities: coverage.authored - authoredIds(reportInventory).size }
+          : {}),
+      })}`,
+    );
+  }
 
   if (options.json) {
     write(
@@ -113,10 +127,10 @@ export async function runInspect(options: InspectOptions): Promise<number> {
           // the command was invoked. A half the depth did not compute is
           // `null`, which is a different statement from `[]` or `{}`.
           depth: options.depth,
-          catalog: inventory ?? null,
+          catalog: inventoryReport(reportInventory, reportDomain),
           scenarios,
           failures: runtime?.failures ?? [],
-          coverage: coverage ?? null,
+          coverage: coverageReport(coverage),
         },
         null,
         2,

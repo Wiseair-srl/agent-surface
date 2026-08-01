@@ -1,3 +1,4 @@
+import { existsSync, readdirSync } from "node:fs";
 import { relative } from "node:path";
 import {
   UsageError,
@@ -7,8 +8,16 @@ import {
   type AnalysisOptions,
   type Depth,
 } from "../analysis.js";
-import { annotate, baselinePath, diff, normalize, readBaseline, type DiffEntry } from "../baseline.js";
-import { coverageExitCode } from "../coverage.js";
+import {
+  annotate,
+  baselinePath,
+  diff,
+  readBaseline,
+  readScenarioManifest,
+  SCENARIO_MANIFEST_FILE,
+  type DiffEntry,
+} from "../baseline.js";
+import { ALLOWLIST_FILE, coverageExitCode, UNREAD_ALLOWLIST_FILE } from "../coverage.js";
 import {
   renderCoveragePlain,
   renderDriftPlain,
@@ -16,6 +25,7 @@ import {
   renderNoVerdictPlain,
 } from "../render/plain.js";
 import { write, writeError } from "../output.js";
+import { coverageReport, scenarioBaseline } from "../report.js";
 
 export interface CheckOptions {
   configPath: string;
@@ -35,6 +45,11 @@ interface ScenarioDrift {
   entries: DiffEntry[];
 }
 
+interface RejectedScenario {
+  scenario: string;
+  rejections: Array<{ componentType: string; instanceId: string; reason: string }>;
+}
+
 /**
  * The gate. The only command in this package that fails on a finding, which is
  * why every finding has to reach it.
@@ -45,13 +60,15 @@ interface ScenarioDrift {
  * performing is a gate with a hole in it, and in CI the hole was silent: a
  * whole unreached route sat behind a green tick.
  *
- * So it now fails on four:
+ * So it now fails on every incomplete or changed report:
  *
  * - **drift** — the surface changed against its committed baseline;
  * - **a missing baseline** — nothing to compare, which is not the same as a match;
  * - **an unreached capability** — authored, and no scenario mounts it;
  * - **an unread call site** — the catalog is incomplete, so the third check
- *   above is computed over a denominator that is only a floor.
+ *   above is computed over a denominator that is only a floor;
+ * - **a rejected registration** — authored surface was refused;
+ * - **scenario drift** — config, manifest and baseline files disagree.
  *
  * `.agent-surface/coverage-allow.json` ratchets the third; `--allow-unresolved`
  * accepts the fourth. Both are deliberate, committed decisions rather than
@@ -92,22 +109,57 @@ export async function runCheck(options: CheckOptions): Promise<number> {
       drifted.push({ scenario: result.scenario, missingBaseline: true, entries: [] });
       continue;
     }
-    const actual = normalize(result.snapshot);
+    const actual = scenarioBaseline(result);
     const entries = annotate(diff(expected, actual), actual, expected);
     if (entries.length > 0) drifted.push({ scenario: result.scenario, entries });
   }
+
+  const committedScenarios = readScenarioManifest(runtime.baselineDir);
+  const declared = [...runtime.declaredScenarios].sort();
+  const scenarioManifestMismatch =
+    committedScenarios === undefined ||
+    JSON.stringify(committedScenarios) !== JSON.stringify(declared);
+  const reserved = new Set([SCENARIO_MANIFEST_FILE, ALLOWLIST_FILE, UNREAD_ALLOWLIST_FILE]);
+  const staleBaselineFiles = (existsSync(runtime.baselineDir)
+    ? readdirSync(runtime.baselineDir, { withFileTypes: true })
+    : [])
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && !reserved.has(entry.name))
+    .map((entry) => entry.name.slice(0, -5))
+    .filter((scenario) => !runtime.declaredScenarios.includes(scenario))
+    .sort();
+
+  const rejected: RejectedScenario[] = runtime.results
+    .filter((result) => result.rejections.length > 0)
+    .map((result) => ({ scenario: result.scenario, rejections: result.rejections }));
 
   const coverage = joinCoverage(inventory, runtime, analysis);
   const coverageFailed =
     coverage !== undefined &&
     coverageExitCode(coverage, { allowUnresolved: options.allowUnresolved === true }) !== 0;
   const couldNotRun = runtime.failures.length > 0;
-  const ok = drifted.length === 0 && !coverageFailed && !couldNotRun;
+  const ok =
+    drifted.length === 0 &&
+    !coverageFailed &&
+    !couldNotRun &&
+    rejected.length === 0 &&
+    !scenarioManifestMismatch &&
+    staleBaselineFiles.length === 0;
 
   if (options.json) {
     write(
       JSON.stringify(
-        { ok, drifted, failures: runtime.failures, coverage: coverage ?? null },
+        {
+          ok,
+          drifted,
+          failures: runtime.failures,
+          rejected,
+          scenarioManifest: {
+            expected: declared,
+            committed: committedScenarios ?? null,
+            staleBaselines: staleBaselineFiles,
+          },
+          coverage: coverageReport(coverage),
+        },
         null,
         2,
       ),
@@ -127,6 +179,35 @@ export async function runCheck(options: CheckOptions): Promise<number> {
   // surface changed would be a claim about a comparison that never happened.
   const missing = drifted.filter((entry) => entry.missingBaseline);
   const changed = drifted.filter((entry) => !entry.missingBaseline);
+
+  if (rejected.length > 0) {
+    writeError(
+      [
+        `${coverage ? "\n" : ""}REJECTED REGISTRATIONS — the runtime refused authored surface  (${rejected.reduce((sum, entry) => sum + entry.rejections.length, 0)})`,
+        ...rejected.flatMap((entry) =>
+          entry.rejections.map(
+            (rejection) =>
+              `  ${entry.scenario}: ${rejection.componentType}@${rejection.instanceId} (${rejection.reason})`,
+          ),
+        ),
+      ].join("\n"),
+    );
+  }
+
+  if (scenarioManifestMismatch || staleBaselineFiles.length > 0) {
+    const committed = committedScenarios?.join(", ") ?? "missing";
+    writeError(
+      [
+        `${coverage || rejected.length > 0 ? "\n" : ""}SCENARIO DRIFT — committed baselines do not match config`,
+        `  config: ${declared.join(", ")}`,
+        `  manifest: ${committed}`,
+        ...(staleBaselineFiles.length > 0
+          ? [`  stale baselines: ${staleBaselineFiles.join(", ")}`]
+          : []),
+        "  run `agent-surface snapshot` and commit the manifest",
+      ].join("\n"),
+    );
+  }
 
   if (missing.length > 0) {
     writeError(

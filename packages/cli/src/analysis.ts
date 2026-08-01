@@ -31,6 +31,7 @@ import {
 import {
   authoredIds,
   extractCapabilities,
+  readLiteralConfigScope,
   unresolved,
   type CapabilityInventory,
 } from "./extract.js";
@@ -60,6 +61,10 @@ export function readInventory(options: AnalysisOptions): CapabilityInventory | u
   });
 }
 
+export function staticConfigScope(options: AnalysisOptions): string[] | undefined {
+  return options.scope ?? readLiteralConfigScope(options.configPath);
+}
+
 /** A scenario the config declares whose mount threw. Named, never swallowed. */
 export interface ScenarioFailure {
   scenario: string;
@@ -67,12 +72,19 @@ export interface ScenarioFailure {
 }
 
 export interface RuntimeAnalysis {
-  /** Every scenario this run set out to mount, in config order. */
+  /** Scenarios selected for this run, in config order. */
   scenarios: string[];
+  /** Every scenario declared by the config, even when one was selected. */
+  declaredScenarios: string[];
   /** The ones that mounted. */
   results: CollectResult[];
   failures: ScenarioFailure[];
   baselineDir: string;
+  /** CLI scope wins; otherwise the config scope is effective everywhere. */
+  scope?: string[];
+  /** Authoritative domain capability ids from the configured oRPC manifest. */
+  domainCapabilities: string[];
+  domainManifestConfigured: boolean;
 }
 
 /**
@@ -102,6 +114,7 @@ export async function mountScenarios(
       );
     }
     const scenarios = options.scenario ? [options.scenario] : runner.scenarioNames;
+    const effectiveScope = options.scope ?? runner.config.scope;
     const results: CollectResult[] = [];
     const failures: ScenarioFailure[] = [];
 
@@ -125,12 +138,18 @@ export async function mountScenarios(
 
     return {
       scenarios,
+      declaredScenarios: runner.scenarioNames,
       results,
       failures,
       baselineDir: baselineDirFor(
         options.configPath,
         options.baselineDir ?? runner.config.baselineDir,
       ),
+      ...(effectiveScope ? { scope: effectiveScope } : {}),
+      domainCapabilities: Object.keys(runner.config.manifest?.tools ?? {})
+        .map((path) => `domain:${path}`)
+        .sort(),
+      domainManifestConfigured: runner.config.manifest !== undefined,
     };
   } finally {
     await runner.close();
@@ -146,6 +165,25 @@ function componentTypeOf(capabilityId: string): string {
   const withoutPlane = capabilityId.replace(/^(view|domain):/, "");
   const dot = withoutPlane.lastIndexOf(".");
   return dot === -1 ? withoutPlane : withoutPlane.slice(0, dot);
+}
+
+export function scopeInventory(
+  inventory: CapabilityInventory | undefined,
+  scope: string[] | undefined,
+): CapabilityInventory | undefined {
+  if (!inventory || !scope) return inventory;
+  return {
+    ...inventory,
+    capabilities: inventory.capabilities.filter(
+      (capability) =>
+        capability.resolution === "unresolved" ||
+        matchesScope(componentTypeOf(capability.capabilityId), scope),
+    ),
+  };
+}
+
+export function scopeCapabilityIds(ids: string[], scope: string[] | undefined): string[] {
+  return scope ? ids.filter((id) => matchesScope(componentTypeOf(id), scope)) : ids;
 }
 
 /**
@@ -172,8 +210,9 @@ export function joinCoverage(
   // predicate — core's own, not a second copy of it. Without this, `--scope
   // devices` reported every `app.navigation` capability as unreached, with the
   // words "no scenario mounts it" over two that both scenarios mount.
+  const effectiveScope = options.scope ?? runtime.scope;
   const inScope = (capabilityId: string): boolean =>
-    matchesScope(componentTypeOf(capabilityId), options.scope);
+    matchesScope(componentTypeOf(capabilityId), effectiveScope);
 
   const origins = new Map<string, { file: string; line: number }>();
   for (const capability of inventory.capabilities) {
@@ -183,6 +222,12 @@ export function joinCoverage(
   }
 
   const authored = new Set([...authoredIds(inventory)].filter(inScope));
+  for (const capabilityId of runtime.domainCapabilities) {
+    if (inScope(capabilityId)) authored.add(capabilityId);
+    if (!origins.has(capabilityId)) {
+      origins.set(capabilityId, { file: "oRPC manifest", line: 0 });
+    }
+  }
   const reachedIds = new Set<string>();
   for (const result of runtime.results) {
     for (const capability of result.explanation.capabilities) {
@@ -207,13 +252,14 @@ export function joinCoverage(
   const unreadAllowlistPath = unreadAllowlistPathFor(runtime.baselineDir);
 
   return buildCoverageReport({
-    unreadAllowlist: readAllowlist(unreadAllowlistPath, "file#reason"),
+    unreadAllowlist: readAllowlist(unreadAllowlistPath, "file#reason#site"),
     unreadAllowlistPath,
+    domainAuthoritative: runtime.domainManifestConfigured,
     authored,
     origins,
     reachedIds,
     scenarios: runtime.scenarios,
-    ...(options.scope ? { scope: options.scope } : {}),
+    ...(effectiveScope ? { scope: effectiveScope } : {}),
     unresolved: unresolved(inventory),
     allowlist,
     allowlistOutOfScope: Object.keys(wholeAllowlist).length - Object.keys(allowlist).length,

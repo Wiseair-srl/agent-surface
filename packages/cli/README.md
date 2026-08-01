@@ -19,10 +19,11 @@ A presentation surface only exists once components mount — it is a projection 
 ```tsx
 // agent-surface.config.tsx
 import { defineSurface } from "@agent-surface/cli";
-import { createApp } from "./src/agent/setup.js";   // already exists
+import { agentManifest, createApp } from "./src/agent/setup.js";   // already exists
 import { App } from "./src/app/App.js";             // already exists
 
 export default defineSurface({
+  manifest: agentManifest,
   mount: ({ user }) => {
     const app = createApp({ environment: "test", user });
     return { registry: app.registry, ui: <App app={app} />, app };
@@ -42,13 +43,13 @@ Loading goes through vite-node on your own `vite.config.*`, so your aliases, plu
 agent-surface init                  # read the codebase, then scaffold a config
 agent-surface inspect [scenario]    # what an agent can reach, and what it cannot
 agent-surface snapshot [scenario]   # write/refresh the committed baseline
-agent-surface check [scenario]      # exit non-zero on drift, or on a capability no scenario reaches
+agent-surface check [scenario]      # fail drift, gaps, rejections, stale scenarios
 ```
 
 Every command covers all scenarios in the config unless you name one. `inspect` prints each in turn:
 
 ```text
-10 authored (upper bound) · 10 call sites across 21 files · domain not analyzed, it comes from the oRPC router
+11 authored (upper bound) · 10 call sites across 21 files · 1 domain manifest capability
 
 scenario admin  route /devices
 9 callable, 2 visible-disabled, 0 hidden
@@ -62,7 +63,7 @@ devices.table.sort        action       local-state  callable  idempotent · reve
 devices.disable           procedure    destructive  disabled  confirmation:required · deviceIds bound+locked
     ⤷ Select at least one device first
 
-10 authored · 10 reached · 0 unreached · 1 scenario (admin)
+11 authored · 11 reached · 0 unreached · 1 scenario (admin)
 ```
 
 Every count names what it is relative to — the scenario always, the scope when one is active. A surface is a projection of one mounted context, never "the app".

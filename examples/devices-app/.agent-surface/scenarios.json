@@ -1,0 +1,6 @@
+{
+  "scenarios": [
+    "admin",
+    "anonymous"
+  ]
+}

@@ -243,6 +243,8 @@ export interface CatalogRenderOptions {
    * it. Only the summary line survives.
    */
   standalone?: boolean;
+  /** Authoritative domain manifest entries, when runtime config was loaded. */
+  domainCapabilities?: number;
 }
 
 export function renderCatalogPlain(
@@ -252,12 +254,17 @@ export function renderCatalogPlain(
   const lines: string[] = [];
   const resolved = inventory.capabilities.filter((c) => c.resolution !== "unresolved");
   const ids = authoredIds(inventory);
+  const authored = ids.size + (options.domainCapabilities ?? 0);
 
   lines.push(
-    `${ids.size} authored (upper bound) · ${resolved.length} call site${
+    `${authored} authored (upper bound) · ${resolved.length} call site${
       resolved.length === 1 ? "" : "s"
     } across ${inventory.filesAnalyzed} file${inventory.filesAnalyzed === 1 ? "" : "s"}` +
-      " · domain not analyzed, it comes from the oRPC router (OQ-1)",
+      (options.domainCapabilities === undefined
+        ? " · domain not analyzed without a loaded oRPC manifest"
+        : ` · ${options.domainCapabilities} domain manifest capabilit${
+            options.domainCapabilities === 1 ? "y" : "ies"
+          }`),
   );
   if (inventory.filesOutsideRoot > 0) {
     // Relative, not absolute: plain output is byte-stable across runs
@@ -266,7 +273,7 @@ export function renderCatalogPlain(
     lines.push(
       `${inventory.filesOutsideRoot} program file${
         inventory.filesOutsideRoot === 1 ? "" : "s"
-      } outside the config's directory were not analyzed`,
+      } from agent-surface implementation packages were excluded`,
     );
   }
 
@@ -315,9 +322,9 @@ function renderUnread(entries: AuthoredCapability[]): string[] {
   for (const capability of entries) {
     lines.push(`  ? ${capability.origin.file}:${capability.origin.line}`);
     lines.push(`      ${capability.note ?? "the extractor could not read this call site"}`);
-    // The allowlist key, spelled out. It is `file#reason` rather than the line
-    // the reader is looking at, so leaving them to infer it guarantees a wrong
-    // guess and an entry that never matches.
+    // The allowlist key, spelled out. It is `file#reason#site`, and the site is
+    // a hash — not the line the reader is looking at — so leaving them to infer
+    // it guarantees a wrong guess and an entry that never matches.
     lines.push(`      allowlist key: ${unreadKey(capability)}`);
   }
   return lines;
@@ -356,6 +363,18 @@ export function renderCoveragePlain(report: CoverageReport): string {
       ),
     );
     for (const id of report.undeclared) lines.push(`  ${id}`);
+    lines.push("");
+  }
+
+  if (report.unmanifestedDomain.length > 0) {
+    lines.push(
+      section(
+        "UNMANIFESTED DOMAIN",
+        "mounted, but absent from the authoritative oRPC manifest",
+        report.unmanifestedDomain.length,
+      ),
+    );
+    for (const id of report.unmanifestedDomain) lines.push(`  ${id}`);
     lines.push("");
   }
 
@@ -412,7 +431,11 @@ function renderCoverageSummary(report: CoverageReport): string[] {
     lines.push(
       `${report.domainReached.length} domain capabilit${
         report.domainReached.length === 1 ? "y" : "ies"
-      } reached and held apart — that plane is the oRPC router's, and this catalog never claimed it`,
+      } reached${
+        report.domainAuthoritative
+          ? " against the authoritative oRPC manifest"
+          : " and held apart — configure the authoritative oRPC manifest to cover that plane"
+      }`,
     );
   }
   if (report.allowed.length > 0) {
@@ -444,7 +467,8 @@ function renderCoverageSummary(report: CoverageReport): string[] {
     report.unreached.length === 0 &&
     report.unresolved.length === 0 &&
     report.staleAllowlist.length === 0 &&
-    report.staleUnreadAllowlist.length === 0
+    report.staleUnreadAllowlist.length === 0 &&
+    report.unmanifestedDomain.length === 0
   ) {
     lines.push(
       report.allowed.length > 0

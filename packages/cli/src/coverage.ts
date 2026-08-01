@@ -53,7 +53,7 @@ export function readAllowlist(path: string, keyName = "capabilityId"): CoverageA
 }
 
 /**
- * The key an unread call site is allowlisted under: `file#reason`.
+ * The key an unread call site is allowlisted under: `file#reason#site`.
  *
  * Neither half alone works. The line number churns on every edit above the call
  * site, so a ratchet keyed on it fails for a reason that has nothing to do with
@@ -61,13 +61,13 @@ export function readAllowlist(path: string, keyName = "capabilityId"): CoverageA
  * spread note changed in the release that introduced it — so a key built from it
  * would invalidate committed entries on an edit nobody thought was behavioural.
  *
- * File plus a stable reason code survives both. It is coarser than a line: a
- * second call site in the same file failing the *same* way is covered silently.
- * That is the accepted trade, because the ratchet's job is "no new *kinds* of
- * unread site", and it is bounded to one file and one construct.
+ * The site fingerprint is built from the call's own text and the named
+ * enclosures around it, and from nothing positional — so an edit above it, or
+ * beside it, or a reformat, leaves a committed entry matching, while a second
+ * site in the same file receives its own key. See `stableSite`.
  */
 export function unreadKey(entry: AuthoredCapability): string {
-  return `${entry.origin.file}#${entry.reason ?? "unknown"}`;
+  return `${entry.origin.file}#${entry.reason ?? "unknown"}#${entry.origin.site}`;
 }
 
 export interface UnreachedCapability {
@@ -109,6 +109,9 @@ export interface CoverageReport {
    * defect, which is the misleading check this whole command rejects.
    */
   domainReached: string[];
+  /** Runtime domain entries absent from an explicitly configured manifest. */
+  unmanifestedDomain: string[];
+  domainAuthoritative: boolean;
   /** Carried forward from the inventory, minus anything allowlisted. */
   unresolved: AuthoredCapability[];
   /** Unreached, but listed in the allowlist. */
@@ -150,6 +153,7 @@ export interface BuildCoverageInput {
   /** Keyed by `unreadKey()`. Absent is an empty list, not "accept everything". */
   unreadAllowlist?: CoverageAllowlist;
   unreadAllowlistPath: string;
+  domainAuthoritative?: boolean;
 }
 
 export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
@@ -190,7 +194,10 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
     .sort();
 
   const unaccounted = [...input.reachedIds].filter((id) => !input.authored.has(id)).sort();
-  const domainReached = unaccounted.filter((id) => id.startsWith("domain:"));
+  const domainReached = [...input.reachedIds].filter((id) => id.startsWith("domain:")).sort();
+  const unmanifestedDomain = input.domainAuthoritative
+    ? unaccounted.filter((id) => id.startsWith("domain:"))
+    : [];
   const undeclared = unaccounted.filter((id) => !id.startsWith("domain:"));
 
   return {
@@ -202,6 +209,8 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
     unreached,
     undeclared,
     domainReached,
+    unmanifestedDomain,
+    domainAuthoritative: input.domainAuthoritative === true,
     unresolved: unread,
     allowed,
     staleAllowlist,
@@ -232,6 +241,7 @@ export function coverageExitCode(
   options: { allowUnresolved?: boolean } = {},
 ): number {
   if (report.unreached.length > 0) return 1;
+  if (report.unmanifestedDomain.length > 0) return 1;
   // `report.unresolved` already excludes allowlisted entries, so the per-entry
   // ratchet and the blanket flag compose: the list holds the sites you have
   // accepted, and the flag is still there for a codebase not ready to enumerate

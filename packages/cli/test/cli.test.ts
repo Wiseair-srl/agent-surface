@@ -1,7 +1,8 @@
 // Conformance: AS-CLI-002 (the exit-code contract), AS-CLI-003 (piped /
 // --plain / CI / NO_COLOR output is plain and stable), AS-CLI-006 (rejected
 // registrations are reported), AS-CLI-007 (counts carry their qualifier),
-// AS-CLI-008 (--depth selects which halves are computed).
+// AS-CLI-008 (--depth selects which halves are computed), AS-CLI-009 (stable
+// complete report), AS-CLI-010 (baseline/scenario integrity).
 //
 // These drive the real `main()` against the real example app — vite-node, a
 // real mount, a real snapshot. Anything less would not prove the exit code.
@@ -11,6 +12,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { main } from "../src/bin.js";
+import { baselinePath } from "../src/baseline.js";
 
 const CONFIG = fileURLToPath(
   new URL("../../../examples/devices-app/agent-surface.config.tsx", import.meta.url),
@@ -96,6 +98,36 @@ describe("check exit codes (AS-CLI-002)", () => {
     },
     TIMEOUT,
   );
+
+  it(
+    "exits 2 when a baseline exists but cannot be parsed",
+    async () => {
+      await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir]);
+      writeFileSync(join(baselineDir, "admin.json"), "{ broken");
+      captured = [];
+      expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(2);
+      expect(output()).toContain("could not read baseline");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "fails when scenario manifest or baseline files are stale",
+    async () => {
+      await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir]);
+      writeFileSync(join(baselineDir, "retired.json"), "{}\n");
+      captured = [];
+      expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(1);
+      expect(output()).toContain("SCENARIO DRIFT");
+      expect(output()).toContain("retired");
+    },
+    TIMEOUT,
+  );
+
+  it("rejects scenario names that could escape or collide in baselineDir", () => {
+    expect(() => baselinePath(baselineDir, "../escape")).toThrow("invalid scenario name");
+    expect(() => baselinePath(baselineDir, "scenarios")).toThrow("invalid scenario name");
+  });
 
   it(
     "exits 2 on usage errors without mounting anything",
@@ -226,6 +258,12 @@ describe("plain output (AS-CLI-003)", () => {
       expect(plain.catalog?.capabilities.length).toBeGreaterThan(0);
       expect(plain.coverage?.unreached).toEqual([]);
       expect(plain.failures).toEqual([]);
+      const first = output();
+      expect(first).not.toMatch(/srf_|reg_|capturedAt|surfaceId/);
+
+      captured = [];
+      expect(await main(["inspect", "admin", "--config", CONFIG, "--json"])).toBe(0);
+      expect(output()).toBe(first);
 
       captured = [];
       await main(["inspect", "admin", "--config", CONFIG, "--json", "--depth", "runtime"]);
@@ -234,11 +272,23 @@ describe("plain output (AS-CLI-003)", () => {
       expect(runtimeOnly.coverage).toBeNull();
 
       captured = [];
+      await main(["inspect", "anonymous", "--config", CONFIG, "--json"]);
+      const hiddenWithoutAttribution = (
+        JSON.parse(output()) as {
+          scenarios: Array<{ capabilities: Array<{ outcome: string }>; explanation?: unknown }>;
+        }
+      ).scenarios[0]!;
+      expect(hiddenWithoutAttribution.capabilities.length).toBeGreaterThan(0);
+      expect(hiddenWithoutAttribution.capabilities.every((row) => row.outcome === "hide")).toBe(true);
+      expect(hiddenWithoutAttribution.explanation).toBeUndefined();
+
+      captured = [];
       await main(["inspect", "anonymous", "--config", CONFIG, "--json", "--explain"]);
       const explained = (
         JSON.parse(output()) as {
           scenarios: Array<{
             snapshot: { components: unknown[] };
+            capabilities: Array<{ outcome: string }>;
             explanation: {
               capabilities: Array<{ outcome: string; policies: Array<{ name: string }> }>;
             };
@@ -247,6 +297,7 @@ describe("plain output (AS-CLI-003)", () => {
       ).scenarios[0]!;
       // Authority hides: nothing in the snapshot, everything in the explanation.
       expect(explained.snapshot.components).toHaveLength(0);
+      expect(explained).toHaveProperty("capabilities");
       expect(explained.explanation.capabilities.length).toBeGreaterThan(0);
       expect(
         explained.explanation.capabilities.every((c) => c.outcome === "hide"),
@@ -373,9 +424,24 @@ describe("registrations rejected during a mount are reported (AS-CLI-006)", () =
       expect(rendered).toContain("REJECTED");
       expect(rendered).toContain("dup.panel (default)");
       expect(rendered).toContain("duplicate");
+      expect(rendered).toContain("scope dup");
 
       // The surviving registration is still reported normally — first-wins.
       expect(rendered).toContain("ping");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "makes check fail even after the rejected projection was snapshotted",
+    async () => {
+      expect(
+        await main(["snapshot", "--config", REJECTED, "--baseline-dir", baselineDir]),
+      ).toBe(0);
+      captured = [];
+      expect(await main(["check", "--config", REJECTED, "--baseline-dir", baselineDir])).toBe(1);
+      expect(output()).toContain("REJECTED REGISTRATIONS");
+      expect(output()).toContain("dup.panel");
     },
     TIMEOUT,
   );

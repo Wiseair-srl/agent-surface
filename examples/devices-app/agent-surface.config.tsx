@@ -1,5 +1,5 @@
 import { defineSurface } from "@agent-surface/cli";
-import { createApp, type App as AppWiring } from "./src/agent/setup.js";
+import { agentManifest, createApp, type App as AppWiring } from "./src/agent/setup.js";
 import { App } from "./src/app/App.js";
 
 /**
@@ -9,6 +9,7 @@ import { App } from "./src/app/App.js";
  * `<App>` are the same composition root `src/main.tsx` mounts.
  */
 export default defineSurface({
+  manifest: agentManifest,
   mount: ({ user }) => {
     const app = createApp({ environment: "test", user });
     return {

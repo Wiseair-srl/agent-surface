@@ -7,7 +7,8 @@ import {
   type AnalysisOptions,
   type Depth,
 } from "../analysis.js";
-import { baselinePath, normalize, writeBaseline } from "../baseline.js";
+import { baselinePath, writeBaseline, writeScenarioManifest } from "../baseline.js";
+import { scenarioBaseline } from "../report.js";
 import { renderCoveragePlain, renderFailuresPlain } from "../render/plain.js";
 import { write, writeError } from "../output.js";
 
@@ -52,9 +53,10 @@ export async function runSnapshot(options: SnapshotOptions): Promise<number> {
 
   for (const result of runtime.results) {
     const path = baselinePath(runtime.baselineDir, result.scenario);
-    writeBaseline(path, normalize(result.snapshot));
+    writeBaseline(path, scenarioBaseline(result));
     write(`wrote ${relative(process.cwd(), path)}`);
   }
+  writeScenarioManifest(runtime.baselineDir, runtime.declaredScenarios);
 
   const coverage = joinCoverage(inventory, runtime, analysis);
   if (coverage) {

@@ -7,15 +7,18 @@
 // is never reachable from core), AS-COVER-007 (the gap reaches every command,
 // and a scope filters the catalog by the same predicate as the mount),
 // AS-CLI-008 (--depth static computes the catalog and mounts nothing),
-// AS-COVER-008 (unread call sites ratchet per entry, keyed on file#reason),
+// AS-CLI-011 (manifest domain denominator and effective scope), AS-COVER-008
+// (unread call sites ratchet per semantic site),
 // AS-COVER-009 (a wrapper hook's type resolves from its call sites, and a
-// same-named function elsewhere is never attributed).
+// same-named function elsewhere is never attributed), AS-COVER-010 (a
+// registration is identified through its import binding, so an alias resolves
+// and an unfollowable binding is reported rather than dropped).
 //
 // These drive the real `main()`. The fixture app authors three components and
 // mounts one of them, which is the only shape that can prove a coverage gap:
 // an unreached capability is invisible to a mount, to `--explain` and to a
 // baseline alike, because all three can only see what a scenario mounted.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,6 +39,9 @@ const SPREAD = fileURLToPath(
 );
 const WRAPPER = fileURLToPath(
   new URL("./fixtures/wrapper/agent-surface.config.tsx", import.meta.url),
+);
+const ALIASED = fileURLToPath(
+  new URL("./fixtures/aliased/agent-surface.config.tsx", import.meta.url),
 );
 const DEVICES = fileURLToPath(
   new URL("../../../examples/devices-app/agent-surface.config.tsx", import.meta.url),
@@ -397,7 +403,7 @@ describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
         {
           capabilityId: "<unresolved>",
           kind: "action",
-          origin: { file: "a.tsx", line: 1 },
+          origin: { file: "a.tsx", line: 1, site: "site-a" },
           resolution: "unresolved",
         },
       ],
@@ -413,6 +419,26 @@ describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
     expect(joined.domainReached).toEqual(["domain:devices.disable"]);
     expect(joined.undeclared).toEqual([]);
     expect(coverageExitCode(joined)).toBe(0);
+  });
+
+  it("uses an authoritative domain manifest as a failing denominator (AS-CLI-011)", () => {
+    const joined = report({
+      authored: new Set(["view:a.b", "domain:devices.disable", "domain:devices.retire"]),
+      reachedIds: new Set(["view:a.b", "domain:devices.disable"]),
+      domainAuthoritative: true,
+    });
+    expect(joined.domainReached).toEqual(["domain:devices.disable"]);
+    expect(joined.unreached.map((entry) => entry.capabilityId)).toEqual([
+      "domain:devices.retire",
+    ]);
+    expect(coverageExitCode(joined)).toBe(1);
+
+    const outsideManifest = report({
+      reachedIds: new Set(["view:a.b", "domain:devices.unknown"]),
+      domainAuthoritative: true,
+    });
+    expect(outsideManifest.unmanifestedDomain).toEqual(["domain:devices.unknown"]);
+    expect(coverageExitCode(outsideManifest)).toBe(1);
   });
 });
 
@@ -452,7 +478,8 @@ describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-0
       expect(output()).not.toContain("view:app.navigation.goTo");
       // Every count names the scope it was computed under (AS-CLI-007).
       expect(output()).toContain("scope devices");
-      expect(output()).toContain("8 authored · 8 reached · 0 unreached");
+      expect(output()).toContain("9 authored · 9 reached · 0 unreached");
+      expect(output()).toContain("1 domain capability reached against the authoritative oRPC manifest");
     },
     TIMEOUT,
   );
@@ -536,24 +563,183 @@ describe("a wrapper hook's type resolves from its call sites (AS-COVER-009)", ()
   });
 });
 
+describe("a registration is identified by what it imports (AS-COVER-010)", () => {
+  const inventory = (): ReturnType<typeof extractCapabilities> =>
+    extractCapabilities({ root: dirname(ALIASED) });
+
+  it("resolves a hook imported under another name", () => {
+    // The one place this extractor under-reported *silently*: matched on the
+    // local identifier, an aliased registration was in neither list — no
+    // capability, and no unread call site saying the catalog was short.
+    const ids = [...authoredIds(inventory())].sort();
+    expect(ids).toContain("view:alias.panel.read");
+    expect(ids).toContain("view:alias.panel.poke");
+  });
+
+  it("resolves the namespace spelling, and now proves it instead of guessing", () => {
+    // This one already worked — by coincidence, because the property name
+    // happened to be spelled like the hook. The namespace binding is what makes
+    // it an answer rather than a match on prose.
+    expect(authoredIds(inventory())).toContain("view:alias.namespace.poke");
+  });
+
+  it("reaches an aliased granular hook, which the name match never saw", () => {
+    // The verdict on a granular hook is unchanged (its type is not at the call
+    // site, OQ-13). But an entry has to be *reached* to be reported, and under
+    // an alias this call site was invisible — the codebase read as fully
+    // covered because nobody looked at it.
+    const entry = unresolved(inventory()).find((c) => c.origin.file === "Granular.tsx");
+    expect(entry?.reason).toBe("granular-hook");
+    expect(entry?.origin.line).toBeGreaterThan(0);
+  });
+
+  it("never attributes a same-named local function", () => {
+    // The safety bar `callsWrapper` already holds: import bindings are per
+    // file, so a local `useAC` elsewhere proves nothing. Resolving it would put
+    // ids in the catalog no component authors, and a fabricated entry is worse
+    // than a missing one — every other gap here understates, that one would
+    // overstate.
+    expect([...authoredIds(inventory())].some((id) => id.includes("impostor"))).toBe(false);
+  });
+
+  it("reports a hook that leaves a module renamed, rather than losing its callers", () => {
+    // `export { useAgentComponent as useAC } from "…"`. Downstream call sites
+    // carry nothing that proves they register, and following the chain is the
+    // hop the wrapper resolution refuses for the same reason. So the gap is
+    // reported at the line that opens it — and the registrations it hides stay
+    // out of the catalog rather than being guessed into it.
+    const entry = unresolved(inventory()).find((c) => c.origin.file === "Barrel.ts");
+    expect(entry?.reason).toBe("dynamic-callee");
+    expect(entry?.note).toContain("useAC");
+    expect([...authoredIds(inventory())].some((id) => id.includes("alias.barrel"))).toBe(false);
+  });
+
+  it("reports a call through a computed member of our namespace", () => {
+    // Knowing the module is ours is exactly what makes this reportable: an
+    // unreadable call on some other object is not a registration at all.
+    const entry = unresolved(inventory()).find((c) => c.origin.file === "Opaque.tsx");
+    expect(entry?.reason).toBe("dynamic-callee");
+    expect([...authoredIds(inventory())].some((id) => id.includes("alias.computed"))).toBe(false);
+  });
+
+  it("leaves nothing in the silent middle: every registration is in one list or the other", () => {
+    // The whole guarantee, stated once. Every registration-shaped site in the
+    // fixture either resolves to a capability or is named unread with a file
+    // and a line; the impostor and the barrel's callers are neither, because
+    // nothing proves they are ours. None of them disappears unremarked.
+    expect([...authoredIds(inventory())].sort()).toEqual([
+      "view:alias.namespace.poke",
+      "view:alias.panel.poke",
+      "view:alias.panel.read",
+    ]);
+    expect(
+      unresolved(inventory())
+        .map((c) => c.origin.file)
+        .sort(),
+    ).toEqual(["Barrel.ts", "Granular.tsx", "Opaque.tsx"]);
+    expect(unresolved(inventory()).every((c) => c.origin.line > 0)).toBe(true);
+  });
+});
+
 describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008)", () => {
   function writeUnreadAllowlist(entries: Record<string, string>): void {
     writeFileSync(join(baselineDir, "unresolved-allow.json"), JSON.stringify(entries, null, 2));
   }
 
-  it("keys on file plus a stable reason code, never on the line or the prose", () => {
+  /** Every unread key a root produces, order-independent. */
+  function keysFor(root: string): string[] {
+    return unresolved(extractCapabilities({ root })).map(unreadKey).sort();
+  }
+
+  it("keys each semantic site, never the whole file/reason class", () => {
     // The line churns on every edit above the call site, and the note is
     // written for a human and gets reworded — the spread note changed in the
     // release that introduced it. A key built from either would invalidate
     // committed entries for a reason that has nothing to do with the surface.
-    const entry = unresolved(extractCapabilities({ root: dirname(SPREAD) }))[0]!;
-    expect(entry.reason).toBe("spread-members");
-    expect(unreadKey(entry)).toBe("Shapes.tsx#spread-members");
-    expect(unreadKey(entry)).not.toContain(String(entry.origin.line));
+    const entries = unresolved(extractCapabilities({ root: dirname(SPREAD) })).filter(
+      (entry) => entry.reason === "spread-members",
+    );
+    const keys = entries.map(unreadKey);
+    expect(new Set(keys).size).toBe(entries.length);
+    expect(keys.every((key) => key.startsWith("Shapes.tsx#spread-members#"))).toBe(true);
+  });
+
+  it("survives an edit that is not to the call site", () => {
+    // The regression that shipped this key: the fingerprint mixed in a window
+    // of neighbouring source lines, so a comment two lines above moved it. The
+    // committed entry then read as *stale* — and stale fails even through
+    // `--allow-unresolved`, so there was no way past it but to re-paste a hash.
+    //
+    // Every edit below is churn: no registration changes, so no key may. Each
+    // one is anchored on a landmark rather than on `origin.line`, which points
+    // at the unread *property* — splicing there lands mid-object-literal and
+    // tests nothing but the parser's error recovery.
+    const above = (lines: string[]): number =>
+      lines.findIndex((line) => line.startsWith("export function SpreadAll"));
+    const churn: Array<[string, (lines: string[]) => void]> = [
+      ["a banner at the top of the file", (lines) => lines.splice(0, 0, "// banner")],
+      ["a comment above the component", (lines) => lines.splice(above(lines), 0, "// note")],
+      [
+        "a whole function above the component",
+        (lines) => lines.splice(above(lines), 0, "function unrelated() {", "  return 1;", "}"),
+      ],
+      // The strongest case: inside the very object literal being read, between
+      // the call's opening brace and the first property it resolves.
+      ["a comment inside the registration", (lines) => lines.splice(above(lines) + 2, 0, "    // x")],
+    ];
+
+    const baseline = keysFor(dirname(SPREAD));
+    expect(baseline.length).toBeGreaterThan(0);
+
+    for (const [what, edit] of churn) {
+      const root = mkdtempSync(join(tmpdir(), "as-churn-"));
+      cpSync(dirname(SPREAD), root, { recursive: true });
+      const file = join(root, "Shapes.tsx");
+      const lines = readFileSync(file, "utf8").split("\n");
+      edit(lines);
+      writeFileSync(file, lines.join("\n"));
+
+      // A broken splice would "pass" by losing the site entirely, so the count
+      // is asserted alongside the keys.
+      const moved = keysFor(root);
+      expect(moved.length, `${what} changed how many sites are reported`).toBe(baseline.length);
+      expect(moved, `${what} moved a key`).toEqual(baseline);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("gives a twin site its own key, and does not move it by adding a third", () => {
+    // Two byte-identical calls in one function are the only thing left that can
+    // collide, so they are what the occurrence rank is for. Appending a third
+    // must not renumber the two that were already accepted.
+    const root = mkdtempSync(join(tmpdir(), "as-twin-"));
+    cpSync(dirname(SPREAD), root, { recursive: true });
+    const file = join(root, "Twins.tsx");
+    const twin = (count: number): string =>
+      [
+        'import { useAgentComponent } from "@agent-surface/react";',
+        "export function Twins(): React.ReactElement {",
+        ...Array.from({ length: count }, () => '  useAgentComponent({ type: t, ...spread });'),
+        "  return <div />;",
+        "}",
+        "declare const t: string;",
+        "declare const spread: Record<string, unknown>;",
+      ].join("\n");
+
+    writeFileSync(file, twin(2));
+    const two = keysFor(root).filter((key) => key.startsWith("Twins.tsx#"));
+    expect(new Set(two).size).toBe(two.length);
+    expect(two.length).toBe(2);
+
+    writeFileSync(file, twin(3));
+    const three = keysFor(root).filter((key) => key.startsWith("Twins.tsx#"));
+    expect(three).toEqual(expect.arrayContaining(two));
+
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("gives every unread entry a reason code, so none is keyed on \"unknown\"", () => {
-    for (const root of [dirname(SPREAD), dirname(FIXTURE)]) {
+    for (const root of [dirname(SPREAD), dirname(FIXTURE), dirname(ALIASED)]) {
       for (const entry of unresolved(extractCapabilities({ root }))) {
         expect(entry.reason, `${entry.origin.file} has no reason code`).toBeDefined();
         expect(unreadKey(entry)).not.toContain("#unknown");
@@ -572,7 +758,10 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
         await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
       ).toBe(1);
 
-      writeUnreadAllowlist({ "Shapes.tsx#spread-members": "helper-built members, tracked in #31" });
+      const unreadEntries = unresolved(extractCapabilities({ root: dirname(SPREAD) }));
+      writeUnreadAllowlist(
+        Object.fromEntries(unreadEntries.map((entry) => [unreadKey(entry), "tracked in #31"])),
+      );
       captured = [];
       expect(
         await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
@@ -588,9 +777,10 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     async () => {
       await main(["snapshot", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]);
       writeAllowlist({ "view:spread.some.read": "mounted only in another scenario" });
+      const unreadEntries = unresolved(extractCapabilities({ root: dirname(SPREAD) }));
       writeUnreadAllowlist({
-        "Shapes.tsx#spread-members": "still unread",
-        "Shapes.tsx#dynamic-type": "a shape that no longer occurs here",
+        ...Object.fromEntries(unreadEntries.map((entry) => [unreadKey(entry), "still unread"])),
+        "Shapes.tsx#dynamic-type#gone": "a shape that no longer occurs here",
       });
 
       captured = [];
@@ -598,14 +788,14 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
         await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
       ).toBe(1);
       expect(output()).toContain("STALE UNREAD ALLOWLIST");
-      expect(output()).toContain("Shapes.tsx#dynamic-type");
-      expect(output()).not.toContain("Shapes.tsx#spread-members\n");
+      expect(output()).toContain("Shapes.tsx#dynamic-type#gone");
+      expect(output()).not.toContain("Shapes.tsx#spread-members#gone");
     },
     TIMEOUT,
   );
 
   it(
-    "prints the key to paste, because nobody guesses file#reason",
+    "prints the key to paste, because nobody guesses the site fingerprint",
     async () => {
       expect(await main(["inspect", "--depth", "static", "--config", SPREAD, "--plain"])).toBe(0);
       expect(output()).toContain("allowlist key: Shapes.tsx#spread-members");
@@ -617,17 +807,17 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     const unread = {
       capabilityId: "<unresolved>",
       kind: "action" as const,
-      origin: { file: "a.tsx", line: 1 },
+      origin: { file: "a.tsx", line: 1, site: "site-a" },
       resolution: "unresolved" as const,
       reason: "granular-hook" as const,
     };
     // Listed: does not fail, with or without the flag.
     const listed = report({
       unresolved: [unread],
-      unreadAllowlist: { "a.tsx#granular-hook": "wrapper hook" },
+      unreadAllowlist: { "a.tsx#granular-hook#site-a": "wrapper hook" },
     });
     expect(coverageExitCode(listed)).toBe(0);
-    expect(listed.allowedUnread).toEqual(["a.tsx#granular-hook"]);
+    expect(listed.allowedUnread).toEqual(["a.tsx#granular-hook#site-a"]);
 
     // Unlisted: the flag is still the way past, for a codebase not ready to
     // enumerate them one by one.
@@ -636,7 +826,7 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     expect(coverageExitCode(bare, { allowUnresolved: true })).toBe(0);
 
     // A stale entry fails through the flag — a ratchet that can rot is not one.
-    const stale = report({ unreadAllowlist: { "gone.tsx#dynamic-type": "fixed long ago" } });
+    const stale = report({ unreadAllowlist: { "gone.tsx#dynamic-type#gone": "fixed long ago" } });
     expect(coverageExitCode(stale, { allowUnresolved: true })).toBe(1);
   });
 });

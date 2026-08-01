@@ -35,6 +35,7 @@ function Panel(): React.ReactElement {
 }
 
 export default {
+  scope: ["dup"],
   mount: () => ({
     registry: createAgentSurfaceRegistry({ environment: "test" }),
     ui: (
