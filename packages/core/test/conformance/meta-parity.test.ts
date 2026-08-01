@@ -604,7 +604,10 @@ describe("a meta verb enforces its own envelope (AS-META-007, AS-META-008)", () 
       expect(issues(result).map((i) => i.path)).toEqual(["capabilityId"]);
       // No target named, so the verb itself is the audit identity.
       expect(result.capabilityId).toBe("meta:surface.act");
-      expect(logged).toEqual([]);
+      // "development" also installs the console audit sink, whose trail shares
+      // this stream (D34, `AS-OBSV-002`). A *defect* is anything that is not it.
+      const defects = logged.filter((args) => args[0] !== "[agent-surface audit]");
+      expect(defects).toEqual([]);
     } finally {
       spy.mockRestore();
     }

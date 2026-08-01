@@ -83,7 +83,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   // A presentation surface needs a DOM to mount into, and react-dom reads these
   // globals at import time — so this must happen before any app module loads.
-  const uninstallDom = installDom();
+  // It stays installed for the life of the process, on purpose (see dom.ts).
+  installDom();
   try {
     const shared = {
       configPath,
@@ -114,8 +115,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
       writeError(error.stack);
     }
     return 1;
-  } finally {
-    uninstallDom();
   }
 }
 
@@ -145,14 +144,99 @@ function invokedAsBinary(): boolean {
   }
 }
 
+/**
+ * How long a finished command is allowed to keep running before it is treated
+ * as wedged. Costs a hung run one extra second; costs a healthy run nothing,
+ * because a healthy run has already exited by then.
+ */
+const GRACE_MS = 1000;
+
+/**
+ * What this process's own stdin/stdout/stderr are called, depending on where
+ * they were pointed: a terminal, a `|`, or a `>`. None of the three holds the
+ * event loop open — a clean run exits naturally through all of them — so when
+ * something *else* has wedged the command they are still in the handle table,
+ * and naming them would send the reader after the one thing that is not the
+ * cause. Their own leak would be the CLI's bug to fix, not the app's to hear
+ * about.
+ */
+const OWN_STDIO = new Set(["TTYWrap", "PipeWrap", "FileWrap"]);
+
+/** Resource types still holding the loop once the command is provably wedged. */
+function heldHandles(): string[] {
+  const active = process.getActiveResourcesInfo?.() ?? [];
+  return active.filter((resource) => !OWN_STDIO.has(resource));
+}
+
+/**
+ * `process.exit()` discards whatever is still buffered on a pipe, so a
+ * redirected run could lose its last lines — and redirected runs are the ones
+ * that matter (`--json`, CI logs). Drain both streams first, but never wait
+ * indefinitely: a reader that has stopped consuming must not turn a forced exit
+ * back into the hang it exists to prevent.
+ */
+async function flushOutput(): Promise<void> {
+  const drained = Promise.all(
+    [process.stdout, process.stderr].map(
+      (stream) =>
+        new Promise<void>((resolve) => {
+          if (stream.writableLength === 0) resolve();
+          else stream.write("", () => resolve());
+        }),
+    ),
+  );
+  const deadline = new Promise<void>((resolve) => {
+    setTimeout(resolve, 2000).unref();
+  });
+  await Promise.race([drained, deadline]);
+}
+
+/**
+ * Ends the process, and says why it had to be ended when that is the case.
+ *
+ * The mount is an arbitrary React tree, not code written for a one-shot
+ * process: a polling interval, a websocket, an animation loop or a data layer's
+ * cache timer all keep Node's event loop alive long after the surface has been
+ * rendered. Setting `process.exitCode` alone means such a command prints its
+ * full, correct output and then appears to hang — with a successful exit code
+ * already set, and nothing on screen to explain the wait (`AS-CLI-005`).
+ *
+ * The detector is the timer itself, not a reading of the handle table. An
+ * unref'd timer does not hold the loop open, so a command with nothing left to
+ * do exits naturally on `process.exitCode` and this never fires. Its firing is
+ * therefore the diagnosis — this run *was* about to hang — and whatever it then
+ * finds in the handle table is genuinely the cause. Reading the table eagerly
+ * instead would blame the app for the CLI's own teardown: vite's dev server is
+ * still closing its socket at the moment the last scenario is rendered, so
+ * every healthy run would accuse its own app of leaking a `TCPServerWrap`.
+ *
+ * Naming the handles is the same move the package already makes for
+ * capabilities: the invisible thing becomes inspectable. Exiting anyway is what
+ * makes the tool usable unattended.
+ */
+function exitWhenWedged(code: number): void {
+  process.exitCode = code;
+  setTimeout(() => {
+    const held = heldHandles();
+    if (held.length > 0) {
+      const kinds = [...new Set(held)].sort().join(", ");
+      writeError(
+        `agent-surface: the output above is complete, but ${held.length} handle(s) are still ` +
+          `open (${kinds}) — something started during the mount is still running, so this ` +
+          `command would have waited instead of exiting. Common causes: a polling interval, a ` +
+          `websocket, or a data layer whose cache timer outlives the render. Exiting ${code}.`,
+      );
+    }
+    void flushOutput().then(() => process.exit(code));
+  }, GRACE_MS).unref();
+}
+
 if (invokedAsBinary()) {
   main().then(
-    (code) => {
-      process.exitCode = code;
-    },
+    (code) => exitWhenWedged(code),
     (error: unknown) => {
       writeError(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
+      exitWhenWedged(1);
     },
   );
 }
