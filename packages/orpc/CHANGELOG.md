@@ -1,5 +1,12 @@
 # @agent-surface/orpc
 
+## 0.10.1
+
+### Patch Changes
+
+- Updated dependencies [33da211]
+  - @agent-surface/core@0.11.0
+
 ## 0.10.0
 
 ### Minor Changes
