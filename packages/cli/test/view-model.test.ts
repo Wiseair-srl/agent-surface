@@ -134,7 +134,7 @@ function fixture(): CollectResult {
     ],
   };
 
-  return { scenario: "admin", snapshot, explanation };
+  return { scenario: "admin", snapshot, explanation, rejections: [] };
 }
 
 describe("the rendered view never loses a capability (AS-CLI-001)", () => {

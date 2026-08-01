@@ -934,6 +934,78 @@
         "packages/cli/test/bin-process.test.ts"
       ],
       "status": "implemented"
+    },
+    "AS-CLI-006": {
+      "title": "Registrations rejected during a mount appear in inspect output and in --json",
+      "source": "20-cli.md#inspect",
+      "decision": "D37",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-007": {
+      "title": "inspect and check headers name the scenarios and any active scope; counts are never printed without their qualifier",
+      "source": "20-cli.md#inspect",
+      "decision": "D37",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-001": {
+      "title": "Every statically resolvable registration call site in the analyzed program appears in the inventory",
+      "source": "20-cli.md#capabilities",
+      "decision": "D35",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-002": {
+      "title": "An unresolvable call site is emitted with resolution \"unresolved\" and an origin, never omitted",
+      "source": "20-cli.md#capabilities",
+      "decision": "D35",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-003": {
+      "title": "capabilities exits non-zero when any entry is unresolved and --allow-unresolved was not passed",
+      "source": "20-cli.md#capabilities",
+      "decision": "D35",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-004": {
+      "title": "A policy-hidden capability is classified reached, because a scenario mounted it",
+      "source": "20-cli.md#coverage",
+      "decision": "D36",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-005": {
+      "title": "coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
+      "source": "20-cli.md#coverage",
+      "decision": "D36",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-006": {
+      "title": "The static inventory is never reachable from the agent-facing package root",
+      "source": "21-surface-coverage-rfc.md#what-this-rfc-does-not-change",
+      "decision": "D35",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
     }
   }
 }

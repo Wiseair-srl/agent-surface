@@ -9,23 +9,29 @@ import { writeError, write } from "./output.js";
 const USAGE = `agent-surface — inspect and check the agent surface your app exposes
 
 Usage
-  agent-surface inspect  [scenario]   what an agent can see right now
-  agent-surface snapshot [scenario]   write/refresh the committed baseline
-  agent-surface check    [scenario]   fail if the surface drifted from the baseline
+  agent-surface inspect      [scenario]   what an agent can see right now
+  agent-surface snapshot     [scenario]   write/refresh the committed baseline
+  agent-surface check        [scenario]   fail if the surface drifted from the baseline
+  agent-surface capabilities              what this codebase authors, without mounting
+  agent-surface coverage     [scenario]   authored capabilities no scenario reaches
 
 Every command covers all scenarios in the config unless you name one.
 
 Options
-  --config <path>   path to agent-surface.config.* (default: nearest, searching upward)
-  --baseline-dir    where baselines live (default: .agent-surface next to the config)
-  --scope <prefix>  restrict to a component-type prefix (repeatable)
-  --explain         name the policies behind every decision, hidden ones included
-  --schemas         include input/output JSON Schemas
-  --json            emit data instead of a rendered view
-  --plain           force plain text (implied when piped, or under CI / NO_COLOR)
-  -h, --help        show this
-  -v, --version     print the version
+  --config <path>       path to agent-surface.config.* (default: nearest, searching upward)
+  --baseline-dir        where baselines live (default: .agent-surface next to the config)
+  --scope <prefix>      restrict to a component-type prefix (repeatable)
+  --explain             name the policies behind every decision, hidden ones included
+  --schemas             include input/output JSON Schemas
+  --tsconfig <path>     tsconfig the static inventory reads (default: nearest to the config)
+  --allow-unresolved    capabilities: exit 0 even when a call site could not be read
+  --json                emit data instead of a rendered view
+  --plain               force plain text (implied when piped, or under CI / NO_COLOR)
+  -h, --help            show this
+  -v, --version         print the version
 `;
+
+const COMMANDS = ["inspect", "snapshot", "check", "capabilities", "coverage"];
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let parsed;
@@ -39,6 +45,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         scope: { type: "string", multiple: true },
         explain: { type: "boolean", default: false },
         schemas: { type: "boolean", default: false },
+        tsconfig: { type: "string" },
+        "allow-unresolved": { type: "boolean", default: false },
         json: { type: "boolean", default: false },
         plain: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
@@ -66,7 +74,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     write(USAGE);
     return 2;
   }
-  if (!["inspect", "snapshot", "check"].includes(command)) {
+  if (!COMMANDS.includes(command)) {
     writeError(`unknown command "${command}"`);
     writeError(USAGE);
     return 2;
@@ -84,8 +92,22 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   // A presentation surface needs a DOM to mount into, and react-dom reads these
   // globals at import time — so this must happen before any app module loads.
   // It stays installed for the life of the process, on purpose (see dom.ts).
-  installDom();
+  //
+  // `capabilities` is the exception, and deliberately so: it reads the
+  // TypeScript program and mounts nothing, so it must not pay for — or be
+  // able to be affected by — a DOM it never renders into.
+  if (command !== "capabilities") installDom();
   try {
+    if (command === "capabilities") {
+      const { runCapabilities } = await import("./commands/capabilities.js");
+      return await runCapabilities({
+        configPath,
+        ...(values.tsconfig ? { tsconfig: values.tsconfig } : {}),
+        ...(values.json ? { json: true } : {}),
+        ...(values["allow-unresolved"] ? { allowUnresolved: true } : {}),
+      });
+    }
+
     const shared = {
       configPath,
       ...(scenario ? { scenario } : {}),
@@ -106,6 +128,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     if (command === "snapshot") {
       const { runSnapshot } = await import("./commands/snapshot.js");
       return await runSnapshot(shared);
+    }
+    if (command === "coverage") {
+      const { runCoverage } = await import("./commands/coverage.js");
+      return await runCoverage({
+        ...shared,
+        ...(values.tsconfig ? { tsconfig: values.tsconfig } : {}),
+      });
     }
     const { runCheck } = await import("./commands/check.js");
     return await runCheck(shared);

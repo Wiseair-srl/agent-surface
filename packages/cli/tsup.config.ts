@@ -15,6 +15,7 @@ export default defineConfig({
     "react-dom",
     "ink",
     "jsdom",
+    "typescript",
     "vite-node",
     "@testing-library/react",
     "@agent-surface/core",

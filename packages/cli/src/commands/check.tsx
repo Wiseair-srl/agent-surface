@@ -62,7 +62,13 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     }
 
     if (drifted.length === 0) {
-      write(`surface matches the baseline (${scenarios.length} scenario${scenarios.length === 1 ? "" : "s"})`);
+      // Naming them is the point (`AS-CLI-007`). A green `check` means "the
+      // surface did not change *in these scenarios*", and a count alone lets it
+      // read as a statement about the surface as a whole — which it never was.
+      write(`surface matches the baseline in ${scenarios.join(", ")}`);
+      write(
+        "that is a statement about these scenarios only; capabilities no scenario mounts are `agent-surface coverage`'s question",
+      );
       return 0;
     }
 

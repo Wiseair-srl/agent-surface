@@ -1,0 +1,18 @@
+# Source is always text, even when it contains a byte git would guess on.
+#
+# `render/model.ts` keyed a Map on `${capabilityId}\0${registrationId}` with a
+# literal NUL, which is a fine separator and made git classify the file as
+# binary — so every diff to it rendered as `Bin 7004 -> 7548 bytes` and could
+# not be reviewed. The separator is now escaped, and this pins the
+# classification so a stray control byte cannot silently cost reviewability
+# again. Human review of the diff is the only gate on a capability reaching an
+# agent (docs/21); a diff that cannot be read is not a gate.
+# `text` normalizes line endings; `diff` is the one that forces a textual diff
+# regardless of what git's content heuristic decides. Both are wanted here.
+*.ts   text diff
+*.tsx  text diff
+*.js   text diff
+*.mjs  text diff
+*.cjs  text diff
+*.json text diff
+*.md   text diff
