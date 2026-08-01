@@ -76,11 +76,20 @@ A sixth package, `@agent-surface/cli`, and the one core addition it needed. Mani
 - **Scenarios are shared, not duplicated.** `agent-surface.config.tsx` points at the app's existing composition root, and `@agent-surface/cli/vitest` feeds the same scenarios to the test suite. In `devices-app` this deleted the suite's own `renderApp()` helper: one definition of "admin on /devices", three consumers.
 - `core`'s main entry is unchanged at 18.9 kB (budget 19.5); `explain` is a separate 1.41 kB entry that tree-shakes out of anything that does not import it.
 
-### v0.9 — adoption and enforcement
+### v0.9 — the CLI meets an application that is not this one — shipped (2026-08-01)
+
+Three defects, none of them in the surface data — the committed baselines are byte-identical across the whole slot. `agent-surface` was pointed at a Vite + React 19 dashboard outside this repo, and everything it got wrong was about *hosting*: which stream a write lands on, and when a process is allowed to end. The example app had masked all three by being tidy. Manifest 100 → 103/103.
+
+- **`inspect` covers every scenario by default** (0.9.0). A bare `inspect` rendered whichever scenario `Object.keys` happened to return first, so reordering two keys in a config file changed what it showed, and the one command read by eye was the only one showing a subset. **`inspect --json` changed shape** in the same release — always `{ "scenarios": [ … ] }`, a one-element array when a scenario is named — because a document whose top-level shape depends on how the command was invoked is one every consumer has to branch on.
+- **stdout is the output; stderr is everything else** (`AS-OBSV-002`, `AS-CLI-004`, D34, 0.9.1). `consoleAuditSink()` used `console.debug`: the verbose channel in a browser, an alias of `console.log` in Node. So a registry built with `environment: "development"` — what `import.meta.env.PROD` yields under vite-node, i.e. the documented Vite idiom — wrote its audit trail onto the stream the CLI renders into, and `inspect --json` emitted output no parser accepts. The trail moved to stderr under Node; it was not silenced ([06 §audit](06-policies-and-security.md#audit)).
+- **A finished command exits** (`AS-CLI-005`, D34, 0.9.1). The binary set `process.exitCode` and returned, so any handle the mounted app left behind kept the process alive after its output was complete and correct — a hang presenting as success, with nothing on screen to explain it. An unref'd grace timer now detects that case, names the handles still holding the loop, and exits. The detector is the timer rather than a reading of the handle table: read eagerly, the table blames every healthy run for vite's own socket, still closing at that instant ([20 §exiting](20-cli.md#exiting)).
+- **The slot's original theme did not ship.** "Adoption and enforcement" moves to [v0.10](#v010--adoption-and-enforcement) intact. Recorded as moved rather than quietly re-dated, per the rule v0.7 wrote down after the same thing happened at 0.6 — and this is the fourth occurrence, so the rule is evidently easier to write than to keep.
+
+### v0.10 — adoption and enforcement
 
 - API extraction + public type-compatibility checks in CI ([17 §8.3](17-maintainer-directive.md)).
 - CI regression thresholds on the runtime benchmarks, once baselines are stable on CI hardware rather than a dev machine ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
-- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 through 0.7.
+- Higher-cardinality interleaving fuzz over the full pipeline ([15](15-completeness-review.md) item 2), and a presentation-only starter example so a newcomer's first contact is not the full oRPC+confirmation app ([15](15-completeness-review.md) item 7). Both slipped 0.2 through 0.9.
 - A tracked expiry for the advisory `typescript@next` job, which fails on a `.d.ts`-bundler incompatibility with TypeScript 7 rather than on our types ([17 §7.4](17-maintainer-directive.md) forbids leaving it allowed-to-fail untracked).
 - Browser matrix (Chromium/Firefox/WebKit) — deferred until it buys something: `webmcp` is the only browser-API surface and it is Experimental.
 - OQ-1 decided and implemented: the `orpc-agent` manifest source (overdue — it was due before M9, which has shipped).
@@ -111,4 +120,4 @@ Graduation criteria to Stable (all required): used by the example app and ≥1 r
 - pnpm workspace, Changesets, semver pre-releases (`0.x`), provenance-signed publishes.
 - Every package ships ESM + `.d.ts`, `sideEffects: false`, size-limit budget enforced in CI ([02 §budgets](02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)).
 - CI matrix (live): Node 20.19/22 × React 18.2/19 with Strict Mode exercised inside the React suites; `typescript@next` advisory (`continue-on-error` — types are API here, but an upstream regression is not a release gate); Zod and Valibot through Standard Schema; out-of-workspace ESM import and a Vite bundle of the example app.
-- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.9 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
+- Not yet in CI: API extraction/type-compatibility reports, runtime benchmark thresholds, browser matrix. All three are v0.10 ([17 §7](17-maintainer-directive.md)) — they were scoped to v0.3 and have slipped with the rest of the enforcement work.
