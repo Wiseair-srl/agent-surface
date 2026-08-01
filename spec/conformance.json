@@ -1003,7 +1003,7 @@
     },
     "AS-COVER-005": {
       "title": "Coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
-      "source": "20-cli.md#the-allowlist-ratchets-it-does-not-gate",
+      "source": "20-cli.md#the-allowlist-ratchet",
       "decision": "D36",
       "tests": [
         "packages/cli/test/coverage.test.ts"

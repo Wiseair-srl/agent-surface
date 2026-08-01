@@ -26,7 +26,7 @@ Nine of how many? Not eleven: `--explain` will say `0 hidden` here, so the *regi
 
 ### The conflation
 
-[CLI §why this isn't `--entry ./router.ts`](../20-cli.md#why-this-isnt---entry-routerts) opens with an argument that is correct and load-bearing:
+[CLI](../20-cli.md) opened, at the time, with an argument that is correct and load-bearing:
 
 > A server router is a static export… A presentation surface is not: it is a projection of which components are currently mounted…
 
