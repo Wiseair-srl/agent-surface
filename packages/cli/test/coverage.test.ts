@@ -151,7 +151,10 @@ describe("the static catalog (AS-COVER-001)", () => {
     async () => {
       expect(await main(["inspect", "--depth", "static", "--config", DEVICES, "--plain"])).toBe(0);
       const rendered = output();
-      expect(rendered).toMatch(/^STATIC CATALOG\nSTATUS\s+COMPLETE/);
+      // The run header comes first — what was read, at which depth, under which
+      // scope — and the catalog it produced follows as its own block.
+      expect(rendered).toMatch(/^SURFACE INSPECT\n/);
+      expect(rendered).toMatch(/^STATIC CATALOG\nSTATUS\s+COMPLETE/m);
       expect(rendered).toContain("every capability identity resolved");
       expect(rendered).toContain("authored (upper bound)");
       expect(rendered).toContain("DYNAMIC META");
@@ -526,10 +529,12 @@ describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-0
       ).toBe(0);
       expect(output()).not.toContain("UNREACHED");
       expect(output()).not.toContain("view:app.navigation.goTo");
-      // Every count names the scope it was computed under (AS-CLI-007).
+      // Every count names the scope it was computed under (AS-CLI-007) — in
+      // the run header, in each scenario's own header, and in the summary.
       expect(output()).toContain("scope devices");
-      expect(output()).toContain("9 authored · 9 reached · 0 unreached");
-      expect(output()).toContain("1 domain capability reached against the authoritative oRPC manifest");
+      expect(output()).toContain("devices — every count below is relative to it");
+      expect(output()).toContain("9/9 authored capabilities reached");
+      expect(output()).toContain("1 capability reached against the authoritative oRPC manifest");
     },
     TIMEOUT,
   );

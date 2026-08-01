@@ -1002,6 +1002,15 @@
       ],
       "status": "implemented"
     },
+    "AS-CLI-013": {
+      "title": "A report opens with the run it describes and the summary it produced \u2014 the catalog, the per-scenario tables and every other detail follow it",
+      "source": "20-cli.md#summaries-first-details-after",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-COVER-001": {
       "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
       "source": "20-cli.md#the-catalog---depth-static",
@@ -1089,6 +1098,15 @@
       "decision": "D35",
       "tests": [
         "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COVER-011": {
+      "title": "A capability every scenario mounted and none could call is reported by inspect, apart from the gate, and never fails the build",
+      "source": "20-cli.md#mounted-and-callable-in-nothing",
+      "decision": "D36",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
       ],
       "status": "implemented"
     }

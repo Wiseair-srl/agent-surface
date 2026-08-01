@@ -252,11 +252,19 @@ Hiding is what the security model is *for*, so a snapshot cannot tell you a capa
 The other gap is a route no scenario visits: it never registers, so it appears in no snapshot and drifts against no baseline — invisible to a mount by construction. So every command reads the authored catalog straight from the TypeScript program (no server, no jsdom, no mount) and subtracts what the scenarios actually reached:
 
 ```text
-UNREACHED — authored, and no scenario mounts it  (1)
-CAPABILITY                ORIGIN
-view:billing.invoices.export  src/billing/Export.tsx:26
+SURFACE SUMMARY
+Reach       11/12 authored capabilities reached · 1 unreached
+Callable    10/11 mounted capabilities are callable in at least one scenario · 1 never callable
+Risk        1 destructive · 1 confirmation-gated
+Catalog     every call site read
+Scenarios   2 mounted
+Verdict     1 authored capability is reached by no scenario
 
-12 authored · 11 reached · 1 unreached · 2 scenarios (admin, anonymous)
+UNREACHED — authored, and no scenario mounts it  (1)
+CAPABILITY                    ORIGIN
+view:billing.invoices.export  src/billing/Export.tsx:26
+  → add a scenario that mounts them, delete the dead component, or record the decision in
+    .agent-surface/coverage-allow.json
 ```
 
 `inspect` reports that and `snapshot` reports it; **`check` fails on it**. `--depth static|runtime|full` picks which halves to compute. [docs/20-cli.md](docs/20-cli.md).

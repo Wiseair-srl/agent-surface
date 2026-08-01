@@ -49,10 +49,30 @@ agent-surface check [scenario]      # fail drift, gaps, rejections, stale scenar
 Every command covers all scenarios in the config unless you name one. `inspect` prints each in turn:
 
 ```text
-11 authored (upper bound) · 10 call sites across 21 files · 1 domain manifest capability
+SURFACE INSPECT
+Config      agent-surface.config.tsx
+Depth       full — the source is read and every scenario is mounted
+Scope       whole surface — no component-type prefix filter
+Scenarios   1 of 2 — admin
+
+SURFACE SUMMARY
+Reach       11/11 authored capabilities reached
+Callable    9/11 mounted capabilities are callable in at least one scenario · 2 never callable
+Risk        1 destructive · 1 confirmation-gated · 1 with bound input
+Domain      1 capability reached against the authoritative oRPC manifest
+Catalog     every call site read
+Scenarios   1 mounted
+Verdict     every authored capability is reached by a scenario
+
+STATIC CATALOG
+STATUS        COMPLETE — every capability identity resolved
+Capabilities  11 authored (upper bound) · 10 resolved call sites
+Program       21 files analyzed · 40 agent-surface implementation files excluded
+Metadata      5 call sites partially read · identity remains resolved
+Domain        1 manifest capability
 
 scenario admin  route /devices
-9 callable, 2 visible-disabled, 0 hidden
+9 callable, 2 visible-disabled, 0 hidden  ·  1 destructive, 1 confirmation-gated
 
 CAPABILITY                KIND         EFFECT       STATE     FLAGS
 app.navigation.goTo       action       navigation   callable  reversible
@@ -62,11 +82,9 @@ devices.drawer.close      action       local-state  disabled  reversible
 devices.table.sort        action       local-state  callable  idempotent · reversible
 devices.disable           procedure    destructive  disabled  confirmation:required · deviceIds bound+locked
     ⤷ Select at least one device first
-
-11 authored · 11 reached · 0 unreached · 1 scenario (admin)
 ```
 
-Every count names what it is relative to — the scenario always, the scope when one is active. A surface is a projection of one mounted context, never "the app".
+Summaries first, details after. The run header states what every number below it is relative to — the config, the depth, the scope, the scenarios — and prints before the mounts it will spend its time on. Each scenario's own table repeats the qualifier that is local to it: a surface is a projection of one mounted context, never "the app".
 
 `--detail` shows full capability, origin, and diagnostic detail; `--explain` and `--schemas` imply it.
 
@@ -110,8 +128,28 @@ A route nobody visits never registers, so it is in no snapshot and drifts agains
 UNREACHED — authored, and no scenario mounts it  (1)
 CAPABILITY                ORIGIN
 view:cov.unmounted.toCsv  Unmounted.tsx:26
+  → add a scenario that mounts them, delete the dead component, or record the decision in
+    .agent-surface/coverage-allow.json
+```
 
-3 authored · 2 reached · 1 unreached · 1 scenario (default)
+`check` says the same thing as a report — a verdict, the health matrix behind it, one row per scenario, then the findings and the commands that clear them:
+
+```text
+SURFACE CHECK  FAIL
+Config             agent-surface.config.tsx
+Depth              full — the source is read and every scenario is mounted
+Scope              whole surface — no component-type prefix filter
+
+Coverage    FAIL   2/3 authored capabilities reached · 1 unreached
+Catalog     PASS   all static sites resolved
+Domain      PASS   1 manifest capability reached
+Baselines   FAIL   1/2 scenario baselines current
+Runtime     PASS   2 scenarios mounted
+
+SCENARIOS  (2)
+SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED  BASELINE
+admin      /devices  9         2         0       —         drift (1)
+anonymous  /devices  0         0         11      —         current
 ```
 
 `inspect` reports it and `snapshot` reports it; **`check` fails on it**. It also fails on an unread call site, because the catalog is `unreached`'s denominator and holes in it make that count a floor rather than an answer — pass `--allow-unresolved` to accept that knowingly, which still prints the gap. Adoption ratchets through a committed `.agent-surface/coverage-allow.json`, whose stale entries fail the command.

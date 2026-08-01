@@ -3,7 +3,9 @@
 // registrations are reported), AS-CLI-007 (counts carry their qualifier),
 // AS-CLI-008 (--depth selects which halves are computed), AS-CLI-009 (stable
 // complete report), AS-CLI-010 (baseline/scenario integrity), AS-CLI-012
-// (verdict-first, hierarchical human output).
+// (verdict-first, hierarchical human output), AS-CLI-013 (every report opens
+// with what its counts are relative to), AS-COVER-011 (mounted, and callable in
+// no scenario).
 //
 // These drive the real `main()` against the real example app — vite-node, a
 // real mount, a real snapshot. Anything less would not prove the exit code.
@@ -524,7 +526,16 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
       expect(output()).toContain("Coverage    PASS");
       expect(output()).toContain("Baselines   PASS");
       expect(output()).toContain("Runtime     PASS");
-      expect(output()).toContain("admin, anonymous");
+      // Every scenario it compared is named, with what it found in each: a
+      // green tick over a list of names cannot say which of them was empty.
+      expect(output()).toContain("SCENARIOS  (2)");
+      expect(output()).toMatch(/^admin +\/devices +9 +2 +0 +— +current$/m);
+      expect(output()).toMatch(/^anonymous +\/devices +0 +0 +11 +— +current$/m);
+      // And what the whole report is relative to (AS-CLI-007): the config it
+      // read, the depth it ran at, and the scope those counts are under.
+      expect(output()).toContain("agent-surface.config.tsx");
+      expect(output()).toContain("Depth");
+      expect(output()).toContain("Scope");
 
       // It used to have to add that this was a statement about these scenarios
       // only, and point at a different command for the rest. At `--depth full`
@@ -556,6 +567,110 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
       ).toBe(0);
       expect(output()).toContain("statement about these scenarios only");
       expect(output()).toContain("--depth full");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "names the scope a check ran under, because it filters every count in it",
+    async () => {
+      // The scope reached the scenario headers and the verdict, and never the
+      // gate's own report — so a scoped CI run printed `9/9 reached` with
+      // nothing on screen saying which nine.
+      await main([
+        "snapshot",
+        "--config",
+        CONFIG,
+        "--baseline-dir",
+        baselineDir,
+        "--scope",
+        "devices",
+      ]);
+      captured = [];
+      expect(
+        await main([
+          "check",
+          "--config",
+          CONFIG,
+          "--baseline-dir",
+          baselineDir,
+          "--scope",
+          "devices",
+        ]),
+      ).toBe(0);
+      expect(output()).toContain("devices — every count below is relative to it");
+      expect(output()).toContain("Coverage    PASS   9/9");
+    },
+    TIMEOUT,
+  );
+});
+
+describe("the report leads with what it is about (AS-CLI-013)", () => {
+  it(
+    "opens with the run and its summary, and keeps every detail below them",
+    async () => {
+      expect(await main(["inspect", "--config", CONFIG, "--plain"])).toBe(0);
+      const rendered = output();
+      // What the run was: knowable before the first mount, and the mounts are
+      // the slow half, so it does not wait for them.
+      expect(rendered).toMatch(/^SURFACE INSPECT\n/);
+      expect(rendered).toContain("agent-surface.config.tsx");
+      expect(rendered).toMatch(/Depth\s+full — the source is read and every scenario is mounted/);
+      expect(rendered).toMatch(/Scenarios\s+2 — admin, anonymous/);
+
+      // Then the answer, and only then what it was derived from: the catalog,
+      // and each scenario's own table.
+      const summary = rendered.indexOf("SURFACE SUMMARY");
+      const catalog = rendered.indexOf("STATIC CATALOG");
+      const table = rendered.indexOf("scenario admin  route");
+      expect(summary).toBeGreaterThan(-1);
+      expect(summary).toBeLessThan(catalog);
+      expect(catalog).toBeLessThan(table);
+      // The catalog's domain row needs the config, which the mount loaded.
+      expect(rendered).toMatch(/Domain\s+1 manifest capability/);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "reports a capability every scenario mounted and none of them could call (AS-COVER-011)",
+    async () => {
+      // The cousin of `unreached`, and invisible to it: a drawer every scenario
+      // leaves closed registers its `close` action in every snapshot and is
+      // callable in none of them. The coverage join counts it reached.
+      expect(await main(["inspect", "--config", CONFIG, "--plain"])).toBe(0);
+      const all = output();
+      expect(all).toContain("NEVER CALLABLE");
+      expect(all).toContain("view:devices.drawer.close");
+      expect(all).toMatch(/Callable\s+9\/11 mounted capabilities/);
+      // Still reached — this is a finding about the scenarios, not the gate.
+      expect(all).toMatch(/Reach\s+11\/11 authored capabilities reached/);
+
+      captured = [];
+      await main(["inspect", "admin", "--config", CONFIG, "--plain"]);
+      // Over one scenario it is the same statement that scenario's own table
+      // already made, one line per capability.
+      expect(output()).not.toContain("NEVER CALLABLE");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "closes a failing check with the commands that clear it",
+    async () => {
+      expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(1);
+      const rendered = output();
+      expect(rendered).toContain("NEXT STEPS");
+      // Last, because the tail of a CI log is what a reader sees first.
+      expect(rendered.indexOf("NEXT STEPS")).toBeGreaterThan(rendered.indexOf("NO BASELINE"));
+      expect(rendered).toMatch(/1\. `agent-surface snapshot`/);
+
+      // A green one has nothing to clear, and says so by not saying anything.
+      captured = [];
+      await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir]);
+      captured = [];
+      expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
+      expect(output()).not.toContain("NEXT STEPS");
     },
     TIMEOUT,
   );

@@ -71,20 +71,39 @@ export interface ScenarioFailure {
   message: string;
 }
 
-export interface RuntimeAnalysis {
+/**
+ * Everything knowable once the config has loaded and before the first mount:
+ * which scenarios will run, under which scope, against which manifest.
+ *
+ * Split out so a command can *say* what it is about to measure. The mounts are
+ * the slow half — on a real app, seconds of them — and a report that opens with
+ * its qualifiers only after they finish spends that time showing nothing and
+ * then asks the reader to re-read the numbers above.
+ */
+export interface RuntimePlan {
   /** Scenarios selected for this run, in config order. */
   scenarios: string[];
   /** Every scenario declared by the config, even when one was selected. */
   declaredScenarios: string[];
-  /** The ones that mounted. */
-  results: CollectResult[];
-  failures: ScenarioFailure[];
   baselineDir: string;
   /** CLI scope wins; otherwise the config scope is effective everywhere. */
   scope?: string[];
   /** Authoritative domain capability ids from the configured oRPC manifest. */
   domainCapabilities: string[];
   domainManifestConfigured: boolean;
+}
+
+export interface RuntimeAnalysis extends RuntimePlan {
+  /** The ones that mounted. */
+  results: CollectResult[];
+  failures: ScenarioFailure[];
+}
+
+export interface MountHooks {
+  /** Called once, after the config loads and before the first mount. */
+  onPlan?: (plan: RuntimePlan) => void | Promise<void>;
+  /** Called as each scenario finishes, so a command can print as it goes. */
+  onEach?: (result: CollectResult) => void | Promise<void>;
 }
 
 /**
@@ -101,7 +120,7 @@ export interface RuntimeAnalysis {
  */
 export async function mountScenarios(
   options: AnalysisOptions,
-  onEach?: (result: CollectResult) => void | Promise<void>,
+  hooks: MountHooks = {},
 ): Promise<RuntimeAnalysis | undefined> {
   if (options.depth === "static") return undefined;
 
@@ -117,6 +136,20 @@ export async function mountScenarios(
     const effectiveScope = options.scope ?? runner.config.scope;
     const results: CollectResult[] = [];
     const failures: ScenarioFailure[] = [];
+    const plan: RuntimePlan = {
+      scenarios,
+      declaredScenarios: runner.scenarioNames,
+      baselineDir: baselineDirFor(
+        options.configPath,
+        options.baselineDir ?? runner.config.baselineDir,
+      ),
+      ...(effectiveScope ? { scope: effectiveScope } : {}),
+      domainCapabilities: Object.keys(runner.config.manifest?.tools ?? {})
+        .map((path) => `domain:${path}`)
+        .sort(),
+      domainManifestConfigured: runner.config.manifest !== undefined,
+    };
+    await hooks.onPlan?.(plan);
 
     for (const scenario of scenarios) {
       let result: CollectResult;
@@ -133,24 +166,10 @@ export async function mountScenarios(
         continue;
       }
       results.push(result);
-      await onEach?.(result);
+      await hooks.onEach?.(result);
     }
 
-    return {
-      scenarios,
-      declaredScenarios: runner.scenarioNames,
-      results,
-      failures,
-      baselineDir: baselineDirFor(
-        options.configPath,
-        options.baselineDir ?? runner.config.baselineDir,
-      ),
-      ...(effectiveScope ? { scope: effectiveScope } : {}),
-      domainCapabilities: Object.keys(runner.config.manifest?.tools ?? {})
-        .map((path) => `domain:${path}`)
-        .sort(),
-      domainManifestConfigured: runner.config.manifest !== undefined,
-    };
+    return { ...plan, results, failures };
   } finally {
     await runner.close();
   }

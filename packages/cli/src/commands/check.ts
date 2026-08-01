@@ -1,5 +1,4 @@
 import { existsSync, readdirSync } from "node:fs";
-import { relative } from "node:path";
 import {
   UsageError,
   joinCoverage,
@@ -23,8 +22,16 @@ import {
   renderCheckOverviewPlain,
   renderDriftPlain,
   renderFailuresPlain,
+  renderNextStepsPlain,
   renderNoVerdictPlain,
+  renderSectionsPlain,
 } from "../render/plain.js";
+import {
+  displayPath,
+  scenarioStats,
+  type FindingSection,
+  type ScenarioStats,
+} from "../render/summary.js";
 import { write, writeError } from "../output.js";
 import { coverageReport, scenarioBaseline } from "../report.js";
 
@@ -76,9 +83,12 @@ interface RejectedScenario {
  * accepts the fourth. Both are deliberate, committed decisions rather than
  * flags that quietly widen the gate.
  *
- * Output is always plain, with no rendering framework in its path at all: this
- * is a report that gets pasted into a pull request and read out of a CI log,
- * and neither of those is a terminal.
+ * The report is read top-down: the verdict, what it was computed over, one row
+ * per class of finding whether or not it fired, one row per scenario, then the
+ * findings themselves and the commands that clear them. Output is always plain,
+ * with no rendering framework in its path at all: this is a report that gets
+ * pasted into a pull request and read out of a CI log, and neither of those is
+ * a terminal.
  */
 export async function runCheck(options: CheckOptions): Promise<number> {
   if (options.depth === "static") {
@@ -122,9 +132,9 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     committedScenarios === undefined ||
     JSON.stringify(committedScenarios) !== JSON.stringify(declared);
   const reserved = new Set([SCENARIO_MANIFEST_FILE, ALLOWLIST_FILE, UNREAD_ALLOWLIST_FILE]);
-  const staleBaselineFiles = (existsSync(runtime.baselineDir)
-    ? readdirSync(runtime.baselineDir, { withFileTypes: true })
-    : [])
+  const staleBaselineFiles = (
+    existsSync(runtime.baselineDir) ? readdirSync(runtime.baselineDir, { withFileTypes: true }) : []
+  )
     .filter((entry) => entry.isFile() && entry.name.endsWith(".json") && !reserved.has(entry.name))
     .map((entry) => entry.name.slice(0, -5))
     .filter((scenario) => !runtime.declaredScenarios.includes(scenario))
@@ -169,6 +179,38 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     return couldNotRun ? 2 : ok ? 0 : 1;
   }
 
+  // "No baseline" is not drift, and filing it under a heading that says the
+  // surface changed would be a claim about a comparison that never happened.
+  const missing = drifted.filter((entry) => entry.missingBaseline);
+  const changed = drifted.filter((entry) => !entry.missingBaseline);
+
+  const baselineOf = (scenario: string): string => {
+    const entry = drifted.find((candidate) => candidate.scenario === scenario);
+    if (!entry) return "current";
+    if (entry.missingBaseline) return "missing";
+    return `drift (${entry.entries.length})`;
+  };
+  // One row per scenario the run attempted, in config order — including the
+  // ones that threw, which otherwise appear only at the bottom of the report.
+  const stats: ScenarioStats[] = runtime.scenarios.map((scenario) => {
+    const result = runtime.results.find((candidate) => candidate.scenario === scenario);
+    return result
+      ? { ...scenarioStats(result), baseline: baselineOf(scenario) }
+      : {
+          scenario,
+          callable: 0,
+          disabled: 0,
+          hidden: 0,
+          rejected: 0,
+          failed: true,
+          ...(runtime.failures.find((failure) => failure.scenario === scenario)?.message
+            ? {
+                failure: runtime.failures.find((failure) => failure.scenario === scenario)!.message,
+              }
+            : {}),
+        };
+  });
+
   const overview = renderCheckOverviewPlain({
     status: couldNotRun ? "ERROR" : ok ? "PASS" : "FAIL",
     ...(coverage ? { coverage } : {}),
@@ -179,6 +221,12 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     rejected: rejected.reduce((sum, entry) => sum + entry.rejections.length, 0),
     mountFailures: runtime.failures.length,
     scenarios: runtime.scenarios,
+    context: {
+      configPath: options.configPath,
+      depth: options.depth,
+      ...(runtime.scope ? { scope: runtime.scope } : {}),
+    },
+    stats,
   });
   if (ok) write(overview);
   else writeError(overview);
@@ -196,76 +244,125 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     }
   }
 
-  // "No baseline" is not drift, and filing it under a heading that says the
-  // surface changed would be a claim about a comparison that never happened.
-  const missing = drifted.filter((entry) => entry.missingBaseline);
-  const changed = drifted.filter((entry) => !entry.missingBaseline);
+  const sections: FindingSection[] = [];
+  const steps: string[] = [];
+  if (coverage && coverage.unreached.length > 0) {
+    steps.push(
+      `mount the ${coverage.unreached.length} unreached capabilit${
+        coverage.unreached.length === 1 ? "y" : "ies"
+      } from a scenario, or record the decision in ${displayPath(coverage.allowlistPath)}`,
+    );
+  }
+  if (coverage && coverage.unresolved.length > 0 && options.allowUnresolved !== true) {
+    steps.push(
+      `make the ${coverage.unresolved.length} unread call site${
+        coverage.unresolved.length === 1 ? "" : "s"
+      } readable, or paste each printed key into ${displayPath(coverage.unreadAllowlistPath)}`,
+    );
+  }
 
   if (rejected.length > 0) {
-    writeError(
-      [
-        `${coverage ? "\n" : ""}REJECTED REGISTRATIONS — the runtime refused authored surface  (${rejected.reduce((sum, entry) => sum + entry.rejections.length, 0)})`,
-        ...rejected.flatMap((entry) =>
-          entry.rejections.map(
-            (rejection) =>
-              `  ${entry.scenario}: ${rejection.componentType}@${rejection.instanceId} (${rejection.reason})`,
-          ),
+    const total = rejected.reduce((sum, entry) => sum + entry.rejections.length, 0);
+    sections.push({
+      title: "REJECTED REGISTRATIONS",
+      gloss: "the runtime refused authored surface during the mount",
+      count: total,
+      lines: rejected.flatMap((entry) =>
+        entry.rejections.map(
+          (rejection) =>
+            `${entry.scenario}: ${rejection.componentType}@${rejection.instanceId} (${rejection.reason})`,
         ),
-      ].join("\n"),
+      ),
+      hint:
+        "a dead handle registers nothing — give the second registration its own instanceId, " +
+        "or remove the duplicated component type",
+    });
+    steps.push(
+      `resolve ${total} rejected registration${total === 1 ? "" : "s"} — the capabilities ` +
+        "behind them reach no agent",
     );
   }
 
   if (scenarioManifestMismatch || staleBaselineFiles.length > 0) {
-    const committed = committedScenarios?.join(", ") ?? "missing";
-    writeError(
-      [
-        `${coverage || rejected.length > 0 ? "\n" : ""}SCENARIO DRIFT — committed baselines do not match config`,
-        `  config: ${declared.join(", ")}`,
-        `  manifest: ${committed}`,
+    sections.push({
+      title: "SCENARIO DRIFT",
+      gloss: "the committed baselines do not match the config",
+      count: 0,
+      lines: [
+        `config:   ${declared.join(", ")}`,
+        `manifest: ${committedScenarios?.join(", ") ?? "missing"}`,
         ...(staleBaselineFiles.length > 0
-          ? [`  stale baselines: ${staleBaselineFiles.join(", ")}`]
+          ? [`stale:    ${staleBaselineFiles.join(", ")}`]
           : []),
-        "  run `agent-surface snapshot` and commit the manifest",
-      ].join("\n"),
-    );
+      ],
+      hint:
+        "run `agent-surface snapshot`, commit the manifest, and delete any baseline for a " +
+        "scenario the config no longer declares",
+    });
   }
 
   if (missing.length > 0) {
-    writeError(
-      [
-        `${coverage ? "\n" : ""}NO BASELINE — nothing to compare against, which is not the same as a match  (${missing.length})`,
-        ...missing.map(
-          (entry) =>
-            `  ${entry.scenario}: ${relative(
-              process.cwd(),
-              baselinePath(runtime.baselineDir, entry.scenario),
-            )} does not exist — run \`agent-surface snapshot\` and commit it`,
-        ),
-      ].join("\n"),
-    );
+    sections.push({
+      title: "NO BASELINE",
+      gloss: "nothing to compare against, which is not the same as a match",
+      count: missing.length,
+      lines: missing.map(
+        (entry) =>
+          `${entry.scenario}: ${displayPath(
+            baselinePath(runtime.baselineDir, entry.scenario),
+          )} does not exist`,
+      ),
+      hint: "run `agent-surface snapshot` and commit the files it writes",
+    });
   }
 
   if (changed.length > 0) {
-    writeError(
-      [
-        `${coverage || missing.length > 0 ? "\n" : ""}DRIFT — the surface changed against its baseline  (${changed.length})`,
-        ...changed.map((entry) => renderDriftPlain(entry.scenario, entry.entries)),
-        "",
-        `surface drift in ${changed.length} scenario${
-          changed.length === 1 ? "" : "s"
-        } — review the change, then \`agent-surface snapshot\` to accept it`,
-      ].join("\n"),
+    sections.push({
+      title: "DRIFT",
+      gloss: "the surface changed against its baseline",
+      count: changed.length,
+      lines: changed.flatMap((entry) => renderDriftPlain(entry.scenario, entry.entries)),
+      hint:
+        "review the change, then `agent-surface snapshot` to accept it" +
+        (runtime.scope
+          ? ". A scope filters the projection while baselines are written from whatever " +
+            "scope wrote them, so re-check without --scope before believing this one"
+          : ""),
+    });
+  }
+
+  const baselinesStale =
+    missing.length > 0 ||
+    changed.length > 0 ||
+    scenarioManifestMismatch ||
+    staleBaselineFiles.length > 0;
+  if (baselinesStale) {
+    steps.push(
+      "`agent-surface snapshot`, then commit .agent-surface/ — this accepts the surface " +
+        "above as reviewed",
     );
   }
+
+  if (sections.length > 0) writeError(`\n${renderSectionsPlain(sections)}`);
 
   if (couldNotRun) {
     writeError(`\n${renderFailuresPlain(runtime.failures)}`);
     if (inventory) writeError(`\n${renderNoVerdictPlain(runtime.failures)}`);
-    return 2;
+    // First, and above every other remedy: nothing else in this report can be
+    // trusted while a scenario the config declares never ran.
+    steps.unshift(
+      `fix the mount for ${runtime.failures
+        .map((failure) => failure.scenario)
+        .join(", ")} — every count above is missing whatever ${
+        runtime.failures.length === 1 ? "it" : "they"
+      } would have surfaced`,
+    );
   }
 
-  if (ok) {
-    return 0;
-  }
-  return 1;
+  // Last, and only when something failed: the tail of a CI log is what a reader
+  // sees first, and a list of findings without the commands that clear them
+  // leaves the reader to derive those from six different sections.
+  if (!ok && steps.length > 0) writeError(`\n${renderNextStepsPlain(steps)}`);
+
+  return couldNotRun ? 2 : ok ? 0 : 1;
 }

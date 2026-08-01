@@ -1,15 +1,26 @@
-import { relative } from "node:path";
 import type { CapabilityRow, SurfaceView } from "./model.js";
 import { flatRows } from "./model.js";
+import {
+  coverageSections,
+  neverCallable,
+  neverCallableSection,
+  riskClause,
+  runContextRows,
+  runHeaderBlocks,
+  scenarioTable,
+  surfaceSummaryRows,
+  unreadSection,
+  type FindingSection,
+  type ReportBlock,
+  type ReportRow,
+  type RunContext,
+  type ScenarioStats,
+  type SurfaceSummaryInput,
+} from "./summary.js";
 import type { DiffEntry } from "../baseline.js";
 import { formatValue } from "../baseline.js";
 import type { ScenarioFailure } from "../analysis.js";
-import {
-  authoredIds,
-  unresolved,
-  type AuthoredCapability,
-  type CapabilityInventory,
-} from "../extract.js";
+import { unresolved, type CapabilityInventory } from "../extract.js";
 import { unreadKey, type CoverageReport } from "../coverage.js";
 
 /**
@@ -22,6 +33,15 @@ const MARK = { expose: "+", disable: "~", hide: "-" } as const;
 const STATE = { expose: "callable", disable: "disabled", hide: "hidden" } as const;
 const NONE = "—";
 const REPORT_WIDTH = 100;
+
+/**
+ * Where a report's text column starts. Fixed rather than derived, so the
+ * `Coverage`/`Baselines` matrix in `check` and the `Config`/`Depth` header
+ * above it line up as one grid — a block that indents itself differently reads
+ * as a different kind of thing.
+ */
+const LABEL_WIDTH = 12;
+const STATUS_WIDTH = 7;
 
 /** Deterministic wrapping: readable in logs, independent of terminal width. */
 function wrapText(text: string, width: number): string[] {
@@ -77,9 +97,63 @@ function renderTable(headers: string[], rows: Array<{ cells: string[]; note?: st
   return lines;
 }
 
+/** The same grid, for a caller that owns its own heading. */
+export function renderTablePlain(
+  headers: string[],
+  rows: Array<{ cells: string[]; note?: string }>,
+): string {
+  return renderTable(headers, rows).join("\n");
+}
+
 /** `UNREACHED — authored, and no scenario mounts it  (1)` */
 function section(title: string, gloss: string, count: number): string {
   return `${title} — ${gloss}  (${count})`;
+}
+
+/**
+ * A labelled block: an optional title, then `label  STATUS  text` rows.
+ *
+ * The label column is wide enough for the longest label in the report, never
+ * narrower than `LABEL_WIDTH`, so every block in one report shares a grid.
+ */
+export function renderReportPlain(blocks: ReportBlock[]): string {
+  const width = Math.max(
+    LABEL_WIDTH,
+    ...blocks.flatMap((block) => block.rows.map((row) => row.label.length + 2)),
+  );
+  const statuses = blocks.some((block) => block.rows.some((row) => row.status));
+  const renderRow = (row: ReportRow): string =>
+    `${row.label.padEnd(width)}${
+      statuses ? (row.status ?? "").padEnd(STATUS_WIDTH) : ""
+    }${row.text}`.trimEnd();
+
+  return blocks
+    .filter((block) => block.title || block.rows.length > 0)
+    .map((block) => [...(block.title ? [block.title] : []), ...block.rows.map(renderRow)].join("\n"))
+    .join("\n\n");
+}
+
+/** Findings, in the order they were built. Tables unindented, lists indented. */
+export function renderSectionsPlain(sections: FindingSection[]): string {
+  return sections
+    .map((entry) => {
+      const lines = [
+        entry.count > 0
+          ? section(entry.title, entry.gloss, entry.count)
+          : `${entry.title} — ${entry.gloss}`,
+      ];
+      if (entry.headers && entry.rows) lines.push(...renderTable(entry.headers, entry.rows));
+      if (entry.lines) lines.push(...entry.lines.map((line) => `  ${line}`.trimEnd()));
+      if (entry.hint) {
+        lines.push(
+          ...wrapText(entry.hint, REPORT_WIDTH - 4).map(
+            (line, index) => `  ${index === 0 ? "→" : " "} ${line}`,
+          ),
+        );
+      }
+      return lines.join("\n");
+    })
+    .join("\n\n");
 }
 
 function renderDetailRow(row: CapabilityRow, lines: string[]): void {
@@ -138,14 +212,20 @@ function renderDetailRow(row: CapabilityRow, lines: string[]): void {
  * explanation is always collected — and suppressing it outside `--explain`
  * meant a surface with a policy-hidden half rendered as a complete one. The
  * *attribution* still needs `--explain`; the count and the rows do not.
+ *
+ * The risk clause is the same argument one level up: `9 callable` says how much
+ * surface there is and nothing about what it can do, and "one of these deletes
+ * a device" is the part a reader needs before they read anything else.
  */
 export function renderCountsPlain(view: SurfaceView): string {
+  const risk = riskClause(flatRows(view));
   return (
     `${view.counts.callable} callable, ${view.counts.disabled} visible-disabled, ` +
     `${view.counts.hidden} hidden` +
     (view.rejections.length > 0
       ? `, ${view.rejections.length} registration${view.rejections.length === 1 ? "" : "s"} rejected`
-      : "")
+      : "") +
+    (risk ? `  ·  ${risk}` : "")
   );
 }
 
@@ -202,10 +282,7 @@ export interface SurfaceRenderOptions {
  * cell, so `--explain` and `--schemas` fall back to the detail view rather than
  * producing a table with most of the answer missing.
  */
-export function renderSurfacePlain(
-  view: SurfaceView,
-  options: SurfaceRenderOptions = {},
-): string {
+export function renderSurfacePlain(view: SurfaceView, options: SurfaceRenderOptions = {}): string {
   const lines: string[] = [];
   renderHeader(view, lines);
   renderRejections(view, lines);
@@ -245,30 +322,17 @@ export function renderSurfacePlain(
 }
 
 /**
- * The static catalog (`AS-COVER-001…003`). The summary says "upper bound" in so
- * many words: a tsconfig's include globs are wider than what a bundle reaches,
- * so a capability in a component no route renders any more is in here. That is
- * dead code — a different finding, not a false positive — and the reader has to
- * be told which number they are holding.
+ * The run header: the command, what it was pointed at, and what every number
+ * below is relative to. Printed before anything is mounted, because a reader
+ * watching a slow mount should already know what is being measured.
  */
-export interface CatalogRenderOptions {
-  /**
-   * This catalog *is* the command's output, rather than its preamble.
-   *
-   * True at `--depth static`: there are no scenario tables and no verdict, so
-   * the listing and the unread call sites have nowhere else to appear.
-   *
-   * False at `--depth full`, where the scenario tables below name every
-   * capability a scenario reached, the `UNREACHED` section names the ones it did
-   * not, and the verdict carries the unread call sites — so printing any of it
-   * here is the same information a second time, above the answer instead of in
-   * it. Only the summary line survives.
-   */
-  standalone?: boolean;
-  /** Authoritative domain manifest entries, when runtime config was loaded. */
-  domainCapabilities?: number;
-  /** Show origins, notes and per-site allowlist keys. */
-  detail?: boolean;
+export function renderRunHeaderPlain(
+  title: string,
+  context: RunContext,
+  inventory?: CapabilityInventory,
+  domainCapabilities?: number,
+): string {
+  return renderReportPlain(runHeaderBlocks(title, context, inventory, domainCapabilities));
 }
 
 function componentOf(capabilityId: string): string {
@@ -277,56 +341,29 @@ function componentOf(capabilityId: string): string {
   return dot === -1 ? path : path.slice(0, dot);
 }
 
-export function renderCatalogPlain(
+export interface CatalogDetailOptions {
+  /** Show the raw call-site table, origins, notes and diagnostic prose. */
+  detail?: boolean;
+}
+
+/**
+ * The catalog *below* its summary: which component authors what, and every call
+ * site the extractor could not read.
+ *
+ * Only `--depth static` prints this. At `--depth full` the scenario tables name
+ * every capability a scenario reached, the `UNREACHED` section names the ones it
+ * did not, and the verdict carries the unread call sites — so printing it here
+ * would be the same information a second time, above the answer instead of in it.
+ */
+export function renderCatalogDetailPlain(
   inventory: CapabilityInventory,
-  options: CatalogRenderOptions = {},
+  options: CatalogDetailOptions = {},
 ): string {
   const lines: string[] = [];
   const resolved = inventory.capabilities.filter((c) => c.resolution !== "unresolved");
   const unreadEntries = unresolved(inventory);
-  const dynamicMetadata = resolved.filter((c) => c.resolution === "partial").length;
-  const ids = authoredIds(inventory);
-  const authored = ids.size + (options.domainCapabilities ?? 0);
 
-  lines.push("STATIC CATALOG");
-  lines.push(
-    `STATUS        ${unreadEntries.length > 0 ? "INCOMPLETE" : "COMPLETE"}${
-      unreadEntries.length > 0
-        ? ` — ${unreadEntries.length} unread capability identit${unreadEntries.length === 1 ? "y" : "ies"}`
-        : " — every capability identity resolved"
-    }`,
-  );
-  lines.push(
-    `Capabilities  ${authored} authored (upper bound) · ${resolved.length} resolved call site${
-      resolved.length === 1 ? "" : "s"
-    }`,
-  );
-  lines.push(
-    `Program       ${inventory.filesAnalyzed} file${inventory.filesAnalyzed === 1 ? "" : "s"} analyzed` +
-      (inventory.filesOutsideRoot > 0
-        ? ` · ${inventory.filesOutsideRoot} agent-surface implementation file${
-            inventory.filesOutsideRoot === 1 ? "" : "s"
-          } excluded`
-        : ""),
-  );
-  lines.push(
-    `Metadata      ${dynamicMetadata} call site${dynamicMetadata === 1 ? "" : "s"} partially read` +
-      (dynamicMetadata > 0 ? " · identity remains resolved" : ""),
-  );
-  lines.push(
-    options.domainCapabilities === undefined
-      ? "Domain        not analyzed at static depth; full depth reads the oRPC manifest"
-      : `Domain        ${options.domainCapabilities} manifest capabilit${
-          options.domainCapabilities === 1 ? "y" : "ies"
-        }`,
-  );
-
-  if (!options.standalone) return lines.join("\n");
-
-  const components = new Map<
-    string,
-    { ids: Set<string>; sites: number; partial: number }
-  >();
+  const components = new Map<string, { ids: Set<string>; sites: number; partial: number }>();
   for (const capability of resolved) {
     const component = componentOf(capability.capabilityId);
     const current = components.get(component) ?? { ids: new Set<string>(), sites: 0, partial: 0 };
@@ -337,20 +374,21 @@ export function renderCatalogPlain(
   }
 
   if (components.size > 0) {
-    lines.push("");
     lines.push(`COMPONENTS  (${components.size})`);
     lines.push(
       ...renderTable(
         ["COMPONENT", "CAPABILITIES", "CALL SITES", "DYNAMIC META"],
-        [...components.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([component, data]) => ({
-          cells: [
-            `view:${component}`,
-            String(data.ids.size),
-            String(data.sites),
-            data.partial > 0 ? String(data.partial) : NONE,
-          ],
-          note: [...data.ids].sort().join(" · "),
-        })),
+        [...components.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([component, data]) => ({
+            cells: [
+              `view:${component}`,
+              String(data.ids.size),
+              String(data.sites),
+              data.partial > 0 ? String(data.partial) : NONE,
+            ],
+            note: [...data.ids].sort().join(" · "),
+          })),
       ),
     );
   }
@@ -361,16 +399,18 @@ export function renderCatalogPlain(
       const key = `${entry.origin.file}\0${entry.reason ?? "unknown"}`;
       groups.set(key, (groups.get(key) ?? 0) + 1);
     }
-    lines.push("");
+    if (lines.length > 0) lines.push("");
     lines.push(`UNREAD SITES  (${unreadEntries.length})`);
     lines.push("Counts above are a floor until these sites are resolved or explicitly accepted.");
     lines.push(
       ...renderTable(
         ["FILE", "REASON", "SITES"],
-        [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => {
-          const [file, reason] = key.split("\0");
-          return { cells: [file ?? "?", reason ?? "unknown", String(count)] };
-        }),
+        [...groups.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, count]) => {
+            const [file, reason] = key.split("\0");
+            return { cells: [file ?? "?", reason ?? "unknown", String(count)] };
+          }),
       ),
     );
     lines.push("", "ALLOWLIST KEYS");
@@ -380,7 +420,7 @@ export function renderCatalogPlain(
   if (options.detail) {
     const byId = [...resolved].sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
     if (byId.length > 0) {
-      lines.push("");
+      if (lines.length > 0) lines.push("");
       lines.push(`CAPABILITY DETAILS  (${byId.length} call sites)`);
       lines.push(
         ...renderTable(
@@ -397,10 +437,12 @@ export function renderCatalogPlain(
         ),
       );
     }
-    const unread = renderUnread(unreadEntries);
-    if (unread.length > 0) lines.push("", ...unread);
+    if (unreadEntries.length > 0) {
+      if (lines.length > 0) lines.push("");
+      lines.push(renderSectionsPlain([unreadSection(unreadEntries)]));
+    }
   } else if (unreadEntries.length > 0 || resolved.length > 0) {
-    lines.push("");
+    if (lines.length > 0) lines.push("");
     lines.push(
       "Details: re-run with --detail for origins, metadata diagnostics, and allowlist keys.",
     );
@@ -408,31 +450,11 @@ export function renderCatalogPlain(
   return lines.join("\n");
 }
 
-/**
- * Call sites the extractor could not read. Reported with file and line, never
- * dropped: an inventory that silently omitted what it failed to parse would
- * understate the denominator, and every number built on it would claim a
- * completeness it never had.
- */
-function renderUnread(entries: AuthoredCapability[]): string[] {
-  if (entries.length === 0) return [];
-  const lines: string[] = [];
-  lines.push(
-    section(
-      "UNREAD CALL SITES",
-      "the catalog is incomplete, so every count above is a floor",
-      entries.length,
-    ),
-  );
-  for (const capability of entries) {
-    lines.push(`  ? ${capability.origin.file}:${capability.origin.line}`);
-    lines.push(`      ${capability.note ?? "the extractor could not read this call site"}`);
-    // The allowlist key, spelled out. It is `file#reason#site`, and the site is
-    // a hash — not the line the reader is looking at — so leaving them to infer
-    // it guarantees a wrong guess and an entry that never matches.
-    lines.push(`      allowlist key: ${unreadKey(capability)}`);
-  }
-  return lines;
+export interface CoverageRenderOptions {
+  /** Check already prints an executive summary; render findings only. */
+  compact?: boolean;
+  /** Include non-gating inventories such as undeclared runtime ids. */
+  detail?: boolean;
 }
 
 /**
@@ -441,96 +463,26 @@ function renderUnread(entries: AuthoredCapability[]): string[] {
  * This is the finding the command surface used to hide behind a fifth command,
  * so it is the last thing printed and the thing a reader stops on.
  */
-export interface CoverageRenderOptions {
-  /** Check already prints an executive summary; render findings only. */
-  compact?: boolean;
-  /** Include non-gating inventories such as undeclared runtime ids. */
-  detail?: boolean;
-}
-
 export function renderCoveragePlain(
   report: CoverageReport,
   options: CoverageRenderOptions = {},
 ): string {
-  const lines: string[] = [];
+  const sections = coverageSections(report, options);
+  return sections.length > 0 ? renderSectionsPlain(sections) : "";
+}
 
-  if (report.unreached.length > 0) {
-    lines.push(
-      section("UNREACHED", "authored, and no scenario mounts it", report.unreached.length),
-    );
-    lines.push(
-      ...renderTable(
-        ["CAPABILITY", "ORIGIN"],
-        report.unreached.map((entry) => ({
-          cells: [entry.capabilityId, `${entry.origin.file}:${entry.origin.line}`],
-        })),
-      ),
-    );
-    lines.push("");
-  }
-
-  if (report.undeclared.length > 0) {
-    if (!options.compact || options.detail) {
-      lines.push(
-        section(
-          "UNDECLARED",
-          "present at runtime with no static origin — a dynamic registration, or a gap here",
-          report.undeclared.length,
-        ),
-      );
-      for (const id of report.undeclared) lines.push(`  ${id}`);
-    } else {
-      lines.push(
-        `NOTICE — ${report.undeclared.length} runtime capabilit${
-          report.undeclared.length === 1 ? "y has" : "ies have"
-        } no static origin; re-run check with --detail to list them.`,
-      );
-    }
-    lines.push("");
-  }
-
-  if (report.unmanifestedDomain.length > 0) {
-    lines.push(
-      section(
-        "UNMANIFESTED DOMAIN",
-        "mounted, but absent from the authoritative oRPC manifest",
-        report.unmanifestedDomain.length,
-      ),
-    );
-    for (const id of report.unmanifestedDomain) lines.push(`  ${id}`);
-    lines.push("");
-  }
-
-  if (report.staleAllowlist.length > 0) {
-    lines.push(
-      section(
-        "STALE ALLOWLIST",
-        "a scenario reaches these now, so delete them before the list rots",
-        report.staleAllowlist.length,
-      ),
-    );
-    for (const id of report.staleAllowlist) lines.push(`  ${id}`);
-    lines.push("");
-  }
-
-  if (report.staleUnreadAllowlist.length > 0) {
-    lines.push(
-      section(
-        "STALE UNREAD ALLOWLIST",
-        "the extractor reads these now, so delete them before the list rots",
-        report.staleUnreadAllowlist.length,
-      ),
-    );
-    for (const key of report.staleUnreadAllowlist) lines.push(`  ${key}`);
-    lines.push("");
-  }
-
-  if (report.unresolved.length > 0) {
-    lines.push(...renderUnread(report.unresolved), "");
-  }
-
-  if (!options.compact) lines.push(...renderCoverageSummary(report));
-  return lines.join("\n");
+/** The closing block, and the findings that belong with it. */
+export function renderSurfaceSummaryPlain(input: SurfaceSummaryInput): string {
+  const dark = neverCallable(input.reach);
+  // Over one scenario, "never callable" repeats that scenario's own table row
+  // for row — see neverCallableSection().
+  const mounted = input.scenarios.filter((entry) => !entry.failed).length;
+  const sections = [
+    ...(input.coverage ? coverageSections(input.coverage) : []),
+    ...(dark.length > 0 && mounted > 1 ? [neverCallableSection(dark)] : []),
+  ];
+  const summary = renderReportPlain([{ title: "SURFACE SUMMARY", rows: surfaceSummaryRows(input) }]);
+  return sections.length > 0 ? `${renderSectionsPlain(sections)}\n\n${summary}` : summary;
 }
 
 export interface CheckOverview {
@@ -543,10 +495,10 @@ export interface CheckOverview {
   rejected: number;
   mountFailures: number;
   scenarios: string[];
-}
-
-function overviewRow(label: string, status: "PASS" | "WARN" | "FAIL" | "ERROR", text: string): string {
-  return `${label.padEnd(12)}${status.padEnd(7)}${text}`;
+  /** What the run was pointed at. Printed above the matrix (`AS-CLI-007`). */
+  context?: RunContext;
+  /** Per-scenario totals. Replaces the bare name list when available. */
+  stats?: ScenarioStats[];
 }
 
 function wrappedList(items: string[]): string[] {
@@ -554,176 +506,137 @@ function wrappedList(items: string[]): string[] {
   return wrapText(items.join(", "), REPORT_WIDTH - prefix.length).map((line) => `${prefix}${line}`);
 }
 
-/** First-screen answer for `check`: verdict and health dimensions before detail. */
-export function renderCheckOverviewPlain(input: CheckOverview): string {
-  const lines = [`SURFACE CHECK  ${input.status}`, ""];
+/** The health matrix: one row per class of finding, whether or not it fired. */
+function checkMatrixRows(input: CheckOverview): ReportRow[] {
+  const rows: ReportRow[] = [];
   const coverage = input.coverage;
+
   if (coverage) {
-    const coverageStatus =
-      coverage.unreached.length > 0 || coverage.staleAllowlist.length > 0
-        ? "FAIL"
-        : coverage.allowed.length > 0
-          ? "WARN"
-          : "PASS";
-    lines.push(
-      overviewRow(
-        "Coverage",
-        coverageStatus,
+    rows.push({
+      label: "Coverage",
+      status:
+        coverage.unreached.length > 0 || coverage.staleAllowlist.length > 0
+          ? "FAIL"
+          : coverage.allowed.length > 0
+            ? "WARN"
+            : "PASS",
+      text:
         `${coverage.reached}/${coverage.authored} authored capabilities reached` +
-          (coverage.unreached.length > 0 ? ` · ${coverage.unreached.length} unreached` : "") +
-          (coverage.allowed.length > 0
-            ? ` · ${coverage.allowed.length} unreached allowlisted`
-            : "") +
-          (coverage.staleAllowlist.length > 0
-            ? ` · ${coverage.staleAllowlist.length} stale allowlist entr${
-                coverage.staleAllowlist.length === 1 ? "y" : "ies"
-              }`
-            : ""),
-      ),
-    );
+        (coverage.unreached.length > 0 ? ` · ${coverage.unreached.length} unreached` : "") +
+        (coverage.allowed.length > 0 ? ` · ${coverage.allowed.length} unreached allowlisted` : "") +
+        (coverage.staleAllowlist.length > 0
+          ? ` · ${coverage.staleAllowlist.length} stale allowlist entr${
+              coverage.staleAllowlist.length === 1 ? "y" : "ies"
+            }`
+          : ""),
+    });
+
     const unread = coverage.unresolved.length;
     const accepted = coverage.allowedUnread.length;
-    const catalogStatus =
-      coverage.staleUnreadAllowlist.length > 0 || (unread > 0 && !input.unresolvedAllowed)
-        ? "FAIL"
-        : unread > 0 || accepted > 0
-          ? "WARN"
-          : "PASS";
-    lines.push(
-      overviewRow(
-        "Catalog",
-        catalogStatus,
+    rows.push({
+      label: "Catalog",
+      status:
+        coverage.staleUnreadAllowlist.length > 0 || (unread > 0 && !input.unresolvedAllowed)
+          ? "FAIL"
+          : unread > 0 || accepted > 0
+            ? "WARN"
+            : "PASS",
+      text:
         coverage.staleUnreadAllowlist.length > 0
           ? `${coverage.staleUnreadAllowlist.length} stale unread allowlist entr${
               coverage.staleUnreadAllowlist.length === 1 ? "y" : "ies"
             }`
           : unread > 0
-          ? `${unread} unread static site${unread === 1 ? "" : "s"}${
-              input.unresolvedAllowed ? " accepted by --allow-unresolved" : ""
-            }`
-          : accepted > 0
-            ? `${accepted} unread static site${accepted === 1 ? "" : "s"} allowlisted`
-            : "all static sites resolved",
-      ),
-    );
-    lines.push(
-      overviewRow(
-        "Domain",
-        coverage.unmanifestedDomain.length > 0 ? "FAIL" : coverage.domainAuthoritative ? "PASS" : "WARN",
+            ? `${unread} unread static site${unread === 1 ? "" : "s"}${
+                input.unresolvedAllowed ? " accepted by --allow-unresolved" : ""
+              }`
+            : accepted > 0
+              ? `${accepted} unread static site${accepted === 1 ? "" : "s"} allowlisted`
+              : "all static sites resolved",
+    });
+
+    rows.push({
+      label: "Domain",
+      status:
+        coverage.unmanifestedDomain.length > 0
+          ? "FAIL"
+          : coverage.domainAuthoritative
+            ? "PASS"
+            : "WARN",
+      text:
         coverage.unmanifestedDomain.length > 0
           ? `${coverage.unmanifestedDomain.length} mounted capabilit${
               coverage.unmanifestedDomain.length === 1 ? "y" : "ies"
             } absent from manifest`
           : coverage.domainAuthoritative
-          ? `${coverage.domainReached.length} manifest capabilit${
-              coverage.domainReached.length === 1 ? "y" : "ies"
-            } reached`
-          : "authoritative manifest not configured",
-      ),
-    );
+            ? `${coverage.domainReached.length} manifest capabilit${
+                coverage.domainReached.length === 1 ? "y" : "ies"
+              } reached`
+            : "authoritative manifest not configured",
+    });
   } else {
-    lines.push(
-      overviewRow(
-        "Coverage",
-        input.status === "ERROR" ? "ERROR" : "WARN",
+    rows.push({
+      label: "Coverage",
+      status: input.status === "ERROR" ? "ERROR" : "WARN",
+      text:
         input.status === "ERROR"
           ? "no verdict; runtime analysis incomplete"
           : "not evaluated — statement about these scenarios only; re-run with --depth full",
-      ),
-    );
+    });
   }
 
   const baselineOk = input.baselineCurrent === input.baselineTotal && input.scenarioManifestOk;
-  lines.push(
-    overviewRow(
-      "Baselines",
-      baselineOk ? "PASS" : "FAIL",
+  rows.push({
+    label: "Baselines",
+    status: baselineOk ? "PASS" : "FAIL",
+    text:
       `${input.baselineCurrent}/${input.baselineTotal} scenario baselines current` +
-        (input.scenarioManifestOk ? "" : " · scenario manifest differs"),
-    ),
-  );
-  lines.push(
-    overviewRow(
-      "Runtime",
-      input.mountFailures > 0 ? "ERROR" : input.rejected > 0 ? "FAIL" : "PASS",
+      (input.scenarioManifestOk ? "" : " · scenario manifest differs"),
+  });
+
+  rows.push({
+    label: "Runtime",
+    status: input.mountFailures > 0 ? "ERROR" : input.rejected > 0 ? "FAIL" : "PASS",
+    text:
       input.mountFailures > 0
         ? `${input.mountFailures} scenario${input.mountFailures === 1 ? "" : "s"} did not mount`
         : input.rejected > 0
           ? `${input.rejected} registration${input.rejected === 1 ? "" : "s"} rejected`
           : `${input.scenarios.length} scenario${input.scenarios.length === 1 ? "" : "s"} mounted`,
-    ),
-  );
-  lines.push("", `SCENARIOS  (${input.scenarios.length})`, ...wrappedList(input.scenarios));
-  return lines.join("\n");
+  });
+
+  return rows;
 }
 
-/** The one line a reader who stops at the bottom takes away. */
-function renderCoverageSummary(report: CoverageReport): string[] {
-  const qualifiers = [
-    `${report.scenarios.length} scenario${report.scenarios.length === 1 ? "" : "s"} (${report.scenarios.join(
-      ", ",
-    )})`,
-  ];
-  // Every count is relative to the scope, so the scope is printed with them
-  // (`AS-CLI-007`) — `10 authored` under a scope is a claim about one prefix of
-  // the codebase, not about the codebase.
-  if (report.scope && report.scope.length > 0) qualifiers.push(`scope ${report.scope.join(" ")}`);
-
-  const lines = [
-    `${report.authored} authored · ${report.reached} reached · ${report.unreached.length} unreached` +
-      ` · ${qualifiers.join(" · ")}`,
+/** First-screen answer for `check`: verdict, context, health, then scenarios. */
+export function renderCheckOverviewPlain(input: CheckOverview): string {
+  const blocks: ReportBlock[] = [
+    {
+      title: `SURFACE CHECK  ${input.status}`,
+      rows: input.context ? runContextRows(input.context) : [],
+    },
+    { rows: checkMatrixRows(input) },
   ];
 
-  if (report.domainReached.length > 0) {
-    lines.push(
-      `${report.domainReached.length} domain capabilit${
-        report.domainReached.length === 1 ? "y" : "ies"
-      } reached${
-        report.domainAuthoritative
-          ? " against the authoritative oRPC manifest"
-          : " and held apart — configure the authoritative oRPC manifest to cover that plane"
-      }`,
-    );
-  }
-  if (report.allowed.length > 0) {
-    lines.push(
-      `${report.allowed.length} unreached capabilit${
-        report.allowed.length === 1 ? "y is" : "ies are"
-      } allowlisted in ${relative(process.cwd(), report.allowlistPath)}`,
-    );
-  }
-  if (report.allowedUnread.length > 0) {
-    lines.push(
-      `${report.allowedUnread.length} unread call site${
-        report.allowedUnread.length === 1 ? " is" : "s are"
-      } allowlisted in ${relative(process.cwd(), report.unreadAllowlistPath)}`,
-    );
-  }
-  if (report.allowlistOutOfScope > 0) {
-    lines.push(
-      `${report.allowlistOutOfScope} allowlist entr${
-        report.allowlistOutOfScope === 1 ? "y" : "ies"
-      } outside this scope were not judged either way`,
-    );
-  }
+  const table = input.stats ? scenarioTable(input.stats, { baselines: true }) : undefined;
+  const scenarios =
+    input.stats && table
+      ? [`SCENARIOS  (${input.stats.length})`, ...renderTable(table.headers, table.rows)]
+      : [`SCENARIOS  (${input.scenarios.length})`, ...wrappedList(input.scenarios)];
 
-  // Each bucket gets its own remedy. "Add a scenario, or delete the component"
-  // is the right advice for an unreached capability and useless advice for a
-  // call site the extractor could not read.
-  if (
-    report.unreached.length === 0 &&
-    report.unresolved.length === 0 &&
-    report.staleAllowlist.length === 0 &&
-    report.staleUnreadAllowlist.length === 0 &&
-    report.unmanifestedDomain.length === 0
-  ) {
-    lines.push(
-      report.allowed.length > 0
-        ? "no new surface coverage gaps — the allowlist still holds the known ones"
-        : "every authored capability is reached by a scenario",
-    );
-  }
-  return lines;
+  return `${renderReportPlain(blocks)}\n\n${scenarios.join("\n")}`;
+}
+
+/** The commands that clear this report, in the order worth running them. */
+export function renderNextStepsPlain(steps: string[]): string {
+  return [
+    "NEXT STEPS",
+    ...steps.flatMap((step, index) =>
+      wrapText(step, REPORT_WIDTH - 5).map(
+        (line, wrapped) => `  ${wrapped === 0 ? `${index + 1}.` : "  "} ${line}`,
+      ),
+    ),
+  ].join("\n");
 }
 
 /**
@@ -732,12 +645,16 @@ function renderCoverageSummary(report: CoverageReport): string[] {
  * or the partial one reads as the complete one.
  */
 export function renderNoVerdictPlain(failures: ScenarioFailure[]): string {
+  // The failures themselves are listed directly above, by DID NOT MOUNT. This
+  // says what their absence costs the rest of the report, and nothing else.
   return [
-    section("NO COVERAGE VERDICT", "a scenario did not mount, so nothing reached anything", failures.length),
-    ...failures.flatMap((failure) => [`  ${failure.scenario}`, `      ${failure.message}`]),
-    "",
-    "Every capability those scenarios would have surfaced would be reported unreached,",
-    "so no verdict is printed at all. Fix the mount, or name a scenario that works.",
+    section(
+      "NO COVERAGE VERDICT",
+      "a scenario did not mount, so nothing reached anything",
+      failures.length,
+    ),
+    "  Every capability those scenarios would have surfaced would be reported unreached,",
+    "  so no verdict is printed at all. Fix the mount, or name a scenario that works.",
   ].join("\n");
 }
 
@@ -748,17 +665,18 @@ export function renderFailuresPlain(failures: ScenarioFailure[]): string {
   ].join("\n");
 }
 
-export function renderDriftPlain(scenario: string, entries: DiffEntry[]): string {
-  const lines = [`  ${scenario}: ${entries.length} change${entries.length === 1 ? "" : "s"}`];
+/** One scenario's drift, unindented — the section renderer owns the indent. */
+export function renderDriftPlain(scenario: string, entries: DiffEntry[]): string[] {
+  const lines = [`${scenario}: ${entries.length} change${entries.length === 1 ? "" : "s"}`];
   for (const entry of entries) {
     const where = entry.subject ? `${entry.subject}  (${entry.path})` : entry.path;
-    if (entry.kind === "added") lines.push(`    + ${where}  ${formatValue(entry.after)}`);
-    else if (entry.kind === "removed") lines.push(`    - ${where}  ${formatValue(entry.before)}`);
+    if (entry.kind === "added") lines.push(`  + ${where}  ${formatValue(entry.after)}`);
+    else if (entry.kind === "removed") lines.push(`  - ${where}  ${formatValue(entry.before)}`);
     else {
-      lines.push(`    ~ ${where}`);
-      lines.push(`        before: ${formatValue(entry.before)}`);
-      lines.push(`        after:  ${formatValue(entry.after)}`);
+      lines.push(`  ~ ${where}`);
+      lines.push(`      before: ${formatValue(entry.before)}`);
+      lines.push(`      after:  ${formatValue(entry.after)}`);
     }
   }
-  return lines.join("\n");
+  return lines;
 }
