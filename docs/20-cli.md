@@ -339,6 +339,29 @@ So the extractor resolves what the spread *can* contribute. When the key set is 
 
 When the key set cannot be read, the registration is reported unread, **even if a literal `observations` alongside it resolved perfectly** (`AS-COVER-002`). The half that resolves says nothing about the `actions` the spread may add, and a half read as a whole is the failure this half of the tool exists to prevent.
 
+#### A wrapper hook resolves one hop up
+
+The first thing that happens to a repeated registration is that someone factors it:
+
+```tsx
+export function usePanel(type: string) {
+  useAgentComponent({ type, observations: { … }, actions: { … } });
+}
+
+usePanel("devices.table");     // ← the id lives here
+usePanel("billing.invoices");
+```
+
+The capability ids are still fully determined by source text — just one frame up. So the extractor follows the wrapper's call sites and emits one capability set per literal, the same one-hop budget it already spends going *sideways* to a same-module `const`, pointed the other way. Both the positional and the destructured spelling (`function useX({ type }: Props)`) are read.
+
+**It resolves a call site only when it can prove that call is this wrapper**: declared in the same file, or imported through a specifier that resolves to the wrapper's own file. Anything else — a re-export chain, a namespace import, a function elsewhere that happens to share the name — stays unread. Attributing the wrong call would put ids in the catalog that no component authors, and a *fabricated* entry is worse than a missing one: every other gap in this tool understates, and that one would overstate.
+
+Resolution is per call site, not per wrapper. Fifteen literals and two variables give fifteen capabilities and one unread line naming the two, which is a truer catalog than seventeen unread lines:
+
+```text
+`type` is a parameter of usePanel(); 15 call sites resolved, 2 pass a non-literal
+```
+
 **`check` exits non-zero when any call site is unread**, unless `--allow-unresolved` is passed (`AS-COVER-003`) — which still prints the gap. `inspect` prints unread call sites just as loudly and exits `0`, because it is a viewer.
 
 *Why this is the substance of the static half:* every number downstream, the `unreached` denominator above all, is only as trustworthy as the extractor's own admission of what it could not read. A partial understanding of a codebase that reports itself as complete is the failure this exists to remove.

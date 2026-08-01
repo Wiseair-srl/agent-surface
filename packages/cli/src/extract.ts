@@ -167,6 +167,12 @@ function propertyOf(
     if (ts.isPropertyAssignment(property) && propertyName(property.name) === wanted) {
       return property.initializer;
     }
+    // `{ type }` is `{ type: type }`, and the shorthand is what a wrapper hook
+    // forwarding a parameter actually writes. Reading only the long form made
+    // every such config look like it had no `type` at all.
+    if (ts.isShorthandPropertyAssignment(property) && property.name.text === wanted) {
+      return property.name;
+    }
   }
   return undefined;
 }
@@ -426,7 +432,13 @@ function capabilitiesFromGroup(
   }
 }
 
-function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile): void {
+function visitCall(
+  call: ts.CallExpression,
+  emit: Emitter,
+  source: ts.SourceFile,
+  deferred: DeferredWrapper[],
+  enclosing: EnclosingFunction | undefined,
+): void {
   const callee = calleeName(call);
   if (callee === undefined) return;
 
@@ -465,12 +477,27 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
   }
 
   const config = resolved.object;
-  const type = literalText(propertyOf(config, "type"));
+  const typeNode = propertyOf(config, "type");
+  const type = literalText(typeNode);
   if (type === undefined) {
     // `register` is a common method name; only treat it as ours once the call
     // actually looks like a registration. A `type` that exists but is dynamic
     // *is* ours, and is a genuine finding.
-    if (callee === "register" && propertyOf(config, "type") === undefined) return;
+    if (callee === "register" && typeNode === undefined) return;
+
+    // A `type` that is a parameter of the enclosing function is not dynamic —
+    // it is decided one frame up, at the wrapper's call sites, and those are
+    // string literals often enough to be worth following (OQ-13). Defer it;
+    // the second pass either resolves it or reports it unread as before.
+    const slot =
+      enclosing && typeNode && ts.isIdentifier(typeNode)
+        ? parameterSlot(typeNode.text, enclosing.fn)
+        : undefined;
+    if (slot && enclosing?.name) {
+      deferred.push({ config, source, emit, wrapperName: enclosing.name, slot, site: call });
+      return;
+    }
+
     emit.push({
       capabilityId: UNRESOLVED_ID,
       kind: "action",
@@ -538,6 +565,155 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
   );
 }
 
+/* ── wrapper hooks: one hop *up* the call graph (OQ-13) ───────────────── */
+
+/**
+ * A registration whose `type` is a parameter of the enclosing function.
+ *
+ * ```tsx
+ * function useRegisteredPanel(type: string) {
+ *   useAgentComponent({ type, observations: { … } });   // ← here
+ * }
+ * useRegisteredPanel("devices.table");                  // ← type lives here
+ * ```
+ *
+ * The capability ids are still fully determined by source text; they are just
+ * determined *one frame up*. Reported unread, a single such wrapper hides the
+ * whole surface built on it — 91% of one real application's capabilities
+ * ([#31](https://github.com/Wiseair-srl/agent-surface/issues/31)).
+ *
+ * Resolution is deferred to a second pass because a call site may live in a
+ * file walked before the wrapper's own.
+ */
+interface DeferredWrapper {
+  config: ts.ObjectLiteralExpression;
+  source: ts.SourceFile;
+  emit: Emitter;
+  /** The name a call site would use. */
+  wrapperName: string;
+  /** Where `type` sits in the wrapper's signature. */
+  slot: { index: number; property?: string };
+  /** The node to blame when this cannot be resolved. */
+  site: ts.Node;
+}
+
+interface CallSite {
+  call: ts.CallExpression;
+  source: ts.SourceFile;
+}
+
+/**
+ * The function a call sits inside, and the name a caller would use for it.
+ *
+ * Tracked on the way *down* the tree rather than read from `node.parent`:
+ * `ts.createProgram` leaves parent pointers unset until something forces the
+ * binder to run, and forcing it means constructing a type checker — real work
+ * on a large program, for an answer the walk already has in hand.
+ */
+interface EnclosingFunction {
+  fn: ts.SignatureDeclaration;
+  /** `function useX()` and `const useX = () => {}` both name the wrapper. */
+  name?: string;
+}
+
+function functionLike(node: ts.Node): ts.SignatureDeclaration | undefined {
+  if (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node)
+  ) {
+    return node;
+  }
+  return undefined;
+}
+
+/**
+ * Where a `type` identifier comes from in the enclosing signature, if it is a
+ * parameter at all. Both spellings authors actually use:
+ *
+ * ```ts
+ * function useX(type: string)          // { index: 0 }
+ * function useX({ type }: Props)       // { index: 0, property: "type" }
+ * ```
+ */
+function parameterSlot(
+  name: string,
+  fn: ts.SignatureDeclaration,
+): { index: number; property?: string } | undefined {
+  for (const [index, parameter] of fn.parameters.entries()) {
+    if (ts.isIdentifier(parameter.name)) {
+      if (parameter.name.text === name) return { index };
+      continue;
+    }
+    if (ts.isObjectBindingPattern(parameter.name)) {
+      for (const element of parameter.name.elements) {
+        if (!ts.isIdentifier(element.name) || element.name.text !== name) continue;
+        // `{ type: kind }` binds `kind` locally but reads the `type` property.
+        const property =
+          element.propertyName && ts.isIdentifier(element.propertyName)
+            ? element.propertyName.text
+            : name;
+        return { index, property };
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Whether `site` is provably a call of `wrapper`, and not of something else
+ * that happens to share its name.
+ *
+ * This predicate is the whole safety argument. Attributing a wrapper's
+ * capabilities to the wrong call site would put ids in the catalog that no
+ * component authors — **fabricating** entries, a failure this package has never
+ * had and must not acquire. Reporting unread is always the safe answer, so
+ * anything short of certainty returns `false`:
+ *
+ * - declared in the same file — lexically certain;
+ * - imported, and the specifier resolves to the wrapper's own file;
+ * - anything else — a re-export chain, a namespace import, a dynamic import —
+ *   is not certain, and is left unread.
+ */
+function callsWrapper(
+  site: CallSite,
+  wrapper: DeferredWrapper,
+  compilerOptions: ts.CompilerOptions,
+): boolean {
+  const callee = site.call.expression;
+  if (!ts.isIdentifier(callee) || callee.text !== wrapper.wrapperName) return false;
+
+  if (site.source.fileName === wrapper.source.fileName) {
+    // Same file: the only way this is a different function is a local shadow,
+    // which would also shadow it for the reader.
+    return true;
+  }
+
+  for (const statement of site.source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const clause = statement.importClause;
+    if (!clause) continue;
+
+    const named =
+      clause.name?.text === wrapper.wrapperName ||
+      (clause.namedBindings &&
+        ts.isNamedImports(clause.namedBindings) &&
+        clause.namedBindings.elements.some((element) => element.name.text === wrapper.wrapperName));
+    if (!named) continue;
+    if (!ts.isStringLiteral(statement.moduleSpecifier)) continue;
+
+    const resolved = ts.resolveModuleName(
+      statement.moduleSpecifier.text,
+      site.source.fileName,
+      compilerOptions,
+      ts.sys,
+    ).resolvedModule;
+    if (resolved?.resolvedFileName === wrapper.source.fileName) return true;
+  }
+  return false;
+}
+
 export interface ExtractOptions {
   /** Directory the analysis is rooted at — normally the surface config's dir. */
   root: string;
@@ -572,6 +748,12 @@ export function extractCapabilities(options: ExtractOptions): CapabilityInventor
 
   let filesOutsideRoot = 0;
 
+  // Registrations whose `type` comes from a parameter, and every call that
+  // could supply it. Both are filled during the single walk below; the join
+  // happens after, because a call site may live in a file walked earlier.
+  const deferred: DeferredWrapper[] = [];
+  const callsByName = new Map<string, CallSite[]>();
+
   for (const source of program.getSourceFiles()) {
     if (source.isDeclarationFile) continue;
     if (source.fileName.includes("/node_modules/")) continue;
@@ -595,11 +777,96 @@ export function extractCapabilities(options: ExtractOptions): CapabilityInventor
       }),
     };
 
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node)) visitCall(node, emit, source);
-      ts.forEachChild(node, visit);
+    let pendingName: string | undefined;
+    const visit = (node: ts.Node, enclosing?: EnclosingFunction): void => {
+      const fn = functionLike(node);
+      if (fn) {
+        // A variable declaration names the arrow it initialises, and the walk
+        // sees the declaration first — so the name is already in hand here.
+        const named = ts.isFunctionDeclaration(node) && node.name ? node.name.text : pendingName;
+        enclosing = { fn, ...(named ? { name: named } : {}) };
+        pendingName = undefined;
+      } else if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+        pendingName = node.name.text;
+      }
+
+      if (ts.isCallExpression(node)) {
+        visitCall(node, emit, source, deferred, enclosing);
+        // Every identifier-callee call is a potential wrapper call site. Indexed
+        // by name here so the second pass does not re-walk the program.
+        if (ts.isIdentifier(node.expression)) {
+          const name = node.expression.text;
+          const sites = callsByName.get(name) ?? [];
+          sites.push({ call: node, source });
+          callsByName.set(name, sites);
+        }
+      }
+      ts.forEachChild(node, (child) => visit(child, enclosing));
     };
     visit(source);
+  }
+
+  // Second pass: one hop *up* the call graph. The first pass follows one hop
+  // sideways to a same-module `const`; this is the same budget pointed the
+  // other way, and it is what turns a shared wrapper hook from a single unread
+  // line into the capabilities it actually authors.
+  for (const wrapper of deferred) {
+    const sites = (callsByName.get(wrapper.wrapperName) ?? []).filter((site) =>
+      callsWrapper(site, wrapper, compilerOptions),
+    );
+
+    const types = new Map<string, ts.CallExpression>();
+    const dynamic: CallSite[] = [];
+    for (const site of sites) {
+      const argument = site.call.arguments[wrapper.slot.index];
+      const value =
+        wrapper.slot.property && argument && ts.isObjectLiteralExpression(argument)
+          ? propertyOf(argument, wrapper.slot.property)
+          : argument;
+      const text = value ? literalText(value) : undefined;
+      if (text !== undefined) types.set(text, site.call);
+      else dynamic.push(site);
+    }
+
+    // Partial resolution beats all-or-nothing: 15 literals plus 2 unread lines
+    // is a truer catalog than 17 unread lines, and it stays honest about which
+    // two it could not read.
+    for (const type of [...types.keys()].sort()) {
+      const componentPartial = hasSpread(wrapper.config)
+        ? "the component config spreads another object, so some metadata here may be dynamic"
+        : undefined;
+      for (const [group, kind] of [
+        ["observations", "observation"],
+        ["actions", "action"],
+      ] as const) {
+        capabilitiesFromGroup(
+          propertyOf(wrapper.config, group),
+          kind,
+          type,
+          componentPartial,
+          wrapper.emit,
+          wrapper.source,
+        );
+      }
+    }
+
+    if (types.size === 0 || dynamic.length > 0) {
+      // Nothing resolved, or some call sites pass a non-literal. Either way the
+      // catalog is a floor here and has to say so.
+      wrapper.emit.push({
+        capabilityId: UNRESOLVED_ID,
+        kind: "action",
+        origin: wrapper.emit.origin(wrapper.site),
+        resolution: "unresolved",
+        reason: "dynamic-type",
+        note:
+          types.size === 0
+            ? `\`type\` is a parameter of ${wrapper.wrapperName}(), and no call site of it in this program passes a string literal`
+            : `\`type\` is a parameter of ${wrapper.wrapperName}(); ${types.size} call site${
+                types.size === 1 ? "" : "s"
+              } resolved, ${dynamic.length} pass${dynamic.length === 1 ? "es" : ""} a non-literal`,
+      });
+    }
   }
 
   capabilities.sort(
