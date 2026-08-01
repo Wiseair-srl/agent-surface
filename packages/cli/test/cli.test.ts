@@ -2,7 +2,8 @@
 // --plain / CI / NO_COLOR output is plain and stable), AS-CLI-006 (rejected
 // registrations are reported), AS-CLI-007 (counts carry their qualifier),
 // AS-CLI-008 (--depth selects which halves are computed), AS-CLI-009 (stable
-// complete report), AS-CLI-010 (baseline/scenario integrity).
+// complete report), AS-CLI-010 (baseline/scenario integrity), AS-CLI-012
+// (verdict-first, hierarchical human output).
 //
 // These drive the real `main()` against the real example app — vite-node, a
 // real mount, a real snapshot. Anything less would not prove the exit code.
@@ -519,6 +520,10 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
       expect(await main(["snapshot", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
       captured = [];
       expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
+      expect(output()).toMatch(/^SURFACE CHECK  PASS/);
+      expect(output()).toContain("Coverage    PASS");
+      expect(output()).toContain("Baselines   PASS");
+      expect(output()).toContain("Runtime     PASS");
       expect(output()).toContain("admin, anonymous");
 
       // It used to have to add that this was a statement about these scenarios

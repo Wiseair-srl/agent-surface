@@ -7,7 +7,8 @@
 // is never reachable from core), AS-COVER-007 (the gap reaches every command,
 // and a scope filters the catalog by the same predicate as the mount),
 // AS-CLI-008 (--depth static computes the catalog and mounts nothing),
-// AS-CLI-011 (manifest domain denominator and effective scope), AS-COVER-008
+// AS-CLI-011 (manifest domain denominator and effective scope), AS-CLI-012
+// (compact static hierarchy with detail on demand), AS-COVER-008
 // (unread call sites ratchet per semantic site),
 // AS-COVER-009 (a wrapper hook's type resolves from its call sites, and a
 // same-named function elsewhere is never attributed), AS-COVER-010 (a
@@ -27,6 +28,7 @@ import * as coreRoot from "@agent-surface/core";
 import { main } from "../src/bin.js";
 import { extractCapabilities, authoredIds, unresolved } from "../src/extract.js";
 import { buildCoverageReport, coverageExitCode, unreadKey } from "../src/coverage.js";
+import { renderCheckOverviewPlain } from "../src/render/plain.js";
 
 const FIXTURE = fileURLToPath(
   new URL("./fixtures/coverage/agent-surface.config.tsx", import.meta.url),
@@ -148,10 +150,23 @@ describe("the static catalog (AS-COVER-001)", () => {
     "is what --depth static prints, with no Vite server and no mount",
     async () => {
       expect(await main(["inspect", "--depth", "static", "--config", DEVICES, "--plain"])).toBe(0);
-      expect(output()).toContain("authored (upper bound)");
-      expect(output()).toContain("view:devices.table.sort");
+      const rendered = output();
+      expect(rendered).toMatch(/^STATIC CATALOG\nSTATUS\s+COMPLETE/);
+      expect(rendered).toContain("every capability identity resolved");
+      expect(rendered).toContain("authored (upper bound)");
+      expect(rendered).toContain("DYNAMIC META");
+      expect(rendered).toContain("COMPONENTS");
+      expect(rendered).toContain("view:devices.table.sort");
+      expect(rendered.split("\n").length).toBeLessThan(40);
       // Nothing was mounted, so no scenario header can appear.
-      expect(output()).not.toContain("scenario admin");
+      expect(rendered).not.toContain("scenario admin");
+
+      captured = [];
+      expect(
+        await main(["inspect", "--depth", "static", "--config", DEVICES, "--plain", "--detail"]),
+      ).toBe(0);
+      expect(output()).toContain("CAPABILITY DETAILS");
+      expect(output()).toContain("DevicesTable.tsx");
     },
     TIMEOUT,
   );
@@ -300,6 +315,41 @@ describe("a policy-hidden capability was still reached (AS-COVER-004)", () => {
 });
 
 describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
+  it("attributes each failing check to its own overview row", () => {
+    const base = {
+      status: "FAIL" as const,
+      baselineCurrent: 1,
+      baselineTotal: 1,
+      scenarioManifestOk: true,
+      rejected: 0,
+      mountFailures: 0,
+      scenarios: ["default"],
+      unresolvedAllowed: false,
+    };
+    const unread = report({
+      unresolved: [
+        {
+          capabilityId: "<unresolved>",
+          kind: "action",
+          origin: { file: "a.tsx", line: 1, site: "site-a" },
+          resolution: "unresolved",
+        },
+      ],
+    });
+    const unreadOutput = renderCheckOverviewPlain({ ...base, coverage: unread });
+    expect(unreadOutput).toContain("Coverage    PASS");
+    expect(unreadOutput).toContain("Catalog     FAIL");
+
+    const domain = report({
+      reachedIds: new Set(["view:a.b", "domain:devices.disable"]),
+      domainAuthoritative: true,
+    });
+    const domainOutput = renderCheckOverviewPlain({ ...base, coverage: domain });
+    expect(domainOutput).toContain("Coverage    PASS");
+    expect(domainOutput).toContain("Domain      FAIL");
+    expect(domainOutput).toContain("absent from manifest");
+  });
+
   it(
     "makes check exit 1 on a gap, naming the capability and where it was authored",
     async () => {
