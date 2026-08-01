@@ -1,5 +1,18 @@
 # @agent-surface/webmcp
 
+## 0.12.1
+
+### Patch Changes
+
+- 0fbec0d: Make large CLI reports useful at a glance.
+
+  `inspect --depth static` groups capabilities by component and unread sites by file/reason while preserving every copyable allowlist key. `--detail` restores raw origins and diagnostics.
+
+  `check` leads with a PASS/FAIL health matrix. Passing non-gating inventories stay summarized unless `--detail` is requested. Open-handle warnings are structured instead of one long line.
+
+- Updated dependencies [0fbec0d]
+  - @agent-surface/core@0.12.1
+
 ## 0.12.0
 
 ### Minor Changes
