@@ -1027,6 +1027,15 @@
         "packages/cli/test/coverage.test.ts"
       ],
       "status": "implemented"
+    },
+    "AS-COVER-008": {
+      "title": "An unread call site can be accepted per entry via unresolved-allow.json, keyed on file plus a stable reason code; an entry the extractor can now read fails the command",
+      "source": "20-cli.md#the-allowlist-ratchet",
+      "decision": "D38",
+      "tests": [
+        "packages/cli/test/coverage.test.ts"
+      ],
+      "status": "implemented"
     }
   }
 }

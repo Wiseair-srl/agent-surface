@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { AuthoredCapability } from "./extract.js";
 
 export const ALLOWLIST_FILE = "coverage-allow.json";
+export const UNREAD_ALLOWLIST_FILE = "unresolved-allow.json";
 
 /**
  * A committed list of unreached capabilities a repository has decided not to
@@ -24,7 +25,11 @@ export function allowlistPathFor(baselineDir: string): string {
   return join(baselineDir, ALLOWLIST_FILE);
 }
 
-export function readAllowlist(path: string): CoverageAllowlist {
+export function unreadAllowlistPathFor(baselineDir: string): string {
+  return join(baselineDir, UNREAD_ALLOWLIST_FILE);
+}
+
+export function readAllowlist(path: string, keyName = "capabilityId"): CoverageAllowlist {
   if (!existsSync(path)) return {};
   let parsed: unknown;
   try {
@@ -35,7 +40,7 @@ export function readAllowlist(path: string): CoverageAllowlist {
     );
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${path} must be a JSON object of { "capabilityId": "reason" }`);
+    throw new Error(`${path} must be a JSON object of { "${keyName}": "reason" }`);
   }
   const allowlist: CoverageAllowlist = {};
   for (const [id, reason] of Object.entries(parsed as Record<string, unknown>)) {
@@ -45,6 +50,24 @@ export function readAllowlist(path: string): CoverageAllowlist {
     allowlist[id] = reason;
   }
   return allowlist;
+}
+
+/**
+ * The key an unread call site is allowlisted under: `file#reason`.
+ *
+ * Neither half alone works. The line number churns on every edit above the call
+ * site, so a ratchet keyed on it fails for a reason that has nothing to do with
+ * the surface. The `note` is prose written for a human and gets reworded — the
+ * spread note changed in the release that introduced it — so a key built from it
+ * would invalidate committed entries on an edit nobody thought was behavioural.
+ *
+ * File plus a stable reason code survives both. It is coarser than a line: a
+ * second call site in the same file failing the *same* way is covered silently.
+ * That is the accepted trade, because the ratchet's job is "no new *kinds* of
+ * unread site", and it is bounded to one file and one construct.
+ */
+export function unreadKey(entry: AuthoredCapability): string {
+  return `${entry.origin.file}#${entry.reason ?? "unknown"}`;
 }
 
 export interface UnreachedCapability {
@@ -86,13 +109,18 @@ export interface CoverageReport {
    * defect, which is the misleading check this whole command rejects.
    */
   domainReached: string[];
-  /** Carried forward from the inventory. */
+  /** Carried forward from the inventory, minus anything allowlisted. */
   unresolved: AuthoredCapability[];
   /** Unreached, but listed in the allowlist. */
   allowed: string[];
   /** Listed in the allowlist and reached anyway — the list has rotted. */
   staleAllowlist: string[];
   allowlistPath: string;
+  /** Unread, but listed in `unresolved-allow.json`. Keys, not entries. */
+  allowedUnread: string[];
+  /** Listed there and no longer unread — that list has rotted too. */
+  staleUnreadAllowlist: string[];
+  unreadAllowlistPath: string;
 }
 
 export interface BuildCoverageInput {
@@ -119,6 +147,9 @@ export interface BuildCoverageInput {
   allowlist: CoverageAllowlist;
   allowlistOutOfScope?: number;
   allowlistPath: string;
+  /** Keyed by `unreadKey()`. Absent is an empty list, not "accept everything". */
+  unreadAllowlist?: CoverageAllowlist;
+  unreadAllowlistPath: string;
 }
 
 export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
@@ -141,6 +172,23 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
     .filter((id) => input.reachedIds.has(id) || !input.authored.has(id))
     .sort();
 
+  // The same ratchet, one bucket over. An unread call site a repository has
+  // decided to live with — a shared wrapper hook, say — stops failing `check`
+  // without turning the whole bucket off, and an entry that stops being unread
+  // fails so the list shrinks.
+  const unreadAllowlist = input.unreadAllowlist ?? {};
+  const unread: AuthoredCapability[] = [];
+  const allowedUnread = new Set<string>();
+  for (const entry of input.unresolved) {
+    const key = unreadKey(entry);
+    if (key in unreadAllowlist) allowedUnread.add(key);
+    else unread.push(entry);
+  }
+  const stillUnread = new Set(input.unresolved.map(unreadKey));
+  const staleUnreadAllowlist = Object.keys(unreadAllowlist)
+    .filter((key) => !stillUnread.has(key))
+    .sort();
+
   const unaccounted = [...input.reachedIds].filter((id) => !input.authored.has(id)).sort();
   const domainReached = unaccounted.filter((id) => id.startsWith("domain:"));
   const undeclared = unaccounted.filter((id) => !id.startsWith("domain:"));
@@ -154,10 +202,13 @@ export function buildCoverageReport(input: BuildCoverageInput): CoverageReport {
     unreached,
     undeclared,
     domainReached,
-    unresolved: input.unresolved,
+    unresolved: unread,
     allowed,
     staleAllowlist,
     allowlistPath: input.allowlistPath,
+    allowedUnread: [...allowedUnread].sort(),
+    staleUnreadAllowlist,
+    unreadAllowlistPath: input.unreadAllowlistPath,
   };
 }
 
@@ -181,7 +232,13 @@ export function coverageExitCode(
   options: { allowUnresolved?: boolean } = {},
 ): number {
   if (report.unreached.length > 0) return 1;
+  // `report.unresolved` already excludes allowlisted entries, so the per-entry
+  // ratchet and the blanket flag compose: the list holds the sites you have
+  // accepted, and the flag is still there for a codebase not ready to enumerate
+  // them. Both stale lists fail regardless of either — a ratchet that can rot
+  // is a ratchet that stops meaning anything.
   if (report.unresolved.length > 0 && !options.allowUnresolved) return 1;
   if (report.staleAllowlist.length > 0) return 1;
+  if (report.staleUnreadAllowlist.length > 0) return 1;
   return 0;
 }

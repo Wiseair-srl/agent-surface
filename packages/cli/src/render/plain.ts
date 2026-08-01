@@ -10,7 +10,7 @@ import {
   type AuthoredCapability,
   type CapabilityInventory,
 } from "../extract.js";
-import type { CoverageReport } from "../coverage.js";
+import { unreadKey, type CoverageReport } from "../coverage.js";
 
 /**
  * The no-colour, no-cursor rendering used when stdout is piped or when
@@ -315,6 +315,10 @@ function renderUnread(entries: AuthoredCapability[]): string[] {
   for (const capability of entries) {
     lines.push(`  ? ${capability.origin.file}:${capability.origin.line}`);
     lines.push(`      ${capability.note ?? "the extractor could not read this call site"}`);
+    // The allowlist key, spelled out. It is `file#reason` rather than the line
+    // the reader is looking at, so leaving them to infer it guarantees a wrong
+    // guess and an entry that never matches.
+    lines.push(`      allowlist key: ${unreadKey(capability)}`);
   }
   return lines;
 }
@@ -367,6 +371,18 @@ export function renderCoveragePlain(report: CoverageReport): string {
     lines.push("");
   }
 
+  if (report.staleUnreadAllowlist.length > 0) {
+    lines.push(
+      section(
+        "STALE UNREAD ALLOWLIST",
+        "the extractor reads these now, so delete them before the list rots",
+        report.staleUnreadAllowlist.length,
+      ),
+    );
+    for (const key of report.staleUnreadAllowlist) lines.push(`  ${key}`);
+    lines.push("");
+  }
+
   if (report.unresolved.length > 0) {
     lines.push(...renderUnread(report.unresolved), "");
   }
@@ -406,6 +422,13 @@ function renderCoverageSummary(report: CoverageReport): string[] {
       } allowlisted in ${relative(process.cwd(), report.allowlistPath)}`,
     );
   }
+  if (report.allowedUnread.length > 0) {
+    lines.push(
+      `${report.allowedUnread.length} unread call site${
+        report.allowedUnread.length === 1 ? " is" : "s are"
+      } allowlisted in ${relative(process.cwd(), report.unreadAllowlistPath)}`,
+    );
+  }
   if (report.allowlistOutOfScope > 0) {
     lines.push(
       `${report.allowlistOutOfScope} allowlist entr${
@@ -417,7 +440,12 @@ function renderCoverageSummary(report: CoverageReport): string[] {
   // Each bucket gets its own remedy. "Add a scenario, or delete the component"
   // is the right advice for an unreached capability and useless advice for a
   // call site the extractor could not read.
-  if (report.unreached.length === 0 && report.unresolved.length === 0 && report.staleAllowlist.length === 0) {
+  if (
+    report.unreached.length === 0 &&
+    report.unresolved.length === 0 &&
+    report.staleAllowlist.length === 0 &&
+    report.staleUnreadAllowlist.length === 0
+  ) {
     lines.push(
       report.allowed.length > 0
         ? "no new surface coverage gaps — the allowlist still holds the known ones"

@@ -25,6 +25,7 @@ import {
   allowlistPathFor,
   buildCoverageReport,
   readAllowlist,
+  unreadAllowlistPathFor,
   type CoverageReport,
 } from "./coverage.js";
 import {
@@ -200,7 +201,14 @@ export function joinCoverage(
     Object.entries(wholeAllowlist).filter(([id]) => inScope(id)),
   );
 
+  // Not scope-filtered, deliberately: an unread call site has no capability id,
+  // so there is no component type to test a scope prefix against. A scoped run
+  // simply reports the same unread sites as an unscoped one.
+  const unreadAllowlistPath = unreadAllowlistPathFor(runtime.baselineDir);
+
   return buildCoverageReport({
+    unreadAllowlist: readAllowlist(unreadAllowlistPath, "file#reason"),
+    unreadAllowlistPath,
     authored,
     origins,
     reachedIds,
