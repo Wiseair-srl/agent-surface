@@ -406,9 +406,28 @@ A repository turning this on with 200 unreached capabilities cannot fix them in 
 }
 ```
 
-Entries listed there do not fail `check`. Entries that are *no longer* unreached **do** fail it, so the list shrinks and cannot silently rot (`AS-COVER-005`) — the same idiom as the baselines `check` already commits. The allowlist covers unreached capabilities only; it cannot be used to wave through an unread codebase, because `unresolved` is a separate bucket with its own, separate acceptance in `--allow-unresolved`.
+Entries listed there do not fail `check`. Entries that are *no longer* unreached **do** fail it, so the list shrinks and cannot silently rot (`AS-COVER-005`) — the same idiom as the baselines `check` already commits.
 
-Two buckets, two dials, and deliberately no third: there is no `--fail-on`. A coarse "gate on drift but not coverage" switch would be a second way to say what the allowlist already says per-capability, and the fine-grained one is the one that shrinks.
+**Unread call sites ratchet the same way** (`AS-COVER-008`), in `.agent-surface/unresolved-allow.json`:
+
+```json
+{
+  "src/agent/useRegisteredPanel.tsx#granular-hook": "shared wrapper hook, tracked in OQ-13"
+}
+```
+
+The key is `file#reason`, and `inspect` prints it under every unread entry so nobody has to guess the format. Neither half of that key is an accident:
+
+- **not the line**, which churns on every edit above the call site — a ratchet that fails because someone added an import is a ratchet people delete;
+- **not the note**, which is prose written for a human and gets reworded. The `reason` is a stable code (`dynamic-type`, `spread-members`, `granular-hook`, …); renaming one invalidates committed lists and is a breaking change.
+
+It is coarser than a line: a second call site in the same file failing the *same* way is covered silently. That is the accepted trade — the ratchet's job is "no new *kinds* of unread site", and the blast radius is one file and one construct.
+
+`--allow-unresolved` remains the blanket dial, for a codebase not yet ready to enumerate them. The two compose: the list holds what you have accepted deliberately, the flag covers the rest, and **a stale entry in either list fails through both**, because a ratchet that can rot is not a ratchet.
+
+The unreached allowlist still cannot wave through an unread codebase — that is what the second file is for, and it is a separate, deliberate decision.
+
+There is deliberately no `--fail-on`. A coarse "gate on drift but not coverage" switch would be a third way to say what these two files already say per entry, and the fine-grained ones are the ones that shrink.
 
 #### What the verdict still cannot see
 

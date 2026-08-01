@@ -65,7 +65,29 @@ export interface AuthoredCapability {
   resolution: "static" | "partial" | "unresolved";
   /** Present on `partial`/`unresolved`: what defeated the extractor. */
   note?: string;
+  /**
+   * Present on `unresolved`: *which* construct defeated the extractor, as a
+   * stable code rather than prose.
+   *
+   * `note` is written for a human and gets reworded — the spread note changed
+   * in the same release that introduced it. Anything keyed on that prose would
+   * silently invalidate itself on an edit no one thought was behavioural, which
+   * is exactly what `unresolved-allow.json` must not do. This is the key.
+   */
+  reason?: UnreadReason;
 }
+
+/**
+ * Why a registration could not be fully read. Stable identifiers: adding one is
+ * fine, renaming one invalidates committed allowlists and is a breaking change.
+ */
+export type UnreadReason =
+  | "dynamic-type"
+  | "dynamic-config"
+  | "dynamic-group"
+  | "spread-members"
+  | "computed-name"
+  | "granular-hook";
 
 export interface CapabilityInventory {
   capabilities: AuthoredCapability[];
@@ -321,6 +343,7 @@ function capabilitiesFromGroup(
       kind,
       origin: emit.origin(group),
       resolution: "unresolved",
+      reason: "dynamic-group",
       note: `\`${kind}s\` on "${componentType}" is not an object literal: ${resolved.note}`,
     });
     return;
@@ -335,7 +358,8 @@ function capabilitiesFromGroup(
         kind,
         origin: emit.origin(property),
         resolution: "unresolved",
-        note: `\`${kind}s\` on "${componentType}" spreads another object, which may contribute capabilities this inventory cannot name`,
+        reason: "spread-members",
+      note: `\`${kind}s\` on "${componentType}" spreads another object, which may contribute capabilities this inventory cannot name`,
       });
       continue;
     }
@@ -353,7 +377,8 @@ function capabilitiesFromGroup(
         kind,
         origin: emit.origin(property),
         resolution: "unresolved",
-        note: `a capability on "${componentType}" has a computed name`,
+        reason: "computed-name",
+      note: `a capability on "${componentType}" has a computed name`,
       });
       continue;
     }
@@ -416,6 +441,7 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
       kind: callee === "useAgentAction" ? "action" : "observation",
       origin: emit.origin(call),
       resolution: "unresolved",
+      reason: "granular-hook",
       note: `${callee}() registers against a render-scope link, so its component type is not at this call site`,
     });
     return;
@@ -432,6 +458,7 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
       kind: "action",
       origin: emit.origin(call),
       resolution: "unresolved",
+      reason: "dynamic-config",
       note: `${callee}() call site could not be read: ${resolved.note}`,
     });
     return;
@@ -449,6 +476,7 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
       kind: "action",
       origin: emit.origin(call),
       resolution: "unresolved",
+      reason: "dynamic-type",
       note: `\`type\` is not a string literal, so no capability id on this component can be determined`,
     });
     return;
@@ -483,6 +511,7 @@ function visitCall(call: ts.CallExpression, emit: Emitter, source: ts.SourceFile
       kind: "action",
       origin: emit.origin(property),
       resolution: "unresolved",
+      reason: "spread-members",
       note: keys
         ? `"${type}" spreads ${describeConstruct(property.expression)}, which contributes \`${keys
             .filter((key) => CAPABILITY_GROUPS.includes(key as "observations" | "actions"))

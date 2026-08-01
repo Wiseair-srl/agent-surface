@@ -6,7 +6,8 @@
 // mirror AS-CLI-002; a stale allowlist entry fails), AS-COVER-006 (the catalog
 // is never reachable from core), AS-COVER-007 (the gap reaches every command,
 // and a scope filters the catalog by the same predicate as the mount),
-// AS-CLI-008 (--depth static computes the catalog and mounts nothing).
+// AS-CLI-008 (--depth static computes the catalog and mounts nothing),
+// AS-COVER-008 (unread call sites ratchet per entry, keyed on file#reason).
 //
 // These drive the real `main()`. The fixture app authors three components and
 // mounts one of them, which is the only shape that can prove a coverage gap:
@@ -20,7 +21,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as coreRoot from "@agent-surface/core";
 import { main } from "../src/bin.js";
 import { extractCapabilities, authoredIds, unresolved } from "../src/extract.js";
-import { buildCoverageReport, coverageExitCode } from "../src/coverage.js";
+import { buildCoverageReport, coverageExitCode, unreadKey } from "../src/coverage.js";
 
 const FIXTURE = fileURLToPath(
   new URL("./fixtures/coverage/agent-surface.config.tsx", import.meta.url),
@@ -77,6 +78,7 @@ function report(overrides: Partial<Parameters<typeof buildCoverageReport>[0]> = 
     unresolved: [],
     allowlist: {},
     allowlistPath: "/dev/null",
+    unreadAllowlistPath: "/dev/null",
     ...overrides,
   });
 }
@@ -469,6 +471,111 @@ describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-0
     },
     TIMEOUT,
   );
+});
+
+describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008)", () => {
+  function writeUnreadAllowlist(entries: Record<string, string>): void {
+    writeFileSync(join(baselineDir, "unresolved-allow.json"), JSON.stringify(entries, null, 2));
+  }
+
+  it("keys on file plus a stable reason code, never on the line or the prose", () => {
+    // The line churns on every edit above the call site, and the note is
+    // written for a human and gets reworded — the spread note changed in the
+    // release that introduced it. A key built from either would invalidate
+    // committed entries for a reason that has nothing to do with the surface.
+    const entry = unresolved(extractCapabilities({ root: dirname(SPREAD) }))[0]!;
+    expect(entry.reason).toBe("spread-members");
+    expect(unreadKey(entry)).toBe("Shapes.tsx#spread-members");
+    expect(unreadKey(entry)).not.toContain(String(entry.origin.line));
+  });
+
+  it("gives every unread entry a reason code, so none is keyed on \"unknown\"", () => {
+    for (const root of [dirname(SPREAD), dirname(FIXTURE)]) {
+      for (const entry of unresolved(extractCapabilities({ root }))) {
+        expect(entry.reason, `${entry.origin.file} has no reason code`).toBeDefined();
+        expect(unreadKey(entry)).not.toContain("#unknown");
+      }
+    }
+  });
+
+  it(
+    "stops failing check on a listed site, and keeps reporting it",
+    async () => {
+      await main(["snapshot", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]);
+      writeAllowlist({ "view:spread.some.read": "mounted only in another scenario" });
+
+      captured = [];
+      expect(
+        await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(1);
+
+      writeUnreadAllowlist({ "Shapes.tsx#spread-members": "helper-built members, tracked in #31" });
+      captured = [];
+      expect(
+        await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(0);
+      // Accepted is not hidden — the same discipline `--allow-unresolved` keeps.
+      expect(output()).toContain("allowlisted");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "fails on an entry the extractor can now read, so the list shrinks",
+    async () => {
+      await main(["snapshot", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]);
+      writeAllowlist({ "view:spread.some.read": "mounted only in another scenario" });
+      writeUnreadAllowlist({
+        "Shapes.tsx#spread-members": "still unread",
+        "Shapes.tsx#dynamic-type": "a shape that no longer occurs here",
+      });
+
+      captured = [];
+      expect(
+        await main(["check", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]),
+      ).toBe(1);
+      expect(output()).toContain("STALE UNREAD ALLOWLIST");
+      expect(output()).toContain("Shapes.tsx#dynamic-type");
+      expect(output()).not.toContain("Shapes.tsx#spread-members\n");
+    },
+    TIMEOUT,
+  );
+
+  it(
+    "prints the key to paste, because nobody guesses file#reason",
+    async () => {
+      expect(await main(["inspect", "--depth", "static", "--config", SPREAD, "--plain"])).toBe(0);
+      expect(output()).toContain("allowlist key: Shapes.tsx#spread-members");
+    },
+    TIMEOUT,
+  );
+
+  it("composes with the blanket flag rather than replacing it", () => {
+    const unread = {
+      capabilityId: "<unresolved>",
+      kind: "action" as const,
+      origin: { file: "a.tsx", line: 1 },
+      resolution: "unresolved" as const,
+      reason: "granular-hook" as const,
+    };
+    // Listed: does not fail, with or without the flag.
+    const listed = report({
+      unresolved: [unread],
+      unreadAllowlist: { "a.tsx#granular-hook": "wrapper hook" },
+    });
+    expect(coverageExitCode(listed)).toBe(0);
+    expect(listed.allowedUnread).toEqual(["a.tsx#granular-hook"]);
+
+    // Unlisted: the flag is still the way past, for a codebase not ready to
+    // enumerate them one by one.
+    const bare = report({ unresolved: [unread] });
+    expect(coverageExitCode(bare)).toBe(1);
+    expect(coverageExitCode(bare, { allowUnresolved: true })).toBe(0);
+
+    // A stale entry fails through the flag — a ratchet that can rot is not one.
+    const stale = report({ unreadAllowlist: { "gone.tsx#dynamic-type": "fixed long ago" } });
+    expect(coverageExitCode(stale, { allowUnresolved: true })).toBe(1);
+  });
 });
 
 describe("the catalog is never agent-facing (AS-COVER-006)", () => {
