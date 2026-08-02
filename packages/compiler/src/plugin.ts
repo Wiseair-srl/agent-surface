@@ -6,7 +6,7 @@ import {
   validateJsonSchemaDocument,
 } from "@agent-surface/core";
 import type { CapabilityContractEntry, CapabilityContractManifest } from "@agent-surface/core";
-import type { Plugin } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 import { canonicalJson, canonicalManifestJson, computeManifestHash, sha256, verifyManifest } from "./canonical.js";
 import { extractModule } from "./extract.js";
 
@@ -196,6 +196,53 @@ function authorizeContributions(
   return attributions.sort((a, b) => a.package.localeCompare(b.package));
 }
 
+/**
+ * Compiled contracts for serve runs, keyed by root and target.
+ *
+ * The compile is a full production build, so it is memoised: a vitest run with
+ * several environments would otherwise pay for it once per environment. Cleared
+ * when a module that declares a contract changes, so the dev server does not
+ * serve yesterday's ceiling.
+ */
+const serveManifests = new Map<string, Promise<CapabilityContractManifest>>();
+
+function compileServeManifest(options: {
+  root: string;
+  target: string;
+  externalContracts?: ExternalContractPolicy;
+  /**
+   * The serving config's own resolution, forwarded so the inner build resolves
+   * imports exactly as the outer one does. Without it a project that aliases
+   * inline rather than in a config file — every vitest setup that maps a
+   * workspace package, for one — compiles against different modules than it
+   * serves, or fails to resolve them at all.
+   */
+  alias: ResolvedConfig["resolve"]["alias"] | undefined;
+  configFile: string | false | undefined;
+}): Promise<CapabilityContractManifest> {
+  const key = `${options.root}\0${options.target}`;
+  const cached = serveManifests.get(key);
+  if (cached) return cached;
+  // Imported lazily: compile.ts imports this module, and only one of the two
+  // edges may be static.
+  const pending = import("./compile.js").then(({ compileCapabilityContract }) =>
+    compileCapabilityContract({
+      root: options.root,
+      target: options.target,
+      ...(options.externalContracts ? { externalContracts: options.externalContracts } : {}),
+      vite: {
+        ...(options.configFile === false ? { configFile: false as const } : {}),
+        ...(options.alias ? { resolve: { alias: options.alias } } : {}),
+      },
+    }),
+  );
+  serveManifests.set(key, pending);
+  // A failed compile must not be cached, or the first broken contract poisons
+  // the dev server until it is restarted.
+  void pending.catch(() => serveManifests.delete(key));
+  return pending;
+}
+
 export function agentSurface(options: AgentSurfaceCompilerOptions = {}): Plugin {
   const target = options.target ?? "web-production";
   const placeholder = `__AGENT_SURFACE_MANIFEST_HASH_${Math.random().toString(36).slice(2)}__`;
@@ -205,33 +252,82 @@ export function agentSurface(options: AgentSurfaceCompilerOptions = {}): Plugin 
   /** Capabilities extracted from a dependency's own source, by package. */
   let sourceEntries = new Map<string, CapabilityContractEntry[]>();
   let manifest: CapabilityContractManifest | undefined;
+  /** True under the dev server and the test runner; false in a production build. */
+  let serve = false;
+  let serveAlias: ResolvedConfig["resolve"]["alias"] | undefined;
+  let serveConfigFile: string | false | undefined;
+
+  /** The eagerly-compiled manifest, or a clear failure. Serve mode only. */
+  const servedManifest = (): CapabilityContractManifest => {
+    if (!manifest) throw new Error("agent-surface: contract not compiled for this dev/test run");
+    return manifest;
+  };
+
+  /**
+   * What a contract's proof must carry as its manifest hash.
+   *
+   * In a build that is the placeholder, rewritten once the manifest exists. In
+   * serve the real hash is already known, and stamping it here is what lets a
+   * registration pass `assertDefinitionAuthorized` outside a build.
+   */
+  const manifestHashToken = (): string => (serve ? servedManifest().hash : placeholder);
 
   return {
     name: "agent-surface:compiler",
-    apply: "build",
     enforce: "pre",
     configResolved(config) {
       root = config.root;
+      // `serve` covers the dev server AND vitest, which drives the same
+      // pipeline. Rollup's output hooks (renderChunk, generateBundle) never run
+      // there, so the placeholders they rewrite have to be resolved up front —
+      // see `buildStart` below.
+      serve = config.command === "serve";
+      serveAlias = config.resolve?.alias;
+      serveConfigFile = config.configFile === undefined ? false : config.configFile;
     },
     resolveId(id) {
       return id === VIRTUAL_CONTRACT_ID ? RESOLVED_VIRTUAL_CONTRACT_ID : null;
     },
     load(id) {
       if (id !== RESOLVED_VIRTUAL_CONTRACT_ID) return null;
+      // In a build the manifest is not known until every module has been
+      // transformed, so the placeholder stands in and `renderChunk` rewrites
+      // it. Under serve it is already computed and can be inlined.
+      const inlined = serve ? JSON.stringify(servedManifest()) : manifestPlaceholder;
       return `import { createCapabilityAuthority } from "@agent-surface/core";
-const manifest = ${manifestPlaceholder};
+const manifest = ${inlined};
 export { manifest };
 export default createCapabilityAuthority(manifest);`;
     },
-    buildStart() {
+    async buildStart() {
       entries = [];
       sourceEntries = new Map();
       manifest = undefined;
+      if (!serve) return;
+      // Serve mode compiles the contract eagerly, through the same production
+      // build the CLI uses, because a lazily-transformed module graph cannot
+      // tell us the manifest hash that every contract's proof has to carry.
+      // Without this the dev server and the test runner would have no
+      // authority at all, and every registration would be refused.
+      manifest = await compileServeManifest({
+        root,
+        target,
+        alias: serveAlias,
+        configFile: serveConfigFile,
+        ...(options.externalContracts ? { externalContracts: options.externalContracts } : {}),
+      });
     },
     transform(code, id) {
       if (
         id.includes("/node_modules/@agent-surface/") ||
-        /\/packages\/(?:core|react|orpc|testing|webmcp|cli|compiler)\//.test(id)
+        /\/packages\/(?:core|react|orpc|testing|webmcp|cli|compiler)\//.test(id) ||
+        // Vite's optimized-dependency chunks, which exist only under serve.
+        // They are bundled OUTPUT — several dependencies concatenated, this
+        // package among them — so the guards below would read our own
+        // `registry.register({` back out of a vendor chunk and refuse to serve
+        // the app. A dependency's real contracts are picked up from its actual
+        // module, via the sidecar and source routes, not from optimizer output.
+        id.includes("/node_modules/.vite/")
       ) {
         return null;
       }
@@ -251,7 +347,7 @@ export default createCapabilityAuthority(manifest);`;
       ) {
         return null;
       }
-      const extracted = extractModule({ code, id, root, target, placeholder });
+      const extracted = extractModule({ code, id, root, target, placeholder: manifestHashToken() });
       // A dependency that calls a contract macro in its own source contributes
       // capabilities with no sidecar and no file to digest. Attribute them to
       // the owning package now, so buildEnd can put them through the same
@@ -267,7 +363,11 @@ export default createCapabilityAuthority(manifest);`;
       return extracted.code === code ? null : { code: extracted.code, map: null };
     },
     buildEnd(error) {
-      if (error) return;
+      // Serve already has its manifest, compiled from the whole graph in
+      // `buildStart`. Recomputing it here would derive it from whatever modules
+      // the dev server happened to request, which is a subset — and a contract
+      // narrower than the truth silently refuses real capabilities.
+      if (error || serve) return;
       const contributions: ExternalContribution[] = [];
       const seenSidecars = new Set<string>();
 
@@ -358,6 +458,33 @@ export default createCapabilityAuthority(manifest);`;
         fileName: options.fileName ?? CONTRACT_FILE,
         source: canonicalManifestJson(manifest),
       });
+    },
+    async handleHotUpdate(ctx) {
+      if (!serve) return;
+      const code = await ctx.read();
+      if (
+        !code.includes("defineAgentComponentContract") &&
+        !code.includes("defineAgentProcedureContract") &&
+        !code.includes("defineExternalAgentToolContract")
+      ) {
+        return;
+      }
+      // Editing a contract changes the manifest hash, which every already-loaded
+      // proof is pinned to. Patching one module would leave the rest stale and
+      // registering against a hash nothing else agrees with, so the whole page
+      // goes back for a fresh authority.
+      serveManifests.delete(`${root}\0${target}`);
+      manifest = await compileServeManifest({
+        root,
+        target,
+        alias: serveAlias,
+        configFile: serveConfigFile,
+        ...(options.externalContracts ? { externalContracts: options.externalContracts } : {}),
+      });
+      const virtual = ctx.server.moduleGraph.getModuleById(RESOLVED_VIRTUAL_CONTRACT_ID);
+      if (virtual) ctx.server.moduleGraph.invalidateModule(virtual);
+      ctx.server.ws.send({ type: "full-reload" });
+      return [];
     },
   };
 }
