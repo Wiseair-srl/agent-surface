@@ -117,6 +117,24 @@ jobs:
       - name: Surface drift gate
         run: pnpm --filter devices-app-example exec agent-surface check
 
+  # Gate 3 (see scripts/check-version-lockstep.mjs): every published package
+  # ships on one version, because `workspace:^` publishes as a caret and a caret
+  # on 0.x pins the minor — one package moving alone makes its siblings' ranges
+  # reject it and resolves two copies of core.
+  #
+  # Deliberately WITHOUT the `changeset-release/main` guard every other job
+  # carries. The split is created by `changeset version`, so the "Version
+  # Packages" PR is the one place it can be caught before it ships — and that is
+  # exactly the PR the guard skips. No build needed: it reads the manifests.
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/check-version-lockstep.mjs
+
   # Advisory: upstream regressions must not block a release. Triage, don't gate.
   typescript-next:
     if: github.event_name != 'pull_request' || github.head_ref != 'changeset-release/main'
@@ -140,7 +158,9 @@ jobs:
 
   release:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    needs: [test, package]
+    # `versions` gates the publish too: a split merged to main would otherwise
+    # ship an unsatisfiable range, and npm releases are not recallable.
+    needs: [test, package, versions]
     runs-on: ubuntu-latest
     permissions:
       contents: write
