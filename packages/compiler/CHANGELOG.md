@@ -1,5 +1,13 @@
 # @agent-surface/compiler
 
+## 0.20.1
+
+### Patch Changes
+
+- bfd7d46: Point published package metadata at the official documentation domain, `https://agent-surface.dev`, replacing the Vercel preview URL in every `homepage` field and package README.
+- Updated dependencies [bfd7d46]
+  - @agent-surface/core@0.20.1
+
 ## 0.20.0
 
 ### Minor Changes

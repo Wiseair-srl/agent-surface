@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/core",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Framework-agnostic registry, types, policies, errors, snapshot, invocation for frontend agent surfaces",
   "license": "MIT",
   "type": "module",
