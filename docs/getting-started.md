@@ -1,181 +1,81 @@
 # Getting started
 
-> [!NOTE]
-> Presentation plane only: one component, one observation, one action. No backend, no policies, no confirmations. Those come later — start [here](05-orpc-integration.md) for domain procedures, [here](06-policies-and-security.md) for governance.
-
-Fifteen minutes, four steps: install, create a registry, annotate one component, then prove what you exposed.
-
-## 1 · Install
+## 1. Install
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
-pnpm add -D @agent-surface/testing @agent-surface/cli
+pnpm add -D @agent-surface/compiler @agent-surface/cli
 ```
 
-Peer requirements: Node ≥ 20.19, React ≥ 18.2 (19 supported).
-
-## 2 · Create the registry
-
-One registry per application, created once. This is where environment, host context, policies and routing get wired, so it stays explicit host code — the provider never creates one for you.
+## 2. Add the production compiler
 
 ```ts
-// src/agent-surface.ts
-import { createAgentSurfaceRegistry } from "@agent-surface/core";
+// vite.config.ts
+import { defineConfig } from "vite";
+import { agentSurface } from "@agent-surface/compiler";
 
-export const registry = createAgentSurfaceRegistry({
-  environment: import.meta.env.DEV ? "development" : "production",
-});
+export default defineConfig({ plugins: [agentSurface()] });
 ```
 
-```tsx
-// src/main.tsx
-import { AgentSurfaceProvider } from "@agent-surface/react";
-import { registry } from "./agent-surface";
-
-<AgentSurfaceProvider registry={registry}>
-  <App />
-</AgentSurfaceProvider>;
-```
-
-Nothing is exposed yet. An empty registry means an empty surface — there is no scanning path and no "expose everything" switch.
-
-## 3 · Annotate one component
-
-Pick a component with state an agent would want to read or change. Describe what it can do in terms of *user intent*, never DOM events: `selectRows`, not `click`.
+## 3. Declare static identity; bind runtime behavior
 
 ```tsx
-import { z } from "zod";
-import { action, fromStandardSchema, observation } from "@agent-surface/core";
+import {
+  actionContract,
+  defineAgentComponentContract,
+  fromJsonSchema,
+  observationContract,
+} from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 
-// Wrap any Standard Schema (Zod, Valibot, ArkType) with its JSON Schema.
-const zs = <T extends z.ZodType>(s: T) =>
-  fromStandardSchema(s, { jsonSchema: z.toJSONSchema(s) });
-
-const FiltersState = z.object({
-  status: z.enum(["all", "online", "offline"]),
-  city: z.string().nullable().describe("Exact city name, null = all cities"),
+export const counterContract = defineAgentComponentContract({
+  type: "demo.counter",
+  description: "Counter",
+  observations: {
+    value: observationContract({
+      description: "Current value",
+      output: fromJsonSchema<number>({ type: "number" }),
+    }),
+  },
+  actions: {
+    increment: actionContract<Record<string, never>>({
+      description: "Increment once",
+      input: fromJsonSchema({ type: "object", properties: {}, additionalProperties: false }),
+      effect: "local-state",
+    }),
+  },
 });
-const FiltersPatch = FiltersState.partial().describe("Omitted fields are unchanged");
 
-export function DeviceFilters({ filters, onChange }: Props) {
-  useAgentComponent({
-    type: "devices.filters",
-    description: "Status and city filters applied to the devices table",
-    observations: {
-      read: observation({
-        description: "Currently active filters",
-        output: zs(FiltersState),
-        read: () => filters,
-      }),
-    },
-    actions: {
-      set: action({
-        description: "Update one or both filters; omitted fields are unchanged",
-        input: zs(FiltersPatch),
-        effect: "local-state",
-        idempotent: true,
-        execute: (patch) => onChange({ ...filters, ...patch }),
-      }),
-    },
+function Counter() {
+  const [value, setValue] = useState(0);
+  useAgentComponent(counterContract, {
+    observations: { value: { read: () => value } },
+    actions: { increment: { execute: () => setValue((n) => n + 1) } },
   });
-
-  return <FilterBar /* your normal rendering, untouched */ />;
+  return <button onClick={() => setValue((n) => n + 1)}>{value}</button>;
 }
 ```
 
-That is the whole integration. Three things worth knowing about it:
+Contract fields must be statically serializable. Runtime bindings contain handlers, live state, availability, preconditions and bound values.
 
-- **No dependency array, and none is needed.** The hook registers once per mount and reads `execute` / `read` / `when` through a ref at invocation time, so handlers always see current props and state. Freezing the config in a `useMemo` would reintroduce the stale-closure bug this design removes.
-- **The schema is the source of truth.** `execute`'s argument type is inferred from `input`, and the runtime validates against it before your handler ever runs.
-- **Mount is the lifetime.** On unmount the capabilities disappear, and a late invocation fails with a typed `COMPONENT_UNMOUNTED` instead of acting on a view that is gone.
+## 4. Install the runtime ceiling
 
-While mounted, an agent now sees exactly two capabilities — `view:devices.filters.read` and `view:devices.filters.set` — and nothing else on the page.
-
-## 4 · Prove it
-
-Two ways, same normalizer. Neither needs an LLM.
-
-**In a test**, which is where a surface change becomes a reviewable diff:
-
-```tsx
-import { renderAgentSurface } from "@agent-surface/testing/react";
-import { matchers } from "@agent-surface/testing/matchers";
-expect.extend(matchers);
-
-it("exposes the filters", async () => {
-  const s = await renderAgentSurface(<DevicesPage />);
-
-  expect(s).toExpose("view:devices.filters.set");
-  expect(s).toMatchSurfaceSnapshot();
-
-  await s.invoke("view:devices.filters.set", { status: "offline" });
-  expect(await s.observe("view:devices.filters.read")).toMatchObject({ status: "offline" });
-});
-```
-
-**From a terminal**, once you add an [`agent-surface.config.tsx`](20-cli.md#configuration) pointing at the composition root you already have — `agent-surface init` scaffolds one:
-
-```bash
-agent-surface inspect
-```
-
-```text
-SURFACE INSPECT
-Config      agent-surface.config.tsx
-Depth       full — the source is read and every scenario is mounted
-Scope       whole surface — no component-type prefix filter
-Scenarios   1 — default
-
-SURFACE SUMMARY
-Reach       2/2 authored capabilities reached
-Callable    2/2 mounted capabilities are callable in at least one scenario
-Risk        nothing mutating or destructive is on the surface · 2 read-only or local-state capabilities
-Catalog     every call site read
-Scenarios   1 mounted
-Verdict     every authored capability is reached by a scenario
-
-STATIC CATALOG
-STATUS        COMPLETE — every capability identity resolved
-Capabilities  2 authored (upper bound) · 2 resolved call sites
-Program       3 files analyzed
-Metadata      0 call sites partially read
-Domain        no authoritative oRPC manifest configured — that plane has no denominator
-
-scenario default
-2 callable, 0 visible-disabled, 0 hidden
-
-CAPABILITY            KIND         EFFECT       STATE     FLAGS
-devices.filters.read  observation  —            callable  —
-devices.filters.set   action       local-state  callable  idempotent · reversible
-```
-
-Summaries first, details after: the header says what every number below it is relative to, and the summary is the part worth reading twice. `Reach` compares what your *code* authors against what your *scenarios* reach — so a route no scenario visits shows up as `unreached` rather than as nothing at all, and [`check`](20-cli.md#check) fails on it in CI. `Callable` asks the next question: of the capabilities that *were* mounted, which one could no scenario actually call?
-
-## 5 · Hand it to an agent
-
-`createAgentToolset` projects the surface as provider-neutral JSON-Schema tools. Vercel AI SDK, Mastra, LangGraph and assistant-ui all consume it directly, which is why there is no per-framework package.
+The compiler exposes the same manifest to the production bundle:
 
 ```ts
-import { createAgentToolset } from "@agent-surface/core";
+import manifest from "virtual:agent-surface-contract";
 
-const toolset = createAgentToolset(registry, {
-  consumer: { id: "copilot", kind: "embedded" },
-  topology: "embedded", // required: embedded → confirmations "wait", remote → "two-phase"
-});
-
-toolset.tools(); // [{ name, description, inputSchema, state, execute }]
+const registry = createAgentSurfaceRegistry({ manifest });
 ```
 
-Render `tool.state` outside the provider's tool block — availability changes whenever the user clicks, and tool definitions are the cached prompt prefix. [Adapters](09-adapters.md#rendering-capability-state) shows the split.
+With a manifest installed, raw, missing, stale or hash-mismatched registrations fail closed.
 
-## Where to go next
+## 5. Commit and check
 
-| You want to… | Read |
-|---|---|
-| Understand planes, identity and availability | [Concepts](01-concepts.md) |
-| Gate a capability on state (`when`, `enabled`) | [React API](04-react-api.md#availability-is-reactive) |
-| Call a backend operation from the page | [oRPC integration](05-orpc-integration.md) — reference the procedure, never redefine it |
-| Hide capabilities per user, or require confirmation | [Policies & Security](06-policies-and-security.md) |
-| See all of it working together | [Devices page walkthrough](10-examples.md) |
-| Gate the surface in CI | [Testing](08-testing.md) and [CLI](20-cli.md#check) |
+```bash
+pnpm exec agent-surface snapshot
+git add .agent-surface/contract.json
+pnpm exec agent-surface check --base origin/main --format github
+```
+
+See [CLI](20-cli.md), [Core](03-core-api.md), [React](04-react-api.md), and [Testing](08-testing.md).

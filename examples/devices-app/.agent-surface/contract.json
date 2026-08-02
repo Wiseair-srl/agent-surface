@@ -1,0 +1,418 @@
+{
+  "capabilities": [
+    {
+      "capabilityId": "view:devices.drawer.close",
+      "contractHash": "d98961d0f8f49712fdea7a709856a920676a6b1ce5a7f0f1647e1945475eca52",
+      "declarationId": "src/agent/contracts.ts#deviceDrawerContract",
+      "description": "Close the detail drawer",
+      "effect": "local-state",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.open",
+      "contractHash": "c1850c83e828e503e407aa59792ef0964171b37aeb87d9374166b8522cfab96d",
+      "declarationId": "src/agent/contracts.ts#deviceDrawerContract",
+      "description": "Open the detail drawer for a device",
+      "effect": "local-state",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.drawer.state",
+      "contractHash": "ea73cb33e94b16fff6581315ec7249f903149c5f3f8a196852f517d4af14dfbb",
+      "declarationId": "src/agent/contracts.ts#deviceDrawerContract",
+      "description": "Whether the drawer is open and for which device",
+      "effect": "read",
+      "kind": "observation",
+      "origin": "src/agent/contracts.ts",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isOpen": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "isOpen",
+          "deviceId"
+        ],
+        "type": "object"
+      },
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.read",
+      "contractHash": "753c98e4d2ca094966b069ec2dcef72824cff421f144d8736c27a3f5f4848032",
+      "declarationId": "src/agent/contracts.ts#deviceFiltersContract",
+      "description": "Currently active filters",
+      "effect": "read",
+      "kind": "observation",
+      "origin": "src/agent/contracts.ts",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "all",
+              "online",
+              "offline"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "city"
+        ],
+        "type": "object"
+      },
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.filters.set",
+      "contractHash": "3b1a20401c907a6c6d70654e6b8ea87bd44e0550ea0bdf08bd658896e07ccc3b",
+      "declarationId": "src/agent/contracts.ts#deviceFiltersContract",
+      "description": "Update one or both filters; omitted fields are unchanged. The table refreshes through the app's normal data fetching.",
+      "effect": "local-state",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "city": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "all",
+              "online",
+              "offline"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "domain:devices.disable",
+      "confirmation": "required",
+      "contractHash": "ffd94526988634be3230e7af1650330d5ecb480993d224e532aa319cc3b3cd1d",
+      "declarationId": "src/agent/contracts.ts#devicesDisableContract",
+      "description": "Disable the given devices",
+      "effect": "destructive",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceIds": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceIds"
+        ],
+        "type": "object"
+      },
+      "kind": "procedure",
+      "origin": "src/agent/contracts.ts",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "disabled": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "disabled"
+        ],
+        "type": "object"
+      },
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.readState",
+      "contractHash": "5bac3e489ffd3537cfd1e821fca75df4598cc16935e908915fe813d4e1971f65",
+      "declarationId": "src/agent/contracts.ts#devicesTableContract",
+      "description": "Visible rows, current selection, current sorting",
+      "effect": "read",
+      "kind": "observation",
+      "origin": "src/agent/contracts.ts",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "selectedIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sorting": {
+            "additionalProperties": false,
+            "properties": {
+              "by": {
+                "enum": [
+                  "name",
+                  "status",
+                  "city"
+                ]
+              },
+              "dir": {
+                "enum": [
+                  "asc",
+                  "desc"
+                ]
+              }
+            },
+            "required": [
+              "by",
+              "dir"
+            ],
+            "type": "object"
+          },
+          "visibleRows": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "city": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "online",
+                    "offline",
+                    "disabled"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "status",
+                "city"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "visibleRows",
+          "selectedIds",
+          "sorting"
+        ],
+        "type": "object"
+      },
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.selectRows",
+      "contractHash": "96a976e0f9325c29af5fe4ef4b64ea6c979d7cb369e4b4edf0d2884d18dd5618",
+      "declarationId": "src/agent/contracts.ts#devicesTableContract",
+      "description": "Replace, extend or reduce the row selection",
+      "effect": "local-state",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "mode": {
+            "default": "replace",
+            "enum": [
+              "replace",
+              "add",
+              "remove"
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:devices.table.sort",
+      "contractHash": "05aec21496629a0e9ca5bbd775f20ac426cf7e3e1ee3cdbfd8ff0948ab712ea0",
+      "declarationId": "src/agent/contracts.ts#devicesTableContract",
+      "description": "Change the table sorting",
+      "effect": "local-state",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "by": {
+            "enum": [
+              "name",
+              "status",
+              "city"
+            ]
+          },
+          "dir": {
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "by",
+          "dir"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:app.navigation.current",
+      "contractHash": "d12267c092fa7de57e03290c5b08df00d2b31efff1089d23d6c0d68abcde46ef",
+      "declarationId": "src/agent/contracts.ts#navigationContract",
+      "description": "Current page",
+      "effect": "read",
+      "kind": "observation",
+      "origin": "src/agent/contracts.ts",
+      "outputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "enum": [
+              "devices",
+              "comparison",
+              "reports"
+            ]
+          }
+        },
+        "required": [
+          "page"
+        ],
+        "type": "object"
+      },
+      "targets": [
+        "web-production"
+      ]
+    },
+    {
+      "capabilityId": "view:app.navigation.goTo",
+      "contractHash": "849021dd94f961be7bba2d04f7be2876f90d005a9360ef9dbb7266a994f1a297",
+      "declarationId": "src/agent/contracts.ts#navigationContract",
+      "description": "Navigate to a known application page",
+      "effect": "navigation",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "enum": [
+              "devices",
+              "comparison",
+              "reports"
+            ]
+          }
+        },
+        "required": [
+          "page"
+        ],
+        "type": "object"
+      },
+      "kind": "action",
+      "origin": "src/agent/contracts.ts",
+      "targets": [
+        "web-production"
+      ]
+    }
+  ],
+  "compilerVersion": "0.16.0",
+  "completeness": {
+    "status": "proven"
+  },
+  "externalContracts": [],
+  "formatVersion": 3,
+  "hash": "bb68e0d615badd5a0f3ac9f365e2c56b930b8657d2e4856e066eb29498e6a46c",
+  "targets": [
+    "web-production"
+  ]
+}

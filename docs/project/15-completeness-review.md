@@ -1,5 +1,7 @@
 # 15 — Documentation Completeness Review
 
+> **D40 update:** repository completeness is proven by the compiler-generated production graph contract. The former tsconfig upper bound, scenario denominator, unresolved/undeclared buckets and allowlists are superseded. Runtime snapshots remain projections only.
+
 > [!NOTE]
 > Standing self-review: an honest map of what is settled, what is open, where the spec might bite itself, and what must be proven by code before being trusted. First written 2026-07-29 alongside the P0 corrections ([Spec Corrections RFC](18-spec-corrections-rfc.md), following the [maintainer directive](17-maintainer-directive.md)); kept current since — last revised for the surface-coverage work ([Surface Coverage RFC](21-surface-coverage-rfc.md)) at 0.10.
 

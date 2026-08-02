@@ -64,7 +64,7 @@
   "size-limit": [
     {
       "path": "dist/index.js",
-      "limit": "19.5 kB"
+      "limit": "20.5 kB"
     },
     {
       "path": "dist/explain.js",

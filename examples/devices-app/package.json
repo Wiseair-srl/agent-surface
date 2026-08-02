@@ -12,7 +12,7 @@
     "surface": "agent-surface inspect",
     "surface:check": "agent-surface check",
     "surface:snapshot": "agent-surface snapshot",
-    "surface:catalog": "agent-surface inspect --depth static"
+    "surface:catalog": "agent-surface inspect"
   },
   "dependencies": {
     "@agent-surface/core": "workspace:*",
@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@agent-surface/cli": "workspace:*",
+    "@agent-surface/compiler": "workspace:*",
     "@agent-surface/testing": "workspace:*",
     "@testing-library/react": "^16.3.0",
     "@types/react": "^19.1.9",

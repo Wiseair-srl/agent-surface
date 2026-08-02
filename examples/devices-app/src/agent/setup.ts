@@ -3,6 +3,7 @@
  * Everything is a factory so tests get isolated instances.
  */
 import { authenticated, createAgentSurfaceRegistry } from "@agent-surface/core";
+import type { CapabilityContractManifest } from "@agent-surface/core";
 import { createOrpcAgentBridge, type OrpcAgentManifest } from "@agent-surface/orpc";
 import { z } from "zod";
 import { createBackend, ServerError, type Session } from "../api/backend.js";
@@ -53,6 +54,7 @@ export interface AppClient {
 export function createApp(options?: {
   environment?: "development" | "production" | "test";
   user?: Session["user"] | null;
+  manifest?: CapabilityContractManifest;
 }): App {
   const session: Session = {
     user:
@@ -76,6 +78,7 @@ export function createApp(options?: {
     context: () => ({ user: session.user }),
     policies: [authenticated()],
     route: () => ({ path: `/${route.current}` }),
+    ...(options?.manifest ? { manifest: options.manifest } : {}),
   });
 
   const bridge = createOrpcAgentBridge({

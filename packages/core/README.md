@@ -1,49 +1,22 @@
-# @agent-surface/core
+# `@agent-surface/core`
 
-Framework-agnostic core of [agent-surface](https://github.com/Wiseair-srl/agent-surface): a registry for declaring an explicit, semantic, typed, policy-governed *agent surface* over a frontend — and nothing more. If a component or capability is not explicitly annotated, it does not exist for the agent.
-
-Zero runtime dependencies. Provides: canonical capability ids, the `AgentSchema` layer (Standard Schema + built-in JSON Schema subset validator), component/capability definitions, the registry (registration lifecycle, availability, versioning, staleness), synchronous snapshots, the 10-phase invocation pipeline, composable policies, single-use confirmation evidence, audit sinks, and a provider-neutral toolset projection for embedded agent loops.
-
-Docs: https://agent-surface-docs.vercel.app
-
-## Install
-
-```bash
-pnpm add @agent-surface/core
-```
-
-## Use
+Framework-neutral contracts, registry, policy, confirmation, invocation and exposure gateway.
 
 ```ts
-import {
-  createAgentSurfaceRegistry,
-  defineAgentComponent,
-  observation,
-  action,
-  fromStandardSchema,
-  createAgentToolset,
-} from "@agent-surface/core";
-
-const registry = createAgentSurfaceRegistry({
-  environment: import.meta.env.DEV ? "development" : "production",
-  context: () => ({ user: authStore.user }),
+const contract = defineAgentComponentContract({
+  type: "devices.table",
+  description: "Device table",
+  observations: { readState: observationContract({ description: "State", output }) },
+  actions: { selectRows: actionContract({ description: "Select", input, effect: "local-state" }) },
 });
 
-registry.register(
-  defineAgentComponent({
-    type: "devices.table",
-    description: "Table of the devices visible on the current page",
-    observations: { readState: observation({ /* … */ }) },
-    actions: { selectRows: action({ /* … */ }) },
-  }),
-);
-
-const toolset = createAgentToolset(registry, {
-  consumer: { id: "copilot", kind: "embedded" },
-  topology: "embedded",   // required (D26): embedded → confirmations "wait",
-});                       // remote → "two-phase". No global default.
+const registry = createAgentSurfaceRegistry({ manifest });
+registry.register(contract.bind({
+  observations: { readState: { read } },
+  actions: { selectRows: { execute } },
+}));
 ```
 
-React apps should use [`@agent-surface/react`](https://www.npmjs.com/package/@agent-surface/react) instead of calling `register` directly. Full specification: [docs](https://github.com/Wiseair-srl/agent-surface/tree/main/docs).
+With a compiler manifest installed, raw/unknown/stale/mismatched registrations fail closed. Use `createAgentExposureGateway()` at final provider/MCP assembly.
 
-MIT © Wiseair S.r.l.
+See [Core API](../../docs/03-core-api.md).

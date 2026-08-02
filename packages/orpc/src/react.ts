@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentRegistrationHandle } from "@agent-surface/core";
+import {
+  COMPILED_CAPABILITY_PROVENANCE,
+  tryCompiledCapabilityToken,
+} from "@agent-surface/core";
+import type {
+  AgentComponentDefinition,
+  AgentProcedureContract,
+  AgentRegistrationHandle,
+  JsonValue,
+} from "@agent-surface/core";
 import {
   useAgentSurface,
   unstable_readRenderScopeContext,
@@ -21,10 +30,33 @@ let hookInstanceCounter = 0;
  * by the backend's orpc-agent configuration, is the exposure ceiling.
  */
 export function useAgentProcedure<
+  TIn extends Record<string, JsonValue>,
+  TOut extends JsonValue,
+  TBound extends Partial<TIn> = Partial<TIn>,
+>(
+  contract: AgentProcedureContract<TIn, TOut>,
+  ref: AgentProcedureRef<TIn, TOut>,
+  config?: AgentProcedureBindingConfig<TIn, TBound>,
+): void;
+/** @deprecated Pass a compiler-generated procedure contract as the first argument. */
+export function useAgentProcedure<
   TIn extends object,
   TOut,
   TBound extends Partial<TIn> = Partial<TIn>,
->(ref: AgentProcedureRef<TIn, TOut>, config?: AgentProcedureBindingConfig<TIn, TBound>): void {
+>(ref: AgentProcedureRef<TIn, TOut>, config?: AgentProcedureBindingConfig<TIn, TBound>): void;
+export function useAgentProcedure(
+  contractOrRef: AgentProcedureContract<any, any> | AgentProcedureRef<any, any>,
+  refOrConfig?: AgentProcedureRef<any, any> | AgentProcedureBindingConfig<any, any>,
+  maybeConfig?: AgentProcedureBindingConfig<any, any>,
+): void {
+  const contract: AgentProcedureContract<any, any> | undefined =
+    "kind" in contractOrRef && contractOrRef.kind === "agent-procedure-contract"
+      ? contractOrRef
+      : undefined;
+  const ref = (contract ? refOrConfig : contractOrRef) as AgentProcedureRef<any, any>;
+  const config = (contract ? maybeConfig : refOrConfig) as
+    | AgentProcedureBindingConfig<any, any>
+    | undefined;
   const registry = useAgentSurface();
 
   const latestConfig = useRef(config);
@@ -59,7 +91,7 @@ export function useAgentProcedure<
       return;
     }
 
-    const delegating: AgentProcedureBindingConfig<TIn, TBound> = {
+    const delegating: AgentProcedureBindingConfig<any, any> = {
       when: () => {
         const when = latestConfig.current?.when;
         return when ? when() !== false : true;
@@ -75,7 +107,7 @@ export function useAgentProcedure<
         return "Currently unavailable";
       },
       ...(latestConfig.current?.bind
-        ? { bind: () => (latestConfig.current?.bind?.() ?? {}) as TBound }
+        ? { bind: () => latestConfig.current?.bind?.() ?? {} }
         : {}),
       ...(latestConfig.current?.overridableFields
         ? { overridableFields: latestConfig.current.overridableFields }
@@ -93,13 +125,27 @@ export function useAgentProcedure<
     const binding = bindAgentProcedure(ref, delegating);
     if (contextRef.current) binding.contextLink = { ...contextRef.current };
 
-    const handle = registry.register({
+    const definition: AgentComponentDefinition = {
       // Procedure-only registration: excluded from snapshot.components.
       type: "orpc-ref",
       instanceId: instanceRef.current!,
       description: `Contextual reference to ${ref.path}`,
       procedures: [binding],
-    });
+    };
+    if (contract) {
+      const token = tryCompiledCapabilityToken(contract);
+      if (token) {
+        Object.defineProperty(definition, COMPILED_CAPABILITY_PROVENANCE, {
+          value: {
+            manifestHash: token.manifestHash,
+            declarationId: token.declarationId,
+            capabilities: { [token.capabilityId]: token },
+          },
+          enumerable: false,
+        });
+      }
+    }
+    const handle = registry.register(definition);
     handleRef.current = handle;
     lastPushed.current = null;
     setStatus(handle.status === "active" ? "active" : "rejected");
@@ -108,7 +154,7 @@ export function useAgentProcedure<
       handle.unregister();
       handleRef.current = null;
     };
-  }, [registry, refId, manifestBacked]);
+  }, [registry, refId, manifestBacked, contract]);
 
   // Push availability when the `when` predicate flips (per commit).
   useEffect(() => {

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { COMPILED_CAPABILITY_PROVENANCE } from "@agent-surface/core";
 import type {
   AgentActionContext,
   AgentActionDefinition,
@@ -6,6 +7,8 @@ import type {
   AgentObservationDefinition,
   AgentReadContext,
   AgentRegistrationHandle,
+  AgentComponentContract,
+  AgentComponentRuntimeBindings,
   JsonValue,
 } from "@agent-surface/core";
 import { useAgentSurface } from "./context.js";
@@ -35,7 +38,28 @@ export interface AgentComponentHandle {
  * stale closures. Structure is frozen per registration (D2): changing it on a
  * live registration logs an error and re-registers.
  */
-export function useAgentComponent(config: UseAgentComponentConfig): AgentComponentHandle {
+export function useAgentComponent<
+  TObservations extends Record<string, any>,
+  TActions extends Record<string, any>,
+>(
+  contract: AgentComponentContract<TObservations, TActions>,
+  bindings: AgentComponentRuntimeBindings<TObservations, TActions>,
+): AgentComponentHandle;
+/** @deprecated Use a compiler-generated contract plus runtime bindings. */
+export function useAgentComponent(config: UseAgentComponentConfig): AgentComponentHandle;
+export function useAgentComponent<
+  TObservations extends Record<string, any>,
+  TActions extends Record<string, any>,
+>(
+  contractOrConfig: AgentComponentContract<TObservations, TActions> | UseAgentComponentConfig,
+  runtimeBindings?: AgentComponentRuntimeBindings<TObservations, TActions>,
+): AgentComponentHandle {
+  const config: UseAgentComponentConfig =
+    "kind" in contractOrConfig && contractOrConfig.kind === "agent-component-contract"
+      ? contractOrConfig.bind(
+          (runtimeBindings ?? {}) as AgentComponentRuntimeBindings<TObservations, TActions>,
+        ) as UseAgentComponentConfig
+      : contractOrConfig;
   const registry = useAgentSurface();
   const type = config.type;
   const instanceId = config.instanceId ?? "default";
@@ -173,7 +197,7 @@ function buildDelegatingDefinition(latest: LatestRef): AgentComponentDefinition 
       ...(act.timeoutMs !== undefined ? { timeoutMs: act.timeoutMs } : {}),
     };
   }
-  return {
+  const definition: AgentComponentDefinition = {
     type: cfg.type,
     ...(cfg.instanceId !== undefined ? { instanceId: cfg.instanceId } : {}),
     description: cfg.description,
@@ -187,6 +211,16 @@ function buildDelegatingDefinition(latest: LatestRef): AgentComponentDefinition 
     ...(Object.keys(observations).length > 0 ? { observations } : {}),
     ...(Object.keys(actions).length > 0 ? { actions } : {}),
   };
+  const provenance = (cfg as UseAgentComponentConfig & {
+    [COMPILED_CAPABILITY_PROVENANCE]?: unknown;
+  })[COMPILED_CAPABILITY_PROVENANCE];
+  if (provenance) {
+    Object.defineProperty(definition, COMPILED_CAPABILITY_PROVENANCE, {
+      value: provenance,
+      enumerable: false,
+    });
+  }
+  return definition;
 }
 
 function evaluateReason(

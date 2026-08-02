@@ -1,7 +1,6 @@
-import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 import type { App } from "../agent/setup.js";
-import { DrawerStateSchema, EmptyInputSchema, OpenDrawerSchema } from "../schemas.js";
+import { deviceDrawerContract } from "../agent/contracts.js";
 import { X } from "./Icons.js";
 
 export function DeviceDrawer(props: {
@@ -14,36 +13,26 @@ export function DeviceDrawer(props: {
   const isOpen = deviceId !== null;
   const device = isOpen ? app.backend.devices.find((d) => d.id === deviceId) : undefined;
 
-  useAgentComponent({
-    type: "devices.drawer",
-    description: "Detail drawer for a single device",
+  useAgentComponent(deviceDrawerContract, {
     observations: {
-      state: observation({
-        description: "Whether the drawer is open and for which device",
-        output: DrawerStateSchema,
+      state: {
         read: () => ({ isOpen, deviceId }),
-      }),
+      },
     },
     actions: {
-      open: action({
-        description: "Open the detail drawer for a device",
-        input: OpenDrawerSchema,
-        effect: "local-state",
+      open: {
         precondition: (input) => {
           if (!app.backend.devices.some((d) => d.id === input.deviceId)) {
             return { message: "Unknown device id", details: { deviceId: input.deviceId } };
           }
         },
         execute: (input) => props.onOpen(input.deviceId),
-      }),
-      close: action({
-        description: "Close the detail drawer",
-        input: EmptyInputSchema,
-        effect: "local-state",
+      },
+      close: {
         when: () => isOpen,
         unavailableReason: "The drawer is not open",
         execute: () => props.onClose(),
-      }),
+      },
     },
   });
 

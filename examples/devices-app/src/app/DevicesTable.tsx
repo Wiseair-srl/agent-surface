@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
 import { useAgentProcedure } from "@agent-surface/orpc/react";
 import type { App } from "../agent/setup.js";
+import { devicesDisableContract, devicesTableContract } from "../agent/contracts.js";
 import {
-  SelectRowsSchema,
-  SortSchema,
-  TableStateSchema,
   type FiltersStateT,
   type SortT,
   type TableStateT,
@@ -127,22 +124,15 @@ export function DevicesTable(props: {
     });
   }, [rows, sorting]);
 
-  useAgentComponent({
-    type: "devices.table",
+  useAgentComponent(devicesTableContract, {
     ...(props.instance ? { instanceId: props.instance } : {}),
-    description: "Table of devices matching the active filters",
     observations: {
-      readState: observation({
-        description: "Visible rows, current selection, current sorting",
-        output: TableStateSchema,
+      readState: {
         read: () => ({ visibleRows, selectedIds, sorting }),
-      }),
+      },
     },
     actions: {
-      selectRows: action({
-        description: "Replace, extend or reduce the row selection",
-        input: SelectRowsSchema,
-        effect: "local-state",
+      selectRows: {
         precondition: ({ ids }) => {
           const unknown = ids.filter((id) => !visibleRows.some((r) => r.id === id));
           if (unknown.length > 0) {
@@ -158,18 +148,14 @@ export function DevicesTable(props: {
                 : ids,
           );
         },
-      }),
-      sort: action({
-        description: "Change the table sorting",
-        input: SortSchema,
-        effect: "local-state",
-        idempotent: true,
+      },
+      sort: {
         execute: (next) => setSorting(next),
-      }),
+      },
     },
   });
 
-  useAgentProcedure(app.bridge.refs.devices.disable, {
+  useAgentProcedure(devicesDisableContract, app.bridge.refs.devices.disable, {
     when: () => selectedIds.length > 0,
     unavailableReason: "Select at least one device first",
     bind: () => ({ deviceIds: selectedIds }),

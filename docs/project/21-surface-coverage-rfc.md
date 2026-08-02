@@ -1,6 +1,9 @@
 # 21 — Surface Coverage RFC (P1)
 
 > [!IMPORTANT]
+> **Superseded by D40 / issue #45.** The compiler-generated production contract replaced heuristic extraction and scenario coverage entirely. This file remains historical rationale for why observers could not become authorities.
+
+> [!IMPORTANT]
 > **Status: Accepted and implemented.** Raised against 0.7 after an audit of what `agent-surface inspect` can and cannot tell a developer. All three corrections are settled as decision records **D35–D37** in [Decisions](13-open-questions.md) and implemented in `@agent-surface/cli`, with requirements `AS-COVER-001…006` and `AS-CLI-006…007` conformance-tested in `packages/cli/test/coverage.test.ts` and `packages/cli/test/cli.test.ts`. The normative command contract now lives in [CLI §capabilities](../20-cli.md#capabilities), [CLI §coverage](../20-cli.md#coverage) and [CLI §inspect](../20-cli.md#inspect); this document is the rationale, not a second source of truth.
 >
 > **The security model is untouched.** No correction here creates a runtime exposure path, and none of them changes `snapshot()`, `invoke`, or any adapter. The new artifact is a developer projection in the same sense as `explainSurface()` — see [§what this does not change](#what-this-rfc-does-not-change), which is the section to read first if the words "automatic discovery" set off an alarm. It should.

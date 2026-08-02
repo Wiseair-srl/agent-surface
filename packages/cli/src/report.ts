@@ -1,76 +1,109 @@
-import { basename, relative } from "node:path";
-import type { CollectResult } from "./collect.js";
-import type { CoverageReport } from "./coverage.js";
-import type { CapabilityInventory } from "./extract.js";
-import { normalize } from "./baseline.js";
-import { buildView, flatRows, type CapabilityRow } from "./render/model.js";
+import type { CapabilityContractManifest } from "@agent-surface/core";
+import { canonicalJson } from "@agent-surface/compiler";
+import type { ContractChange } from "./diff.js";
+import { changeCounts } from "./diff.js";
 
-/** Stable, complete per-scenario document shared by JSON, baselines and check. */
-export interface ScenarioReport {
-  scenario: string;
-  scope?: string[];
-  snapshot: unknown;
-  capabilities: CapabilityRow[];
-  rejections: CollectResult["rejections"];
-  explanation?: { capabilities: CapabilityRow[] };
+export type OutputFormat = "human" | "json" | "github" | "markdown";
+
+export interface ContractReport {
+  command: "inspect" | "check" | "snapshot";
+  status: "pass" | "fail" | "written" | "view";
+  manifest: CapabilityContractManifest;
+  snapshotPath: string;
+  integrity?: {
+    status: "current" | "missing" | "stale";
+    changes: ContractChange[];
+  };
+  pullRequest?: {
+    base: string;
+    changes: ContractChange[];
+  };
 }
 
-export function scenarioReport(
-  result: CollectResult,
-  options: { attribution?: boolean; schemas?: boolean } = {},
-): ScenarioReport {
-  const view = buildView(result, {
-    ...(options.attribution ? { explain: true } : {}),
-    ...(options.schemas ? { schemas: true } : {}),
-  });
-  const capabilities = flatRows(view);
-  return {
-    scenario: result.scenario,
-    ...(result.scope ? { scope: result.scope } : {}),
-    snapshot: normalize(result.snapshot),
-    // Includes expose, disable and hide. Rows never contain runtime ids.
-    capabilities,
-    rejections: [...result.rejections].sort(
-      (a, b) =>
-        a.componentType.localeCompare(b.componentType) ||
-        a.instanceId.localeCompare(b.instanceId) ||
-        a.reason.localeCompare(b.reason),
+function value(value: unknown): string {
+  if (value === undefined) return "—";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return text.length > 100 ? `${text.slice(0, 97)}…` : text;
+}
+
+function changeLine(change: ContractChange): string {
+  const mark = change.kind === "added" ? "+" : change.kind === "removed" ? "-" : "~";
+  return `${mark} ${change.classification.padEnd(9)} ${change.capabilityId} · ${change.declarationId} · ${change.field}${
+    change.kind === "changed" ? `: ${value(change.before)} → ${value(change.after)}` : ""
+  }`;
+}
+
+function section(title: string, changes: readonly ContractChange[]): string[] {
+  const counts = changeCounts(changes);
+  return [
+    `${title} (${changes.length}) · widening ${counts.widening} · narrowing ${counts.narrowing} · neutral ${counts.neutral}`,
+    ...(changes.length > 0 ? changes.map(changeLine) : ["no changes"]),
+  ];
+}
+
+export function humanReport(report: ContractReport): string {
+  const lines = [
+    `AGENT SURFACE ${report.command.toUpperCase()} · ${report.status.toUpperCase()}`,
+    `Contract      ${report.manifest.hash}`,
+    `Completeness  ${report.manifest.completeness.status}`,
+    `Targets       ${report.manifest.targets.join(", ") || "—"}`,
+    `Capabilities  ${report.manifest.capabilities.length}`,
+    `Snapshot      ${report.snapshotPath}`,
+  ];
+  if (report.integrity) {
+    lines.push(`Integrity     ${report.integrity.status}`);
+    lines.push("", ...section("SOURCE ↔ SNAPSHOT", report.integrity.changes));
+  }
+  if (report.pullRequest) {
+    lines.push("", ...section(`PR DRIFT vs ${report.pullRequest.base}`, report.pullRequest.changes));
+  }
+  if (report.command === "inspect") {
+    lines.push("", "REPOSITORY CONTRACT");
+    for (const entry of report.manifest.capabilities) {
+      lines.push(
+        `${entry.capabilityId} · ${entry.kind} · ${entry.effect} · ${entry.declarationId} · ${entry.targets.join(",")}`,
+      );
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function markdownChanges(changes: readonly ContractChange[]): string {
+  if (changes.length === 0) return "No changes.\n";
+  return [
+    "| Class | Change | Capability | Declaration | Field |",
+    "|---|---|---|---|---|",
+    ...changes.map(
+      (change) =>
+        `| ${change.classification} | ${change.kind} | \`${change.capabilityId}\` | \`${change.declarationId}\` | \`${change.field}\` |`,
     ),
-    ...(options.attribution ? { explanation: { capabilities } } : {}),
-  };
+  ].join("\n");
 }
 
-/** Baseline payload: same semantic document, without invocation-only labels. */
-export function scenarioBaseline(result: CollectResult): Record<string, unknown> {
-  const report = scenarioReport(result);
-  return {
-    ...(report.snapshot as Record<string, unknown>),
-    capabilities: report.capabilities,
-    rejections: report.rejections,
-  };
+export function markdownReport(report: ContractReport, github = false): string {
+  const lines = [
+    `## Agent Surface ${report.command} — ${report.status}`,
+    "",
+    `- Contract: \`${report.manifest.hash}\``,
+    `- Completeness: **${report.manifest.completeness.status}**`,
+    `- Capabilities: **${report.manifest.capabilities.length}**`,
+    `- Targets: ${report.manifest.targets.map((target) => `\`${target}\``).join(", ") || "—"}`,
+  ];
+  if (report.integrity) {
+    lines.push("", `### Source ↔ snapshot — ${report.integrity.status}`, "", markdownChanges(report.integrity.changes));
+  }
+  if (report.pullRequest) {
+    lines.push("", `### PR drift vs \`${report.pullRequest.base}\``, "", markdownChanges(report.pullRequest.changes));
+  }
+  if (github && report.status === "fail") {
+    lines.unshift(`::error title=Agent Surface contract drift::${report.integrity?.changes.length ?? 0} integrity change(s)`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
-/** Machine output must not contain checkout-specific absolute paths. */
-export function inventoryReport(
-  inventory: CapabilityInventory | undefined,
-  domainCapabilities?: string[],
-): unknown {
-  if (!inventory) return null;
-  return {
-    ...inventory,
-    root: ".",
-    tsconfig: relative(inventory.root, inventory.tsconfig) || "tsconfig.json",
-    ...(domainCapabilities
-      ? { domain: { source: "manifest", capabilities: [...domainCapabilities].sort() } }
-      : {}),
-  };
-}
-
-export function coverageReport(report: CoverageReport | undefined): unknown {
-  if (!report) return null;
-  return {
-    ...report,
-    allowlistPath: basename(report.allowlistPath),
-    unreadAllowlistPath: basename(report.unreadAllowlistPath),
-  };
+export function renderReport(report: ContractReport, format: OutputFormat): string {
+  if (format === "json") return canonicalJson(report, true);
+  if (format === "markdown") return markdownReport(report);
+  if (format === "github") return markdownReport(report, true);
+  return humanReport(report);
 }

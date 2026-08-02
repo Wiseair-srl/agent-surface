@@ -8,7 +8,7 @@ Release flow (mirrors orpc-agent):
 
 ## Lockstep versioning while we are pre-1.0
 
-All `@agent-surface/*` packages ship on the same version. That is achieved by **listing every package in the release's changeset**, not by the `linked`/`fixed` config — both of those escalate a `minor` to `1.0.0` for a group of `0.x` packages, which would announce a stability the [roadmap](../docs/project/12-roadmap.md) says we have not earned.
+All seven `@agent-surface/*` packages ship on the same version. That is achieved by **listing every package in the release's changeset**, not by the `linked`/`fixed` config — both of those escalate a `minor` to `1.0.0` for a group of `0.x` packages, which would announce a stability the [roadmap](../docs/project/12-roadmap.md) says we have not earned.
 
 Two settings keep that working; do not "clean them up" without re-reading this:
 

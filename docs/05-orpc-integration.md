@@ -1,5 +1,7 @@
 # 05 — oRPC Integration (`@agent-surface/orpc`)
 
+> **D40:** domain procedure identity enters the compiler artifact through `defineAgentProcedureContract`. React binds it with `useAgentProcedure(contract, ref, runtimeConfig)`. The bridge ref owns authoritative execution; the compiled declaration owns reviewable identity, schemas, effect and confirmation. Hand-authored CLI domain manifests no longer exist.
+
 > [!NOTE]
 > **Status: Draft**, with the `orpc-agent` interop marked **Experimental** where noted. The interop is written against the documented API at [orpc-agent.dev](https://orpc-agent.dev) (capability registry, agent runtime, `toAISDKTools`, approvals) and is quarantined behind small interfaces so their evolution never leaks into core. Core stays oRPC-free: everything here builds on the public extension points of [Core API](03-core-api.md) (`setProcedureExecutor`, `procedures` in definitions).
 
