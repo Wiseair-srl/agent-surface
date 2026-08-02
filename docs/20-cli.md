@@ -47,7 +47,11 @@ pnpm exec agent-surface inspect [--base <ref>] [--detail] [--format <format>]
 
 Compiles the current graph and displays the capability inventory plus source-to-snapshot drift. With `--base`, it also displays contract drift from the selected Git ref. Findings do not change exit `0`; compilation and completeness failures exit `2`.
 
-The inventory is grouped by the declaration that owns each capability, so the declaration is written once as a heading rather than repeated on every row. Each row carries the capability id, its kind, its effect, and any obligation attached to it — a confirmation it requires, a policy it runs under. `--detail` adds each capability's description, its tags, and a confirmation that was deliberately lowered to `never`.
+The view leads with the size of the surface and how much of it is gated, then the inventory itself, grouped by the declaration that owns each capability — the declaration written once as a heading rather than repeated on every row.
+
+Columns are `CAPABILITY`, `KIND`, `EFFECT`, `REACH`, `CONFIRM`, `POLICIES`. A capability that declares no confirmation or policy shows `—` rather than an empty cell. `REACH` is derived from the effect — `read` and `local-state` are `low`, `navigation` and `server-query` are `medium`, `server-mutation`, `external-side-effect` and `destructive` are `high` — and it is printed as a word, not signalled by colour alone, so a pipe or a CI log carries the same grade a terminal does. `--detail` adds each capability's description and tags.
+
+The view closes by saying what it cannot know: the contract is what production code can declare, and `CONFIRM` and `POLICIES` are declarations. Whether a policy admits, denies, or hides a capability depends on the actor, input, and context of a real invocation, which no CLI command performs.
 
 Use `inspect` for local review and diagnosis.
 
@@ -101,7 +105,7 @@ Use `--format human|json|github|markdown`.
 
 - `json` is canonical machine output. It carries no checkout path, so two machines that compiled the same source produce the same bytes.
 - `github` and `markdown` are CI-friendly renderings of the same report model.
-- interactive `human` output is drawn with Ink, which grades each effect by reach with colour. It shows the same blocks as the plain renderer.
+- interactive `human` output is drawn with Ink. It shows the same blocks, columns, and words as the plain renderer; colour repeats the `REACH` grade rather than carrying it.
 - pipes, CI, `NO_COLOR`, `--plain`, and machine formats produce deterministic plain text.
 - `--detail` widens the `human` renderings only. `json` already carries every field it adds.
 

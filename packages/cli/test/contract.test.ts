@@ -115,17 +115,33 @@ describe("human inspect view", () => {
     expect(renderReport(gate, "human", { detail: true })).toContain(base.capabilityId);
   });
 
-  it("shows obligations by default and prose only under --detail", () => {
-    const plain = renderReport(report, "human");
-    expect(plain).toContain("confirm:required");
-    expect(plain).toContain("policy:auth@authorize");
-    expect(plain).not.toContain("Read the rows");
+  it("labels its columns and fills an empty one rather than dropping it", () => {
+    const text = renderReport(report, "human");
+    for (const header of ["CAPABILITY", "KIND", "EFFECT", "REACH", "CONFIRM", "POLICIES"]) {
+      expect(text).toContain(header);
+    }
+    // The declared obligations, in their own columns; "—" so the column reads.
+    expect(text).toMatch(/view:panel\.run\s+action\s+local-state\s+low\s+required\s+auth@authorize/);
+    expect(text).toMatch(/view:table\.read\s+observation\s+read\s+low\s+never\s+—/);
+  });
 
-    const detailed = renderReport(report, "human", { detail: true });
-    expect(detailed).toContain("Read the rows");
-    // `never` is a deliberate lowering: worth reading in detail, noise by default.
-    expect(detailed).toContain("confirm:never");
-    expect(plain).not.toContain("confirm:never");
+  it("grades effect as a word, so a pipe keeps the signal a colour would carry", () => {
+    const risky = {
+      ...report,
+      manifest: manifest([{ ...base, effect: "destructive", capabilityId: "view:panel.wipe" }]),
+    };
+    const text = renderReport(risky, "human");
+    expect(text).toMatch(/view:panel\.wipe\s+action\s+destructive\s+high/);
+    expect(text).toContain("reach 1 high");
+  });
+
+  it("keeps prose for --detail and always says what it cannot know", () => {
+    const plain = renderReport(report, "human");
+    expect(plain).not.toContain("Read the rows");
+    expect(renderReport(report, "human", { detail: true })).toContain("Read the rows");
+    // The contract is what production can declare; a policy's verdict needs a
+    // real invocation. Saying so is part of the output, not a footnote to drop.
+    expect(plain).toContain("not what a mount exposed at runtime");
   });
 
   it("shows the snapshot where the user would type it", () => {

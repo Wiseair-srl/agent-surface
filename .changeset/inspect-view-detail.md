@@ -24,20 +24,39 @@ returned to `implemented`). The same gap made a failing interactive `check`
 report `Integrity stale` without a single line saying what had drifted; the
 change rows existed in every other renderer.
 
-Both renderers now derive from one layout. The inventory is grouped by the
-declaration that owns each capability — a heading written once instead of the
-same `contracts.ts#allInvoicesTableContract` repeated down ten rows — with
-aligned columns for id, kind and effect, and the obligations that are the
-reason to read a contract at all: a required confirmation, an attached policy.
-The drawn view grades each effect by reach, from `read` to `destructive`, and
-colours drift rows by classification. The summary gained the compiler version
-and a tally by kind and by effect, and the snapshot path is now shown relative
-to the root the user passed rather than as an absolute checkout path.
+Both renderers now derive from one layout, and it leads with the answer:
+how large the surface is, how it splits by kind, and how much of it is gated.
+The hash and the compiler version are provenance and sit below it rather than
+occupying the first line a reader sees.
 
-**`--detail`** adds each capability's description, its tags, and a confirmation
-deliberately lowered to `never`. The descriptions were already compiled into
-the contract and already in `--json`; nothing in the human output had ever
-shown them. `--detail` also prints the inventory under `check` and `snapshot`,
+The inventory is a labelled table — `CAPABILITY`, `KIND`, `EFFECT`, `REACH`,
+`CONFIRM`, `POLICIES` — grouped by the declaration that owns each capability, a
+heading written once instead of the same `contracts.ts#allInvoicesTableContract`
+repeated down ten rows. Three columns were previously unlabelled, so a reader
+had to infer that `action` was a kind and `local-state` an effect. A capability
+declaring no confirmation or policy now shows `—`, because a column that
+vanishes when empty stops being a column.
+
+`REACH` grades the effect ladder — `read` and `local-state` low, `navigation`
+and `server-query` medium, `server-mutation`, `external-side-effect` and
+`destructive` high. It is printed as a word. The first version of this graded
+effects by colour in the drawn view alone, which put the signal in the one
+channel a pipe, a CI log and `--plain` cannot read; colour now repeats the word
+instead of carrying it.
+
+The view also closes by saying what it cannot know: these are declarations
+compiled from the production graph, not a transcript of a run, and whether a
+policy admits, denies or hides a capability depends on an actor and an input
+that no CLI command supplies. A tool that reports gates should say when it is
+reporting an intention rather than an outcome.
+
+The snapshot path is shown relative to the root the user passed rather than as
+an absolute checkout path, and drift rows are coloured by classification.
+
+**`--detail`** adds each capability's description and its tags. The
+descriptions were already compiled into the contract and already in `--json`;
+nothing in the human output had ever shown them. `--detail` also prints the
+inventory under `check` and `snapshot`,
 which otherwise lead with a verdict and leave it out — the reason to ask a gate
 for detail is to read what it gated.
 
