@@ -1,5 +1,20 @@
 import { JSDOM } from "jsdom";
 
+const DOM_EVENT_GLOBALS = ["Event", "CustomEvent"] as const;
+type EventRealm = Record<(typeof DOM_EVENT_GLOBALS)[number], unknown>;
+
+/** DOM nodes reject events constructed by Node's separate Web API realm. */
+function alignEventRealm(globals: Record<string, unknown>, window: EventRealm): void {
+  for (const key of DOM_EVENT_GLOBALS) {
+    if (typeof window[key] !== "function") continue;
+    Object.defineProperty(globals, key, {
+      value: window[key],
+      writable: true,
+      configurable: true,
+    });
+  }
+}
+
 /**
  * A presentation surface only exists once components mount, and mounting needs
  * a DOM. Vitest gets one from its `jsdom` environment; a plain Node process has
@@ -14,7 +29,13 @@ import { JSDOM } from "jsdom";
  */
 export function installDom(url = "http://localhost/"): void {
   const globals = globalThis as Record<string, unknown>;
-  if (typeof globals["document"] !== "undefined") return;
+  if (typeof globals["document"] !== "undefined") {
+    const installedWindow = globals["window"];
+    if (installedWindow && typeof installedWindow === "object") {
+      alignEventRealm(globals, installedWindow as EventRealm);
+    }
+    return;
+  }
 
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url,
@@ -38,6 +59,12 @@ export function installDom(url = "http://localhost/"): void {
       Object.defineProperty(globals, key, { value: window[key], configurable: true });
     }
   }
+
+  // Node 19+ already defines Event and CustomEvent, so the copy loop above
+  // deliberately skips them. They are not interchangeable with jsdom's:
+  // dispatching Node's event at a jsdom node throws a foreign-realm TypeError.
+  // Radix focus scopes do exactly that while Dialog/Popover mount (#43).
+  alignEventRealm(globals, window as unknown as EventRealm);
 }
 
 /**

@@ -994,12 +994,40 @@ export function unreadSection(
  * invalidates every count in the report, so a reader must not have to notice
  * that it was printed in a different style from the findings above it.
  */
+function firstUsefulStackFrame(stack: string | undefined): string | undefined {
+  if (!stack) return undefined;
+  const frames = stack
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("at "));
+  return frames.find((line) => !line.includes("node_modules")) ?? frames[0];
+}
+
+function failureLines(failure: ScenarioFailure): string[] {
+  const message = failure.message.trim() || "Unknown scenario failure (no message)";
+  const componentFrames = (failure.componentStack ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const frame = firstUsefulStackFrame(failure.stack);
+  return [
+    failure.scenario,
+    `    ${message}`,
+    ...(failure.cause ? [`    caused by: ${failure.cause}`] : []),
+    ...(componentFrames.length > 0
+      ? ["    React component stack:", ...componentFrames.map((line) => `      ${line}`)]
+      : []),
+    ...(frame ? [`    ${frame}`] : []),
+  ];
+}
+
 export function failureSection(failures: ScenarioFailure[]): FindingSection {
   return {
     title: "DID NOT MOUNT",
     gloss: "these scenarios threw, and were skipped",
     count: failures.length,
-    lines: failures.flatMap((failure) => [failure.scenario, `    ${failure.message}`]),
+    lines: failures.flatMap(failureLines),
   };
 }
 

@@ -88,8 +88,9 @@ export interface AuthoredCapability {
   effect?: "local-state" | "navigation";
   /**
    * How much of this call site the extractor understood.
-   * `partial` — identity resolved, some metadata dynamic (the common case:
-   *   a spread `instanceId`, a description built from a template).
+   * `partial` — identity resolved, some metadata or runtime presence dynamic
+   *   (the common case: a spread `instanceId`, a conditional capability, or a
+   *   description built from a template).
    * `unresolved` — identity NOT resolved. Reported, never dropped.
    */
   resolution: "static" | "partial" | "unresolved";
