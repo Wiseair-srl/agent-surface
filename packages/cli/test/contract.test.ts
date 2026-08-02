@@ -1,5 +1,5 @@
-// Conformance: AS-CLI-015, AS-CLI-016, AS-EXTERNAL-004.
-import { describe, expect, it } from "vitest";
+// Conformance: AS-CLI-001, AS-CLI-015, AS-CLI-016, AS-EXTERNAL-004.
+import { describe, expect, it, vi } from "vitest";
 import type { CapabilityContractEntry, CapabilityContractManifest } from "@agent-surface/core";
 import { main } from "../src/bin.js";
 import { diffContracts } from "../src/diff.js";
@@ -74,6 +74,82 @@ describe("canonical CLI diff model", () => {
       manifest([{ ...base, policies: [{ name: "auth" }], contractHash: "b" }]),
     );
     expect(changes).toMatchObject([{ field: "policies", classification: "widening" }]);
+  });
+});
+
+describe("human inspect view", () => {
+  const second: CapabilityContractEntry = {
+    ...base,
+    declarationId: "src/table.ts#table",
+    capabilityId: "view:table.read",
+    kind: "observation",
+    description: "Read the rows",
+    effect: "read",
+    confirmation: "never",
+    policies: [],
+  };
+  const report = {
+    command: "inspect" as const,
+    status: "view" as const,
+    manifest: manifest([base, second]),
+    snapshotPath: "/repo/.agent-surface/contract.json",
+    integrity: { status: "current" as const, changes: [] },
+  };
+
+  // AS-CLI-001: the view is the inventory. A rendered capability the snapshot
+  // holds but the view drops is a capability nobody reviews.
+  it("prints every capability once, grouped under the declaration that owns it", () => {
+    const text = renderReport(report, "human");
+    expect(text).toContain("REPOSITORY CONTRACT · 2 capabilities · 2 declarations");
+    for (const entry of [base, second]) {
+      expect(text).toContain(entry.capabilityId);
+      // The declaration is a heading, so it is written once however many
+      // capabilities hang off it — the repetition per row was the noise.
+      expect(text.split(entry.declarationId)).toHaveLength(2);
+    }
+  });
+
+  it("keeps the inventory out of a gate's way until --detail asks for it", () => {
+    const gate = { ...report, command: "check" as const, status: "fail" as const };
+    expect(renderReport(gate, "human")).not.toContain("REPOSITORY CONTRACT");
+    expect(renderReport(gate, "human", { detail: true })).toContain(base.capabilityId);
+  });
+
+  it("shows obligations by default and prose only under --detail", () => {
+    const plain = renderReport(report, "human");
+    expect(plain).toContain("confirm:required");
+    expect(plain).toContain("policy:auth@authorize");
+    expect(plain).not.toContain("Read the rows");
+
+    const detailed = renderReport(report, "human", { detail: true });
+    expect(detailed).toContain("Read the rows");
+    // `never` is a deliberate lowering: worth reading in detail, noise by default.
+    expect(detailed).toContain("confirm:never");
+    expect(plain).not.toContain("confirm:never");
+  });
+
+  it("shows the snapshot where the user would type it", () => {
+    expect(renderReport(report, "human", { root: "/repo" })).toContain(".agent-surface/contract.json");
+    expect(renderReport(report, "human", { root: "/repo" })).not.toContain("/repo/.agent-surface");
+  });
+
+  it("leaves the canonical JSON free of the checkout path", () => {
+    expect(renderReport(report, "json", { root: "/repo", detail: true })).toBe(renderReport(report, "json"));
+  });
+});
+
+describe("command line", () => {
+  // pnpm and npm forward the `--` that separates their flags from the
+  // script's. parseArgs turns whatever follows into positionals, so the run
+  // used to die as `invalid command inspect` before compiling anything.
+  it("accepts the separator a package manager forwards", async () => {
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      await expect(main(["inspect", "--", "--help"])).resolves.toBe(0);
+      await expect(main(["inspect", "--help"])).resolves.toBe(0);
+    } finally {
+      write.mockRestore();
+    }
   });
 });
 
