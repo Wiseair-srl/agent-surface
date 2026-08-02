@@ -44,7 +44,7 @@ function hashEntry(
 
 function buildManifest(capabilities: CapabilityContractEntry[]): CapabilityContractManifest {
   const payload = {
-    formatVersion: 4 as const,
+    formatVersion: 5 as const,
     compilerVersion: "test",
     targets: ["web-production"],
     capabilities,

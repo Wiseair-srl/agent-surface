@@ -1,10 +1,10 @@
 {
   "$schema": "./conformance.schema.json",
-  "$comment": "Traceability manifest (directive \u00a74.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs \u2014 every 'implemented' requirement must reference \u22651 existing test file that mentions the ID; 'specified' requires a justification. AS-WIRE-001..003 are intentionally unassigned: the pre-existing codec requirements are AS-ID-002 and AS-ID-004, and D30's proposed ids are kept as written rather than renumbered.",
+  "$comment": "Traceability manifest (directive §4.2). Requirement IDs are stable: never renumber; deprecate with status instead. check: scripts/check-conformance.mjs — every 'implemented' requirement must reference ≥1 existing test file that mentions the ID; 'specified' requires a justification. AS-WIRE-001..003 are intentionally unassigned: the pre-existing codec requirements are AS-ID-002 and AS-ID-004, and D30's proposed ids are kept as written rather than renumbered.",
   "requirements": {
     "AS-INVOKE-001": {
       "title": "Pre-input authority policies (onAuthorize) cannot observe agent input",
-      "source": "02-architecture.md#invocation-pipeline-normative-order",
+      "source": "02-architecture.md#invocation-pipeline",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/pipeline-order.test.ts"
@@ -22,7 +22,7 @@
     },
     "AS-INVOKE-003": {
       "title": "A malformed binding fails before a confirmation record is created",
-      "source": "project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/pipeline-order.test.ts"
@@ -31,7 +31,7 @@
     },
     "AS-INVOKE-004": {
       "title": "A supplied locked field fails before a confirmation record is created",
-      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "source": "05-orpc-integration.md#binding-semantics",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/pipeline-order.test.ts"
@@ -49,7 +49,7 @@
     },
     "AS-IDENT-001": {
       "title": "Same consumer + same invocationId + same request joins in-flight exactly once / returns cached terminal",
-      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "source": "03-core-api.md#invocation-identity-idempotency-and-conflict-safety",
       "decision": "D22",
       "tests": [
         "packages/core/test/conformance/invocation-identity.test.ts"
@@ -76,7 +76,7 @@
     },
     "AS-IDENT-004": {
       "title": "Different consumers may reuse the same provider tool-call id safely",
-      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "source": "03-core-api.md#invocation-identity-idempotency-and-conflict-safety",
       "decision": "D22",
       "tests": [
         "packages/core/test/conformance/invocation-identity.test.ts"
@@ -85,7 +85,7 @@
     },
     "AS-IDENT-005": {
       "title": "Expired dedupe key is a new attempt (bounded idempotency window, LRU + TTL, deterministic under fake clocks)",
-      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "source": "03-core-api.md#invocation-identity-idempotency-and-conflict-safety",
       "decision": "D22",
       "tests": [
         "packages/core/test/conformance/invocation-identity.test.ts"
@@ -94,7 +94,7 @@
     },
     "AS-IDENT-006": {
       "title": "Confirmation retry reuses same invocationId + confirmationId and executes once; CONFIRMATION_REQUIRED / RATE_LIMITED / INVOCATION_CONFLICT are never cached as terminal",
-      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "source": "03-core-api.md#invocation-identity-idempotency-and-conflict-safety",
       "decision": "D22",
       "tests": [
         "packages/core/test/conformance/invocation-identity.test.ts"
@@ -112,7 +112,7 @@
     },
     "AS-CONFIRM-002": {
       "title": "Digest uses canonical JSON (key order irrelevant; -0 = 0; undefined omitted) and evidence matching is exact-value, never hash-only",
-      "source": "project/18-spec-corrections-rfc.md#correction-1--two-stage-policy-pipeline-validated-effective-input-precedes-input-aware-policy-and-confirmation-d21",
+      "source": "06-policies-and-security.md#confirmation",
       "decision": "D21",
       "tests": [
         "packages/core/test/conformance/confirmation-binding.test.ts",
@@ -220,7 +220,7 @@
       "status": "implemented"
     },
     "AS-TOPO-002": {
-      "title": "Topology defaults: embedded \u2192 wait, remote \u2192 two-phase; explicit confirmations overrides",
+      "title": "Topology defaults: embedded → wait, remote → two-phase; explicit confirmations overrides",
       "source": "09-adapters.md#confirmation-topology",
       "decision": "D26",
       "tests": [
@@ -256,7 +256,7 @@
       "status": "implemented"
     },
     "AS-CONC-001": {
-      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) \u2014 default instance, bounded parallel, per-group queue depth",
+      "title": "AgentConcurrency contract (instance | capability | key | parallel{max}) — default instance, bounded parallel, per-group queue depth",
       "source": "03-core-api.md#concurrency-timeouts-cancellation",
       "decision": "D25",
       "tests": [
@@ -266,7 +266,7 @@
     },
     "AS-ID-001": {
       "title": "Canonical id grammar: accept/reject table for component types, capability names, instance ids; parsing unambiguous",
-      "source": "01-concepts.md#canonical-id-grammar-draft",
+      "source": "01-concepts.md#canonical-id-grammar",
       "decision": "D-grammar",
       "tests": [
         "packages/core/test/ids.test.ts"
@@ -303,7 +303,7 @@
     },
     "AS-SCHEMA-001": {
       "title": "D19 subset enforced at registration: allowlisted keywords only, depth/size caps, UNSUPPORTED_SCHEMA otherwise",
-      "source": "03-core-api.md#supported-json-schema-subset-d19-draft",
+      "source": "03-core-api.md#supported-json-schema-subset",
       "decision": "D19",
       "tests": [
         "packages/core/test/schema.test.ts",
@@ -322,7 +322,7 @@
     },
     "AS-SCHEMA-003": {
       "title": "Property: random allowlist schemas accepted; any forbidden keyword or excess depth rejected",
-      "source": "03-core-api.md#supported-json-schema-subset-d19-draft",
+      "source": "03-core-api.md#supported-json-schema-subset",
       "decision": "D19",
       "tests": [
         "packages/core/test/property/invariants.property.test.ts"
@@ -350,7 +350,7 @@
     },
     "AS-LIFE-003": {
       "title": "Collision handling: first-wins dead handle by default, replace mode aborts predecessor, capability dupes structural",
-      "source": "03-core-api.md#collisions-d4",
+      "source": "03-core-api.md#collisions",
       "decision": "D4",
       "tests": [
         "packages/core/test/registry.test.ts"
@@ -432,7 +432,7 @@
     },
     "AS-AVAIL-002": {
       "title": "Authority hides, state discloses: hidden is indistinguishable from nonexistent, disabled carries a reason",
-      "source": "06-policies-and-security.md#hide-vs-disable-d11d12-restated-as-the-policy-authors-rule",
+      "source": "06-policies-and-security.md#hide-vs-disable",
       "decision": "D12",
       "tests": [
         "packages/core/test/policy.test.ts"
@@ -523,7 +523,7 @@
     },
     "AS-SER-001": {
       "title": "JsonValue-only payloads: non-JSON outputs are defects (dev throw / prod EXECUTION_FAILED); size caps fail loudly",
-      "source": "03-core-api.md#serialization-rules-d18-draft",
+      "source": "03-core-api.md#serialization-rules",
       "decision": "D18",
       "tests": [
         "packages/core/test/invoke.test.ts"
@@ -568,7 +568,7 @@
     },
     "AS-BOUND-002": {
       "title": "Dedupe cache evicts deterministically (LRU size + TTL) under a fake clock",
-      "source": "03-core-api.md#invocation-identity-idempotency-conflict-safety-d14-as-corrected-by-d22",
+      "source": "03-core-api.md#invocation-identity-idempotency-and-conflict-safety",
       "decision": "D22",
       "tests": [
         "packages/core/test/conformance/races.test.ts"
@@ -595,7 +595,7 @@
     },
     "AS-ADAPTER-003": {
       "title": "WebMCP adapter: feature-detects, registers only available capabilities, refreshes on surface-changed",
-      "source": "09-adapters.md#webmcp-adapter-experimental",
+      "source": "09-adapters.md#webmcp-adapter",
       "decision": "D26",
       "tests": [
         "packages/webmcp/test/webmcp.test.ts"
@@ -631,7 +631,7 @@
     },
     "AS-REACT-002": {
       "title": "Latest-ref handler freshness: handlers read current state at invocation without re-registration",
-      "source": "04-react-api.md#handler-freshness-d3--why-there-is-no-dependency-array",
+      "source": "04-react-api.md#handler-freshness",
       "decision": "D3",
       "tests": [
         "packages/react/test/use-agent-component.test.tsx"
@@ -658,7 +658,7 @@
     },
     "AS-BIND-001": {
       "title": "Schema surgery: agent-facing schema = original minus locked keys (partial/all/none bound, required handling)",
-      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "source": "05-orpc-integration.md#binding-semantics",
       "decision": "D7",
       "tests": [
         "packages/orpc/test/orpc.test.ts"
@@ -667,7 +667,7 @@
     },
     "AS-BIND-002": {
       "title": "Locked-by-default binding: supplied locked fields INVALID_INPUT; overridable fields act as defaults; merged input revalidated against the full schema",
-      "source": "05-orpc-integration.md#binding-semantics-d7-d8--draft",
+      "source": "05-orpc-integration.md#binding-semantics",
       "decision": "D8",
       "tests": [
         "packages/orpc/test/orpc.test.ts"
@@ -685,7 +685,7 @@
     },
     "AS-BIND-004": {
       "title": "useAgentProcedure lifecycle mirrors useAgentComponent; bind/when/describe read through the latest ref",
-      "source": "05-orpc-integration.md#react-agent-surfaceorpcreact",
+      "source": "05-orpc-integration.md#bind-the-procedure-in-react",
       "decision": "D7",
       "tests": [
         "packages/orpc/test-react/use-agent-procedure.test.tsx"
@@ -856,7 +856,7 @@
     },
     "AS-EXPLAIN-001": {
       "title": "explainSurface() reports capabilities the snapshot hides, and names the policy that hid them",
-      "source": "20-cli.md#why-is-my-capability-missing",
+      "source": "03-core-api.md#explainsurface--developer-projection",
       "decision": "D33",
       "tests": [
         "packages/core/test/conformance/explain.test.ts"
@@ -865,7 +865,7 @@
     },
     "AS-EXPLAIN-002": {
       "title": "Every policy in the chain is attributed by name and by scope (registry/component/capability)",
-      "source": "20-cli.md#why-is-my-capability-missing",
+      "source": "03-core-api.md#explainsurface--developer-projection",
       "decision": "D33",
       "tests": [
         "packages/core/test/conformance/explain.test.ts"
@@ -897,26 +897,26 @@
       "status": "deprecated"
     },
     "AS-CLI-002": {
-      "title": "Exit codes are 0 clean, 1 a finding, 2 the command could not run \u2014 and check is the only command that fails on a finding",
+      "title": "Exit codes are 0 clean, 1 a finding, 2 the command could not run — and check is the only command that fails on a finding",
       "source": "20-cli.md#check",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-CLI-003": {
       "title": "Piped, --plain, CI and NO_COLOR output is plain text and byte-stable across runs",
-      "source": "20-cli.md#output-modes",
+      "source": "20-cli.md#output",
       "decision": "D33",
       "status": "deprecated"
     },
     "AS-CLI-004": {
       "title": "stdout carries only the command's output, so --json parses whatever the mounted app logs",
-      "source": "20-cli.md#output-modes",
+      "source": "20-cli.md#output",
       "decision": "D33",
       "status": "deprecated"
     },
     "AS-CLI-005": {
       "title": "The command exits even when the mounted app leaves the event loop busy, naming the held handles",
-      "source": "20-cli.md#exiting",
+      "source": "20-cli.md#exit-codes",
       "decision": "D33",
       "status": "deprecated"
     },
@@ -934,13 +934,13 @@
     },
     "AS-CLI-008": {
       "title": "--depth selects which halves are computed, and every command reports which ones it did not",
-      "source": "20-cli.md#depth",
+      "source": "20-cli.md#repository-contract",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-CLI-009": {
       "title": "One normalized, deterministic scenario report feeds JSON, baselines and check; it always includes hidden capabilities while detail adds attribution only",
-      "source": "20-cli.md#output-modes",
+      "source": "20-cli.md#output",
       "decision": "D38",
       "status": "deprecated"
     },
@@ -952,37 +952,37 @@
     },
     "AS-CLI-011": {
       "title": "Full depth consumes an authoritative oRPC manifest as the domain denominator and applies effective config or CLI scope to every plane",
-      "source": "20-cli.md#the-verdict",
+      "source": "20-cli.md#repository-contract",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-CLI-012": {
       "title": "Human output leads with a verdict, groups complete static results compactly, and reserves raw origins and non-gating inventories for --detail",
-      "source": "20-cli.md#output-modes",
+      "source": "20-cli.md#output",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-CLI-013": {
-      "title": "A report opens with the run it describes and the summary it produced \u2014 the catalog, the per-scenario tables and every other detail follow it",
-      "source": "20-cli.md#summaries-first-details-after",
+      "title": "A report opens with the run it describes and the summary it produced — the catalog, the per-scenario tables and every other detail follow it",
+      "source": "20-cli.md#output",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-CLI-014": {
       "title": "Every command renders one report model through one presenter: the same blocks, findings and label grid, drawn by the terminal UI or by plain text per stream",
-      "source": "20-cli.md#one-report-one-look",
+      "source": "20-cli.md#output",
       "decision": "D39",
       "status": "deprecated"
     },
     "AS-COVER-001": {
       "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
-      "source": "20-cli.md#the-catalog---depth-static",
+      "source": "20-cli.md#repository-contract",
       "decision": "D35",
       "status": "deprecated"
     },
     "AS-COVER-002": {
-      "title": "A registration the extractor cannot fully enumerate is emitted with resolution \"unresolved\" and an origin \u2014 never absent from both the catalog and the unread list",
-      "source": "20-cli.md#the-catalog---depth-static",
+      "title": "A registration the extractor cannot fully enumerate is emitted with resolution \"unresolved\" and an origin — never absent from both the catalog and the unread list",
+      "source": "20-cli.md#repository-contract",
       "decision": "D35",
       "status": "deprecated"
     },
@@ -994,55 +994,55 @@
     },
     "AS-COVER-004": {
       "title": "A policy-hidden capability is classified reached, because a scenario mounted it",
-      "source": "20-cli.md#the-verdict",
+      "source": "20-cli.md#repository-contract",
       "decision": "D36",
       "status": "deprecated"
     },
     "AS-COVER-005": {
       "title": "Coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
-      "source": "20-cli.md#the-allowlist-ratchet",
+      "source": "20-cli.md#repository-contract",
       "decision": "D36",
       "status": "deprecated"
     },
     "AS-COVER-006": {
       "title": "The static catalog is never reachable from the agent-facing package root",
-      "source": "project/21-surface-coverage-rfc.md#what-this-rfc-does-not-change",
+      "source": "20-cli.md#repository-contract",
       "decision": "D35",
       "status": "deprecated"
     },
     "AS-COVER-007": {
       "title": "The authored-minus-reached gap reaches inspect, snapshot and check; a scope filters the catalog by the same predicate as the mount; and a scenario that did not mount yields no verdict at all",
-      "source": "20-cli.md#the-verdict",
+      "source": "20-cli.md#repository-contract",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-COVER-008": {
       "title": "An unread call site can be accepted per semantic site via unresolved-allow.json; a second site in the same file/reason class needs its own entry, and stale entries fail",
-      "source": "20-cli.md#the-allowlist-ratchet",
+      "source": "20-cli.md#repository-contract",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-COVER-009": {
       "title": "A registration whose type is a parameter resolves from its wrapper's call sites when they pass string literals; a same-named function elsewhere is never attributed, and unresolved call sites are still reported",
-      "source": "20-cli.md#a-wrapper-hook-resolves-one-hop-up",
+      "source": "20-cli.md#repository-contract",
       "decision": "D38",
       "status": "deprecated"
     },
     "AS-COVER-010": {
       "title": "A registration is identified through its import binding, so an aliased or namespaced hook is read; a binding the extractor cannot follow is reported unread with a stable reason, and a same-named local function is never attributed",
-      "source": "20-cli.md#a-rename-is-still-the-same-hook",
+      "source": "20-cli.md#repository-contract",
       "decision": "D35",
       "status": "deprecated"
     },
     "AS-COVER-011": {
       "title": "A capability every scenario mounted and none could call is reported by inspect, apart from the gate, and never fails the build",
-      "source": "20-cli.md#mounted-and-callable-in-nothing",
+      "source": "20-cli.md#repository-contract",
       "decision": "D36",
       "status": "deprecated"
     },
     "AS-COMPILER-001": {
       "title": "The compiler consumes production static/lazy chunks and virtual modules; aliases resolve by imported compiler-macro identity",
-      "source": "02-architecture.md#compiler-generated-contract-d40",
+      "source": "02-architecture.md#compiler-generated-contract",
       "decision": "D40",
       "tests": [
         "packages/compiler/test/compiler.test.ts"
@@ -1078,7 +1078,7 @@
     },
     "AS-CONTRACT-001": {
       "title": "Every runtime registration requires compiler proof matching the running authority",
-      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "source": "03-core-api.md#contract-binding-and-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1087,7 +1087,7 @@
     },
     "AS-CONTRACT-002": {
       "title": "Compiler manifest, declaration and contract hashes bind static identity to runtime handlers",
-      "source": "02-architecture.md#compiler-generated-contract-d40",
+      "source": "02-architecture.md#compiler-generated-contract",
       "decision": "D40",
       "tests": [
         "packages/compiler/test/compiler.test.ts",
@@ -1097,7 +1097,7 @@
     },
     "AS-CONTRACT-003": {
       "title": "Raw or unknown capabilities cannot widen a strict registry after build",
-      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "source": "03-core-api.md#contract-binding-and-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1106,7 +1106,7 @@
     },
     "AS-CONTRACT-004": {
       "title": "Stale manifest hashes and mismatched contract hashes fail closed",
-      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "source": "03-core-api.md#contract-binding-and-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1115,7 +1115,7 @@
     },
     "AS-AUTHORITY-001": {
       "title": "Registry construction requires a genuine immutable capability authority",
-      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "source": "02-architecture.md#mandatory-runtime-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1124,7 +1124,7 @@
     },
     "AS-AUTHORITY-002": {
       "title": "Compiler proof is private and cannot be forged through public object metadata",
-      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "source": "02-architecture.md#mandatory-runtime-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1133,7 +1133,7 @@
     },
     "AS-AUTHORITY-003": {
       "title": "Authority verifies hashes and registration semantics against source truth",
-      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "source": "02-architecture.md#mandatory-runtime-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
@@ -1142,7 +1142,7 @@
     },
     "AS-AUTHORITY-004": {
       "title": "Library adapters cannot replace authority-routed capability execution",
-      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "source": "02-architecture.md#mandatory-runtime-authority",
       "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts",
@@ -1172,6 +1172,94 @@
       "title": "Canonical machine, human, Markdown and GitHub output derive from one diff model",
       "source": "20-cli.md#output",
       "decision": "D40",
+      "tests": [
+        "packages/cli/test/contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLOSURE-001": {
+      "title": "The public API inventory is derived from the built declaration files of every published exports subpath, never from a hand-written list",
+      "source": "02-architecture.md#public-api-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLOSURE-002": {
+      "title": "Every public export carries a classification; an unclassified, vanished or miskinded export fails the build",
+      "source": "02-architecture.md#public-api-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLOSURE-003": {
+      "title": "Every export that can create, expose or invoke a capability declares how it requires an authority and cites an implemented conformance requirement",
+      "source": "02-architecture.md#public-api-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLOSURE-004": {
+      "title": "Exports classified inert cannot reach execution: an authorized registry rejects what they produce",
+      "source": "02-architecture.md#public-api-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ARTIFACT-001": {
+      "title": "Published packages declare a wildcard-free exports map and no main/module/types fallback outside it",
+      "source": "02-architecture.md#published-artifact-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ARTIFACT-002": {
+      "title": "The repository-only authority seam is absent from every published JavaScript and declaration file",
+      "source": "02-architecture.md#published-artifact-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ARTIFACT-003": {
+      "title": "Internal authority symbols that survive bundling are never exported from a published module",
+      "source": "02-architecture.md#published-artifact-closure",
+      "tests": [
+        "packages/core/test/conformance/closure.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXTERNAL-001": {
+      "title": "A dependency discovered in the production graph contributes nothing until the consumer approves it by package and digest",
+      "source": "02-architecture.md#external-contract-authorization",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXTERNAL-002": {
+      "title": "The manifest records contract integrity and consumer authorization as separate facts",
+      "source": "02-architecture.md#external-contract-authorization",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXTERNAL-003": {
+      "title": "An approved dependency that changes what it contributes fails the build, naming the approved and the computed digest",
+      "source": "02-architecture.md#external-contract-authorization",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXTERNAL-004": {
+      "title": "A malformed approval exits rather than compiling with the approval dropped",
+      "source": "20-cli.md#external-contracts",
       "tests": [
         "packages/cli/test/contract.test.ts"
       ],

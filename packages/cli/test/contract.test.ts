@@ -1,12 +1,13 @@
-// Conformance: AS-CLI-015, AS-CLI-016.
+// Conformance: AS-CLI-015, AS-CLI-016, AS-EXTERNAL-004.
 import { describe, expect, it } from "vitest";
 import type { CapabilityContractEntry, CapabilityContractManifest } from "@agent-surface/core";
+import { main } from "../src/bin.js";
 import { diffContracts } from "../src/diff.js";
 import { renderReport } from "../src/report.js";
 
 function manifest(capabilities: CapabilityContractEntry[], hash = "hash"): CapabilityContractManifest {
   return {
-    formatVersion: 4,
+    formatVersion: 5,
     compilerVersion: "test",
     targets: ["web-production"],
     capabilities,
@@ -73,5 +74,16 @@ describe("canonical CLI diff model", () => {
       manifest([{ ...base, policies: [{ name: "auth" }], contractHash: "b" }]),
     );
     expect(changes).toMatchObject([{ field: "policies", classification: "widening" }]);
+  });
+});
+
+describe("external contract approval", () => {
+  // AS-EXTERNAL-004: the flag is how CI approves a dependency. A malformed pair
+  // must exit loudly rather than compile with the approval silently dropped —
+  // which would fail the build as unauthorized and read as the wrong problem.
+  it("rejects an --allow pair that is not <package>=<sha256>", async () => {
+    for (const value of ["@vendor/plugin", "@vendor/plugin=nope", "=".concat("a".repeat(64))]) {
+      await expect(main(["check", "--allow", value])).resolves.toBe(2);
+    }
   });
 });

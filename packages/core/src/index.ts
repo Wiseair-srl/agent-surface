@@ -157,7 +157,7 @@ export type {
   CapabilityContractKind,
   CapabilityPolicyAttachment,
   CapabilityContractEntry,
-  ExternalCapabilityContractDigest,
+  ExternalContractAttribution,
   CapabilityContractManifest,
   AgentObservationContract,
   AgentActionContract,

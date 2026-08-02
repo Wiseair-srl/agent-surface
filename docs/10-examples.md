@@ -8,7 +8,7 @@
 - React components bind handlers and live state to imported contracts;
 - the oRPC bridge binds a generated domain contract to the authoritative client;
 - `.agent-surface/contract.json` is the committed repository-review artifact;
-- app tests use `@agent-surface/testing` for runtime behavior only.
+- app tests use `@agent-surface/testing` for deterministic runtime behavior.
 
 Build and inspect it:
 
@@ -18,4 +18,4 @@ pnpm --filter devices-app-example exec agent-surface inspect
 pnpm --filter devices-app-example exec agent-surface check
 ```
 
-The scripted test still covers filter → read → select → confirm → authoritative mutation → verify without an LLM. That test proves runtime semantics; the compiler artifact proves repository inventory.
+The scripted test covers filter → read → select → confirm → authoritative mutation → verify without an LLM. Runtime tests prove behavior; the compiler artifact proves repository inventory.

@@ -1,7 +1,7 @@
-# 00 — Vision
+# Why agent-surface
 
 > [!NOTE]
-> **Status:** normative context for the whole specification. Terminology defined in [Concepts](01-concepts.md).
+> This page explains the problem and design intent. [Concepts](01-concepts.md) defines the terminology.
 
 ## Why this library exists
 
@@ -46,19 +46,19 @@ A small set of packages providing the **data plane and primitives** for a fronte
 - **React bindings** that tie registrations to component lifecycle correctly (Strict Mode, Suspense, SSR, concurrent rendering);
 - an **oRPC integration** that references existing domain procedures contextually, with UI-derived input bindings, without duplicating them;
 - a **testing toolkit** that exercises the surface deterministically, without any LLM;
-- **adapters** that connect the registry to consumers: an embedded agent loop, WebMCP, an MCP bridge, tests.
+- **adapters** that connect the registry to embedded loops, WebMCP, and tests.
 
 ## What agent-surface is not
 
-Not an agent framework, not a chat UI, not an RPC framework, not a browser-automation or computer-use tool, not a workflow engine, not an authorization product, and not a protocol competing with MCP/WebMCP. See [Non-Goals](11-non-goals.md). WebMCP in particular is treated as one possible transport for the surface, never as the foundation of the model: the library must remain valuable if WebMCP changes or fails to be adopted.
+Not an agent framework, not a chat UI, not an RPC framework, not a browser-automation or computer-use tool, not a workflow engine, not an authorization product, and not a protocol competing with MCP/WebMCP. See [Limits and non-goals](11-non-goals.md). Core is protocol-neutral; WebMCP is one adapter.
 
 ## What success looks like
 
 - An application team can expose its first capability in under an hour, and the diff is reviewable in one screen.
-- A security reviewer can enumerate the entire agent surface of the app by grepping for registrations — nothing is exposed anywhere else.
+- A security reviewer can enumerate the complete production surface in the canonical compiler contract.
 - An agent given the surface can complete "show me the offline devices in Milan, select the visible ones and disable them" by composing typed capabilities, with the destructive step gated by user confirmation and executed authoritatively by the backend.
 - A test suite asserts all of the above with zero LLM calls.
-- A new transport (say, a revised WebMCP) can be supported by writing an adapter, without touching the core model.
+- Adapters can implement different transports without changing the core model.
 
 ## Positioning
 
@@ -69,4 +69,4 @@ Not an agent framework, not a chat UI, not an RPC framework, not a browser-autom
 | Raw WebMCP tool registration | Explicit but ad-hoc, per-tool | Free-form strings | Per-tool, hand-rolled |
 | **agent-surface** | **Explicit, component-scoped, lifecycle-bound** | **Stable canonical IDs, DOM-independent** | **Composable policies, confirmation, audit, staleness** |
 
-A DOM/Playwright fallback is explicitly out of the initial scope and, if ever built, will be a separate non-core package (see [Adapters](09-adapters.md#playwright--dom-fallback-future)).
+DOM and Playwright fallbacks are outside the library. Adapters expose registered capabilities; they do not scan the page.

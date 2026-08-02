@@ -1,18 +1,18 @@
-# 03 — Core API (`@agent-surface/core`)
+# Core API (`@agent-surface/core`)
 
-## Contract, binding and authority (D40/D41)
+## Contract, binding, and authority
 
 `defineAgentComponentContract`, `observationContract`, `actionContract`, and `defineAgentProcedureContract` declare static identity/governance. `.bind()` supplies runtime handlers/state. The compiler virtual module returns a `CapabilityAuthority`; `createAgentSurfaceRegistry({ authority })` refuses construction without it and rejects raw, unknown, stale, incomplete, hash-mismatched or semantically changed bindings. `defineExternalAgentToolContract` plus `createAgentExposureGateway(authority)` applies the same ceiling at provider/MCP assembly.
 
 Raw definition helpers remain inert construction utilities. No published registry can execute them. Repository tests enable a source-only Vitest seam that is neither exported nor shipped.
 
 > [!NOTE]
-> **Status: Draft** unless marked otherwise. Every type here is public API and every signature is normative: an implementation MUST NOT change one incompatibly without a spec change. `D…` references resolve in the [decision log](project/13-open-questions.md).
+> Every type and signature on this page is public API unless explicitly marked internal or Experimental.
 
 > [!TIP]
 > **Reference material, not a tutorial** — and the longest page in the spec. First time through, read [Definitions](#definitions) (what authors write) and [Invocation](#invocation) (what happens when an agent calls); come back for the rest. Application authors rarely touch this API directly, since the [React hooks](04-react-api.md) wrap it — start at [Getting Started](getting-started.md) instead.
 
-Contents: [schemas](#schemas) · [definitions](#definitions) · [registry](#registry) · [registration lifecycle](#registration-lifecycle) · [availability](#availability) · [versioning](#versioning) · [snapshot](#snapshot) · [invocation](#invocation) · [concurrency](#concurrency-timeouts-cancellation) · [events](#events) · [confirmation surface](#confirmation-api) · [toolset](#toolset) · [limits](#limits-and-defaults)
+Contents: [schemas](#schemas) · [definitions](#definitions) · [authority](#authority-and-external-exposure) · [registry](#registry) · [registration lifecycle](#registration-lifecycle) · [availability](#availability) · [versioning](#versioning) · [snapshot](#snapshot) · [invocation](#invocation) · [concurrency](#concurrency-timeouts-cancellation) · [events](#events) · [confirmation surface](#confirmation-api) · [toolset](#toolset) · [limits](#limits-and-defaults)
 
 ---
 
@@ -79,7 +79,7 @@ const SelectRowsSchema = fromStandardSchema(SelectRows, {
 });
 ```
 
-### Supported JSON Schema subset (D19, Draft)
+### Supported JSON Schema subset
 
 Accepted keywords — anything else MUST be rejected at registration with `INVALID_DEFINITION`:
 
@@ -88,16 +88,16 @@ Accepted keywords — anything else MUST be rejected at registration with `INVAL
 - arrays: `items` (single schema), `minItems`, `maxItems`, `uniqueItems`
 - strings: `minLength`, `maxLength`, `pattern`, `format` ∈ {`date-time`, `date`, `uuid`, `email`, `uri`}
 - numbers: `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`
-- unions: `anyOf` (including discriminated unions by `const` tag); `oneOf`, `allOf`, `not`, `if/then/else`, `patternProperties`, `dependent*`, `unevaluated*` are **not** supported in 0.x
+- unions: `anyOf`, including discriminated unions by `const` tag; `oneOf`, `allOf`, `not`, `if/then/else`, `patternProperties`, `dependent*`, and `unevaluated*` are unsupported
 - annotations anywhere: `description`, `default`, `examples`, `title`, `deprecated`
 - `$defs` + internal `$ref` (`#/$defs/...`) only; remote refs rejected
 - maximum nesting depth: 8; maximum serialized schema size: 16 kB
 
 Rationale: this is the subset current LLM tool-calling implementations handle reliably, and it keeps the core validator small. The subset is validated at **registration time**, so authors discover violations in development, not when an agent calls.
 
-### Serialization rules (D18, Draft)
+### Serialization rules
 
-- All inputs/outputs MUST be `JsonValue`. Dates travel as ISO-8601 strings; binary is unsupported in 0.x (Future: content refs).
+- All inputs and outputs MUST be `JsonValue`. Dates travel as ISO-8601 strings; binary values are unsupported.
 - Type-level note: the `extends JsonValue` constraints are satisfied by schema-inferred types and type aliases; TypeScript `interface`s lack implicit index signatures and won't satisfy them — use type aliases (schema inference produces them anyway).
 - `undefined` properties are stripped (JSON semantics). Functions, symbols, bigints, and cyclic structures are defects: in development the registry probes outputs (JSON round-trip) and throws; in production the invocation settles as `EXECUTION_FAILED` with a safe message, and the defect is logged.
 - Observation/action outputs exceeding `limits.maxOutputBytes` (default 32 kB) settle as `EXECUTION_FAILED` (`details.reason: "output-too-large"`); truncation is never silent.
@@ -106,7 +106,68 @@ Rationale: this is the subset current LLM tool-calling implementations handle re
 
 ## Definitions
 
-### Component definition
+### Compiled component contracts
+
+Application authors declare static semantics with the compiler macros:
+
+```ts
+export interface AgentComponentContractDefinition<
+  TObservations extends Record<string, AgentObservationContract<any>>,
+  TActions extends Record<string, AgentActionContract<any, any>>,
+> {
+  type: string;
+  description: string;
+  meta?: Record<string, JsonValue>;
+  origin?: string;
+  priority?: number;
+  policies?: CapabilityPolicyAttachment[];
+  tags?: string[];
+  observations?: TObservations;
+  actions?: TActions;
+}
+
+export function observationContract<TOut extends JsonValue>(
+  contract: AgentObservationContract<TOut>,
+): AgentObservationContract<TOut>;
+
+export function actionContract<
+  TIn extends JsonValue,
+  TOut extends JsonValue | void = void,
+>(
+  contract: AgentActionContract<TIn, TOut>,
+): AgentActionContract<TIn, TOut>;
+
+export function defineAgentComponentContract<
+  TObservations extends Record<string, AgentObservationContract<any>>,
+  TActions extends Record<string, AgentActionContract<any, any>>,
+>(
+  definition: AgentComponentContractDefinition<TObservations, TActions>,
+): AgentComponentContract<TObservations, TActions>;
+```
+
+`defineAgentComponentContract` is a compiler macro. Author code supplies only the definition; the compiler injects private provenance. Calling the function outside the compiled production graph returns an inert contract whose binding fails authority validation.
+
+The contract binds live behavior with a type-safe one-to-one map:
+
+```ts
+const bound = counterContract.bind({
+  instanceId: "primary",
+  observations: {
+    value: { read: () => currentValue },
+  },
+  actions: {
+    increment: { execute: () => increment() },
+  },
+});
+
+registry.register(bound);
+```
+
+Every declared observation needs a `read` binding and every declared action needs an `execute` binding. Bindings may add runtime policies and availability, but cannot change contract identity or governance. React applications normally use [`useAgentComponent`](04-react-api.md#component-binding), which performs this binding and manages registration lifecycle.
+
+### Runtime definition shape
+
+`AgentComponentDefinition` is the bound shape consumed by the registry and used by low-level integrations:
 
 ```ts
 export interface AgentComponentDefinition {
@@ -148,9 +209,9 @@ export interface AgentComponentDefinition {
 }
 ```
 
-### Capability definitions and helpers
+### Runtime capability shapes
 
-Record-literal inference for heterogeneous capability maps is beyond TypeScript's contextual typing, so core provides per-entry builder helpers; they are the recommended authoring style (verified in `prototypes/api-typecheck.ts`). Plain object literals are accepted but require explicit type annotations.
+These interfaces describe the runtime handlers produced by a compiled contract binding. The raw `defineAgentComponent`, `observation`, and `action` helpers create the same shapes for tooling and isolated construction, but carry no compiler proof. A public registry rejects them.
 
 ```ts
 export interface AgentObservationDefinition<TOut extends JsonValue> {
@@ -236,6 +297,48 @@ export interface AgentActionContext extends AgentReadContext {
 
 ---
 
+## Authority and external exposure
+
+`CapabilityAuthority` is the runtime source of truth. Its TypeScript brand is not enough: the implementation recognizes only objects minted by `createCapabilityAuthority` and recorded in a private `WeakMap`.
+
+```ts
+export interface CapabilityAuthority {
+  readonly manifest: CapabilityContractManifest;
+  // private nominal brand
+}
+
+export function createCapabilityAuthority(
+  manifest: CapabilityContractManifest,
+): CapabilityAuthority;
+
+export function assertCapabilityAuthority(
+  authority: CapabilityAuthority,
+): void;
+```
+
+Creation verifies format version, `completeness.status`, each contract hash, declaration uniqueness, and the complete manifest hash. It then clones and deep-freezes the manifest. The Vite virtual module calls this function with compiler output. A direct caller that supplies a verified manifest explicitly chooses that manifest as the runtime source of truth.
+
+Standalone provider tools use the same authority model:
+
+```ts
+const contract = defineExternalAgentToolContract({
+  id: "external:reports.export",
+  description: "Export the report",
+  input: exportInputSchema,
+  output: exportOutputSchema,
+  effect: "external-side-effect",
+  confirmation: "required",
+});
+
+const tool = contract.bind({ execute: exportReport });
+const gateway = createAgentExposureGateway(authority);
+const exposed = gateway.expose([tool]);
+```
+
+The gateway accepts only tools carrying private compiler proof for its manifest and verifies identity, kind, description, and input schema. Raw tool objects and tools compiled against another manifest fail closed.
+
+---
+
 ## Registry
 
 ```ts
@@ -260,6 +363,8 @@ export interface RegistryOptions {
   /** Route descriptor for snapshots (host wires its router here). */
   route?: () => AgentRouteInfo | undefined;
   limits?: Partial<AgentSurfaceLimits>;
+  /** Injectable clock for deterministic policy, timeout, and TTL tests. */
+  now?: () => number;
   /** Compiler-generated source of truth. Runtime-mandatory. */
   authority?: CapabilityAuthority;
 }
@@ -286,7 +391,9 @@ export interface AgentSurfaceRegistry {
 export type Unsubscribe = () => void;
 ```
 
-`register` never throws in production for *runtime* conditions (duplicate instance, guard rejection): it returns a **dead handle** (`handle.status === "rejected"`), emits `component-rejected`, and logs. It DOES throw `AgentSurfaceDefinitionError` — in every environment — for *structural* defects the author must fix: invalid id grammar, unsupported schema keywords, plane violations, oversize descriptions. Rationale: structural defects are deterministic bugs; runtime collisions can be transient races (route-transition overlap) that must not crash production. See D4.
+`authority` remains optional in the TypeScript shape only for the repository's non-exported test seam. Published runtime use without a genuine compiler authority throws during construction.
+
+`register` never throws in production for *runtime* conditions such as duplicate instances or guard rejection. It returns a **dead handle** (`handle.status === "rejected"`), emits `component-rejected`, and logs. It DOES throw `AgentSurfaceDefinitionError` in every environment for structural defects the author must fix: invalid id grammar, unsupported schema keywords, plane violations, or oversize descriptions.
 
 ---
 
@@ -299,7 +406,7 @@ export interface AgentRegistrationHandle {
   /**
    * Push dynamic updates. ONLY the listed fields are updatable; anything
    * structural (ids, names, schemas, descriptions, effects, policies)
-   * requires unregister + register (⇒ a new registrationId). See D2.
+   * requires unregister + register, producing a new registrationId.
    */
   update(patch: {
     enabled?: boolean;
@@ -315,14 +422,14 @@ export interface AgentRegistrationHandle {
 Lifecycle rules (normative):
 
 1. **Mount → register.** A registration is live immediately and appears in the next snapshot; `surface-changed` fires with the new version.
-2. **Structural immutability per registration (D2).** The descriptor (types, names, schemas, descriptions, effect metadata, policy chain shape) is frozen at `register()`. This is what makes `registrationId` a meaningful staleness token: an agent that discovered `reg_x` knows *exactly* what `reg_x` can do. Handlers are NOT part of the frozen descriptor — see next rule.
-3. **Handlers are read through a live reference.** `execute`/`read`/`when`/`bind` are read at invocation time from the definition object's current state, enabling the React latest-ref pattern (D3, [React API](04-react-api.md#handler-freshness-d3--why-there-is-no-dependency-array)). Swapping handler closures neither bumps the version nor changes identity.
-4. **Unmount → unregister.** All capabilities disappear from subsequent snapshots; in-flight invocations for the registration are aborted and settle `COMPONENT_UNMOUNTED` (unless the handler already resolved — first settle wins). Exception (D23): in-flight `navigation`-effect invocations are *not* settled by unregistration; they settle on handler settlement/timeout/cancel ([§concurrency](#concurrency-timeouts-cancellation)). The registry MUST NOT retain executable references after unregistration; the tombstone keeps only ids and timestamps (a pending navigation settlement holds the already-running handler promise, not a re-invocable reference).
+2. **Structural immutability per registration.** The descriptor—types, names, schemas, descriptions, effects, and policy shape—is frozen at `register()`. This makes `registrationId` a meaningful staleness token. Handlers are not part of the frozen descriptor.
+3. **Handlers use live references.** `execute`, `read`, `when`, and `bind` are read at invocation time from current runtime state. Swapping handler closures neither bumps the version nor changes identity. See [React API](04-react-api.md#handler-freshness).
+4. **Unmount unregisters.** Capabilities disappear from subsequent snapshots. Active non-navigation invocations abort and settle `COMPONENT_UNMOUNTED` unless the handler settled first. Navigation invocations settle on handler completion, timeout, or cancellation. The tombstone retains identifiers and timestamps, never executable references.
 5. **Tombstones.** Unregistered registrationIds are remembered in a bounded structure (default 100 entries / 5 min) so late invocations get the precise `COMPONENT_UNMOUNTED` instead of the generic `CAPABILITY_NOT_FOUND`.
 6. **Post-unregister calls** on the handle are no-ops that warn in development.
 7. **`dispose()`** unregisters everything, settles in-flight invocations as `CANCELLED`, resolves pending confirmations as expired, and drops listeners.
 
-### Collisions (D4)
+### Collisions
 
 - **Component key** = `(plane, type, instanceId)`. A second live registration with the same key is handled per `onDuplicateInstance`:
   - `"reject"` (default): the newcomer gets a dead handle + `component-rejected` event + dev console.error. First-wins keeps behavior deterministic during route-transition overlaps.
@@ -346,7 +453,7 @@ available :=
 ```
 
 - `when()` is evaluated at **snapshot** time and re-evaluated at **invocation** time (phase 3). It MUST be synchronous, cheap, and exception-safe; a throwing `when` counts as `false` (dev warning).
-- Lazily-evaluated `when` changes do **not** bump `surfaceVersion` (nobody was notified). Pushed changes — `update({availability})`, `update({enabled})` — DO bump it. Framework adapters are responsible for pushing: the React package re-evaluates `when` per render and pushes on change, so in React apps availability is effectively event-driven. Pure-core users either push or accept snapshot-time freshness. This split is deliberate; see D1 remarks.
+- Lazily evaluated `when` changes do **not** bump `surfaceVersion` because no mutation was published. `update({availability})` and `update({enabled})` do bump it. React re-evaluates `when` after each render and pushes changes. Pure-core users either push changes or accept snapshot-time freshness.
 - Policy `hide` decisions remove the capability from the snapshot entirely (see [Policies & Security](06-policies-and-security.md)); availability as defined above only produces `available`/`unavailable`.
 
 ---
@@ -358,7 +465,7 @@ available :=
 - Handler swaps, `when()` drift, and bound-value changes do NOT bump the version (they alter neither the catalog nor identities).
 - `(surfaceId, surfaceVersion)` globally identifies a surface state. A consumer presenting a `surfaceVersion` under a different `surfaceId` is stale by definition (page reloaded): resolution phase treats it exactly like a registration mismatch → `STALE_CAPABILITY`.
 
-**Staleness enforcement (Draft):**
+**Staleness enforcement:**
 
 - If `invocation.registrationId` is set and differs from the live registration for the target → `STALE_CAPABILITY` (details: `{ liveRegistrationId }` so a consumer that *knows* the capability is equivalent can re-discover cheaply).
 - If it matches a tombstone → `COMPONENT_UNMOUNTED`.
@@ -397,7 +504,7 @@ export interface AgentSurfaceSnapshot {
   procedures: AgentProcedureDescriptor[];
   /** [Experimental] Present iff a budget truncated the snapshot. */
   truncated?: { droppedComponents: number };
-  /** [Experimental] Present iff a scope floor refused requested prefixes (D31). */
+  /** [Experimental] Present when a scope floor refused requested prefixes. */
   scopeRejected?: { prefixes: string[] };
 }
 
@@ -438,22 +545,22 @@ export interface AgentActionDescriptor {
 }
 ```
 
-(`AgentProcedureDescriptor` is defined in [oRPC integration](05-orpc-integration.md#snapshot-descriptor); it lives at the snapshot top level with a `context` link back to the component that registered it, keeping the two planes visually and structurally distinct. This intentionally diverges from an early sketch that nested domain refs inside components — nesting conflated the planes.)
+(`AgentProcedureDescriptor` is described in [oRPC integration](05-orpc-integration.md#discovery-shape). It lives at the snapshot top level with a `context` link to the component that registered it, keeping domain and presentation capabilities structurally distinct.)
 
 Snapshot semantics (normative):
 
-- `snapshot()` is **synchronous and side-effect free**: it MUST NOT run `read()` handlers, MUST NOT await, and discovery-time policy evaluation MUST be synchronous (async authority checks belong to invocation). This is why the shape is a catalog, not a state dump (D5).
+- `snapshot()` is **synchronous and side-effect free**: it MUST NOT run `read()` handlers, MUST NOT await, and discovery-time policy evaluation MUST be synchronous. Async authority checks belong to invocation. The result is a catalog, not a state dump.
 - Descriptors are deep-frozen plain JSON; `internal` metadata MUST NOT appear anywhere in a snapshot (tested).
 - Ordering: components sorted by (`priority` desc, `type`, `instanceId`) — deterministic, never DOM- or mount-order-dependent.
-- **Stable and volatile text are separate** (D28). A procedure reference's contextual `describe()` output is `contextualNote`; `description` is the manifest text and never contains it. There is one composition, so no consumer has to parse a string it did not write. The 0.3–0.4 compatibility flags that could merge them were removed in 0.5.
-- Shape: **flat with `parent` links** (D6-shape). Flat is trivial to serialize, diff, and budget; hierarchy-aware consumers can rebuild the tree from `parent`. A nested/query-navigable surface was considered and rejected: it adds traversal API surface with no consumer that needs it yet.
+- **Stable and volatile text are separate.** A procedure reference's contextual `describe()` output is `contextualNote`; `description` is immutable manifest text. Consumers never need to parse live state out of a stable description.
+- Shape: **flat with `parent` links.** Flat output is straightforward to serialize, diff, and budget. Hierarchy-aware consumers rebuild the tree from `parent`.
 - Budgets (**Experimental**): when set, components are dropped lowest-priority-first after the cap; the snapshot says so via `truncated`. No silent truncation, ever.
-- `scopeRejected` (**Experimental**) is the same rule applied to the other way a payload can be smaller than it looks (D31): it is set by the *adapter*, never by `snapshot()`, which knows nothing of the scope floor it would be intersecting against. See [Adapters §meta-tools-mode](09-adapters.md#meta-tools-mode).
+- `scopeRejected` (**Experimental**) is set by the adapter, never by `snapshot()`, because the registry does not know the adapter's configured scope floor. See [Adapters §meta-tools-mode](09-adapters.md#meta-tools-mode).
 
 ### `explainSurface()` — developer projection
 
 > [!NOTE]
-> **Status: Draft** (D33). Separate entry point: `@agent-surface/core/explain`. Deliberately **not** exported from the package root — see [Policies & Security §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing) before wiring it anywhere.
+> Separate entry point: `@agent-surface/core/explain`. It is deliberately **not** exported from the package root. Read [Policies and security §explain is never agent-facing](06-policies-and-security.md#explain-is-never-agent-facing) before exposing it.
 
 ```ts
 import { explainSurface } from "@agent-surface/core/explain";
@@ -489,7 +596,7 @@ Semantics (normative):
 
 - It reports **every** capability the registry holds, hidden ones included. `includeUnavailable` and `budget` are ignored: withholding is the one thing an explanation must not do. `scope` and `consumer` are honoured, so it lines up with the snapshot being debugged.
 - Its composed outcome MUST equal what `snapshot()` did for the same context (`AS-EXPLAIN-003`). `evaluateDiscovery` short-circuits on the first `hide`, so explain cannot reuse it — it re-runs each `onDiscovery` individually and composes by the same rule. Re-running is safe by contract: discovery policies MUST be synchronous, cheap, and side-effect free ([Policies & Security](06-policies-and-security.md#policy-pipeline)).
-- Policy attribution keeps `availability` separate from the policy votes, because *authority hides, state discloses* (D11/D12) and the two failures must not look alike.
+- Policy attribution keeps `availability` separate from policy votes because *authority hides, state discloses*: the two failures must not look alike.
 - It throws on a registry it did not create, or a disposed one — rather than reporting an empty surface, which is what a missing internals seam would otherwise look like.
 
 ---
@@ -542,13 +649,13 @@ Semantics:
 
 - The result is a **discriminated union, not an exception**: `invoke` only rejects on programmer misuse (e.g. called after `dispose`). Everything agent-facing — including `CONFIRMATION_REQUIRED` — is a serializable `status: "error"` payload with structured `details` and retry semantics ([Errors](07-errors.md)). `CONFIRMATION_REQUIRED` is a *protocol step*, not a failure; it is encoded as an error so the wire model stays binary.
 - Instance resolution: if `instanceId` is omitted and exactly one live instance matches, it is used; zero → `CAPABILITY_NOT_FOUND` (or tombstone/stale variants); more than one → `AMBIGUOUS_INSTANCE` with `details.instances: string[]`.
-- The **effective input** is constructed and fully validated at phase 5 — after pre-input authorization (phase 4), before any input-aware policy or the confirmation decision (phase 6). Handlers receive the parsed (possibly defaulted) effective value; input-aware policies receive it as `ctx.effectiveInput` and can never see raw agent input ([Policies & Security §policy-pipeline](06-policies-and-security.md#policy-pipeline), D21).
-- Observations are invoked through the same API (`input` omitted); they skip confirmation and the action queue but pass **observation admission** (bounded concurrency, phase 8; D24).
-- Pipeline order is fixed and normative — see [Architecture](02-architecture.md#invocation-pipeline-normative-order).
+- The **effective input** is constructed and fully validated at phase 5, after pre-input authorization and before input-aware policy or confirmation. Handlers receive the parsed, possibly defaulted effective value. Input-aware policies receive it as `ctx.effectiveInput` and never see raw agent input. See [Policies and security §policy pipeline](06-policies-and-security.md#policy-pipeline).
+- Observations use the same invocation API with `input` omitted. They skip confirmation and the action queue but pass through bounded observation admission.
+- Pipeline order is fixed; see [Architecture](02-architecture.md#invocation-pipeline).
 
-### Invocation identity, idempotency, conflict safety (D14 as corrected by D22)
+### Invocation identity, idempotency, and conflict safety
 
-Provider tool-call ids are not globally unique; identity is therefore **consumer-scoped** and **request-bound** ([Spec Corrections RFC](project/18-spec-corrections-rfc.md#correction-2--consumer-scoped-conflict-safe-invocation-identity-d22-amends-d14)):
+Provider tool-call ids are not globally unique. Invocation identity is therefore **consumer-scoped** and **request-bound**:
 
 ```ts
 // per registry (surfaceId scopes page lifetimes):
@@ -568,12 +675,10 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
 
 ## Concurrency, timeouts, cancellation
 
-(D13, D15, D16 — Draft; amended by D23/D24/D25, [Spec Corrections RFC](project/18-spec-corrections-rfc.md))
-
 - **Actions**: serialized per component instance (FIFO). One in-flight + a wait queue of `limits.actionQueueDepth` (default 2). Overflow → `RATE_LIMITED` with `details.reason: "queue-full"`, `retry: "after-delay"`.
-- **Observations**: bounded concurrency (D24). Admission gates: `maxConcurrentObservationsPerConsumer` (8) and `maxConcurrentObservationsTotal` (32), independent; a saturated consumer queues FIFO up to `maxQueuedObservationsPerConsumer` (8). Overflow → `RATE_LIMITED {reason: "queue-full", retryAfterMs}`. Observations never consume the action queue; one consumer cannot starve another below its per-consumer allowance beyond the shared global cap. Cancellation/timeout/settlement release slots; disposal drains queues as `CANCELLED`. Observations SHOULD still be synchronous reads.
+- **Observations**: admission gates `maxConcurrentObservationsPerConsumer` (8) and `maxConcurrentObservationsTotal` (32) are independent. A saturated consumer queues FIFO up to `maxQueuedObservationsPerConsumer` (8). Overflow returns `RATE_LIMITED {reason: "queue-full", retryAfterMs}`. Observations never consume the action queue. Cancellation, timeout, and settlement release slots; disposal drains queues as `CANCELLED`.
 - **Procedures**: forwarded, and admitted through one group per *procedure identity per referencing registration* — repeat calls of the same domain operation serialize client-side, while a view action on the same component is never blocked by an in-flight domain call. The server still governs real concurrency; this is queueing hygiene, not authority.
-- **Concurrency contract (D25, Draft — implemented):**
+- **Concurrency contract:**
 
   ```ts
   export type AgentConcurrency =
@@ -586,8 +691,8 @@ fingerprint = fnv1a64(canonicalJson({ capabilityId, registrationId, instanceId,
   Declared per action (`action({concurrency})`) or per procedure reference (binding config). The default remains `{mode:"instance"}` — the safe one: two actions on the same component never interleave. `parallel` requires an integer `max ≥ 1`; unbounded parallelism is not offered, and an invalid group throws `AgentSurfaceDefinitionError` at registration. `queueDepth` overrides `limits.actionQueueDepth` for that group only; overflow is `RATE_LIMITED {reason:"queue-full"}` as everywhere else. Groups are created on demand and dropped when idle, so the runtime holds one entry per *currently contended* group, not per capability ever invoked. Not model-visible: concurrency is runtime behavior, not planning information.
 - **Timeouts**: `timeoutMs` per capability, else defaults (observation 5 s, action 10 s, procedure 30 s). On timeout the registry aborts `ctx.signal`, settles `TIMEOUT`, and ignores (but logs) any late handler settlement. JS cannot force-kill the handler; cooperation via `signal` is the contract.
 - **External cancellation**: `InvokeOptions.signal` aborted → settle `CANCELLED` (same late-settlement rule).
-- **Unmount mid-flight (D16, non-navigation)**: unregistration aborts the registration's in-flight signals; the invocation settles `COMPONENT_UNMOUNTED` unless the handler settled first (first settle wins, the loser is logged as `late-settlement` in audit) — never a hang, never a zombie handler kept alive by the registry.
-- **Navigation settlement (D23)**: for actions with `effect: "navigation"`, unregistration MUST NOT settle the invocation — a navigation action's own success routinely unmounts its owner, and unmount timing must not decide the outcome. The invocation settles only on handler settlement (resolve → `ok`; reject with `ctx.signal` aborted → `CANCELLED`, otherwise `EXECUTION_FAILED`), timeout, or external cancel. Unmount **before** dispatch is still `COMPONENT_UNMOUNTED`. Authoring contract: resolve when the host router accepts/commits the transition, reject when it refuses ([Concepts §effects](01-concepts.md#effect-taxonomy), [React API §route-transitions](04-react-api.md)).
+- **Unmount mid-flight:** unregistration aborts active non-navigation signals. The invocation settles `COMPONENT_UNMOUNTED` unless the handler settled first; the later settlement is logged as `late-settlement`.
+- **Navigation settlement:** unregistration does not settle an active `navigation` action. It settles on handler completion, timeout, or external cancellation. Unmount before dispatch still returns `COMPONENT_UNMOUNTED`. Resolve when the host router accepts or commits the transition; reject when it refuses.
 
 ---
 
@@ -608,7 +713,7 @@ export type AgentSurfaceEvent =
   | { type: "confirmation-resolved"; confirmationId: string; outcome: "approved" | "denied" | "expired" };
 ```
 
-Ordering guarantees (D17) are specified in [Architecture](02-architecture.md#concurrency-and-ordering-guarantees): total mutation order, post-mutation dispatch, listener-exception isolation, queued re-entrancy, per-invocation `started` strictly before `settled`, `confirmation-requested` strictly before its `resolved`.
+Ordering guarantees are specified in [Architecture](02-architecture.md#concurrency-and-ordering-guarantees): total mutation order, post-mutation dispatch, listener-exception isolation, queued re-entrancy, per-invocation `started` strictly before `settled`, and `confirmation-requested` strictly before resolution.
 
 Events are the integration point for audit sinks, adapters (re-snapshot on `surface-changed`), and confirmation UIs.
 
@@ -632,7 +737,7 @@ export interface PendingConfirmation {
   confirmationId: string;                // "cnf_" + random
   capabilityId: string;
   registrationId: string;
-  /** Normalized consumer identity: `kind + ":" + id` (D22). */
+  /** Normalized consumer identity: `kind + ":" + id`. */
   consumerKey: string;
   /** Effect of the operation being approved (host dialogs render it). */
   effect: AgentEffect;
@@ -649,7 +754,7 @@ export interface PendingConfirmation {
 
 ## Toolset
 
-The provider-neutral projection used by the embedded adapter ([Adapters](09-adapters.md#embedded-toolset-adapter-draft)):
+The provider-neutral projection used by the [embedded adapter](09-adapters.md#embedded-toolset):
 
 ```ts
 export interface AgentToolsetOptions {
@@ -659,11 +764,11 @@ export interface AgentToolsetOptions {
    * size linear in the surface. "meta": three fixed tools with lazy discovery —
    * constant tool-block size, one extra round trip before the first act.
    * [Experimental] "meta" only: its verb envelope may change in any release
-   * (D29). Default "direct"; selection guide in 09 §choosing-a-mode.
+   * Default "direct"; selection guide in Adapters §choosing-a-mode.
    */
   mode?: "direct" | "meta";
   /**
-   * Loop topology (D26). Determines the confirmation-mode default:
+   * Loop topology. Determines the confirmation-mode default:
    * "embedded" → "wait", "remote" → "two-phase". One of `topology` or
    * `confirmations` MUST be provided; omitting both throws (programmer
    * misuse, every environment) — there is no ambiguous global default.
@@ -678,7 +783,7 @@ export interface AgentToolsetOptions {
    */
   confirmations?: "wait" | "two-phase";
   /**
-   * Component-type prefixes this consumer may discover. D27: a **floor** —
+   * Component-type prefixes this consumer may discover. This is a **floor** —
    * in "meta" mode a model-supplied scope narrows it, never widens it.
    * Not an authority boundary (docs/09 §scope-is-discovery-only).
    */
@@ -696,7 +801,7 @@ export interface AgentTool {
   name: string;
   /**
    * Plane + effect + confirmation prefix, then the authored description.
-   * Contains NO live state (D28) — safe in a provider tool block with prefix
+   * Contains NO live state — safe in a provider tool block with prefix
    * caching across steps.
    */
   description: string;
@@ -704,7 +809,7 @@ export interface AgentTool {
   /**
    * Volatile: re-derived on every snapshot. Hosts render this OUTSIDE the tool
    * block (e.g. a trailing system message) so availability stays honest without
-   * invalidating the cached prefix (D28).
+   * invalidating the cached prefix.
    */
   state: {
     available: boolean;
@@ -720,7 +825,7 @@ export interface AgentToolset {
   /**
    * wireName → canonical capability id, for the catalog tools() last built.
    * Authoritative: shortened names are not decodable by string surgery, so a
-   * host MUST consult this rather than reversing names itself (D30). Empty in
+   * host MUST consult this rather than reversing names itself. Empty in
    * "meta" mode, whose three tool names are not capability ids.
    */
   wireNameMap(): ReadonlyMap<string, string>;
@@ -759,15 +864,15 @@ export interface AgentSurfaceLimits {
   actionTimeoutMs: number;           // 10_000
   procedureTimeoutMs: number;        // 30_000
   actionQueueDepth: number;          // 2
-  maxConcurrentObservationsPerConsumer: number; // 8   (D24)
-  maxConcurrentObservationsTotal: number;       // 32  (D24)
-  maxQueuedObservationsPerConsumer: number;     // 8   (D24)
+  maxConcurrentObservationsPerConsumer: number; // 8
+  maxConcurrentObservationsTotal: number;       // 32
+  maxQueuedObservationsPerConsumer: number;     // 8
   dedupeCacheSize: number;           // 200 entries
   dedupeCacheTtlMs: number;          // 600_000
   tombstoneSize: number;             // 100 entries
   tombstoneTtlMs: number;            // 300_000
   confirmationTtlMs: number;         // 120_000
-  maxPendingConfirmations: number;   // 32  (D24; overflow fails RATE_LIMITED, no record created)
+  maxPendingConfirmations: number;   // 32; overflow fails RATE_LIMITED, no record created
 }
 ```
 

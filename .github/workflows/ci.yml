@@ -67,6 +67,15 @@ jobs:
       - run: pnpm build
       - run: pnpm publint
       - run: pnpm size
+      # Gate 1 (D42): the public API is enumerated from the built .d.ts, so a
+      # new execution or exposure boundary cannot enter without a
+      # classification and a conformance requirement proving it needs an
+      # authority. Source-level; runs here because it needs dist.
+      - run: pnpm check:api-closure
+      # Gate 2 (D42): inspects the real `npm pack` tarball rather than the
+      # working tree — the only check that catches a packaging regression
+      # shipping the repository-only authority seam.
+      - run: pnpm check:artifact
       # ESM resolution from outside the workspace: catches a broken "exports"
       # map that every in-repo import would happily paper over.
       - name: ESM import smoke

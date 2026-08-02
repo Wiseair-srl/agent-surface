@@ -1,55 +1,60 @@
-# 11 — Non-Goals
+# Limits and non-goals
 
-> [!NOTE]
-> **Status: Draft** (normative). Scope discipline is a feature. agent-surface provides the **data plane and primitives** for a typed, governable frontend agent surface — and stops there. Each non-goal below states what we refuse to build, why, and what to use instead. Revisiting any of these requires an explicit RFC, not scope creep.
+agent-surface provides the data plane for a typed, governed frontend capability surface. The following responsibilities remain outside it.
 
-## The first version will not become…
+## What the library does not provide
 
-**1. A complete agent framework.**
-No agent loop, no planner, no tool-choice logic, no conversation state. The library produces tool catalogs and executes tool calls. *Instead:* the host's agent loop (Vercel AI SDK, Anthropic SDK, LangGraph, anything) consumes the toolset ([Adapters](09-adapters.md#embedded-toolset-adapter-draft)).
+### Agent runtime
 
-**2. A new RPC framework, or a replacement for oRPC.**
-No transport, no serialization protocol, no server runtime. Domain operations stay oRPC procedures. *Instead:* `@agent-surface/orpc` references them ([oRPC integration](05-orpc-integration.md)).
+There is no model client, planner, tool-choice logic, or conversation state. The host's agent loop consumes an [adapter or toolset](09-adapters.md).
 
-**3. A browser-automation or computer-use framework.**
-No DOM scanning, no selectors, no synthetic mouse/keyboard, no screenshots, no coordinates. That model is the problem statement, not the roadmap. *Instead:* Playwright/computer-use tools exist for the pages that haven't adopted an explicit surface; a constrained fallback is at most Future, non-core ([Adapters §playwright](09-adapters.md#playwright--dom-fallback-future)).
+### RPC or server runtime
 
-**4. A chat library.**
-No chat UI, no message rendering, no streaming UI. The confirmation host is the only UI-adjacent seam, and even that is host-rendered.
+There is no network transport, server router, or backend authorization system. `@agent-surface/orpc` references existing procedures and forwards through the host's client.
 
-**5. A memory system.**
-No persistence of agent state, embeddings, or history. Snapshots are ephemeral by design.
+### DOM automation
 
-**6. A workflow engine.**
-No multi-step orchestration, retry DAGs, or saga semantics. One invocation = one capability execution; composition lives in the agent loop or the backend.
+There is no DOM scanning, selector generation, synthetic input, screenshot interpretation, or coordinate control. Only explicitly declared capabilities enter the surface.
 
-**7. A generative-UI system.**
-The library never renders or generates components; it annotates components the app already renders. (A generative-UI system could *target* agent-surface as its control plane — that's someone else's library.)
+### Chat and application UI
 
-**8. An alternative protocol to MCP or WebMCP.**
-No wire protocol is defined here. Snapshots/invocations are in-memory shapes that adapters translate; WebMCP is one possible transport, never the foundation ([Adapters §webmcp](09-adapters.md#webmcp-adapter-experimental)).
+There is no chat interface, message rendering, streaming UI, router, data fetching, or design system. The host also renders confirmation dialogs.
 
-**9. An enterprise authorization framework.**
-No roles, no policy language, no permission storage. Policies are middleware interfaces delegating to the host's auth; the server stays authoritative ([Policies & Security](06-policies-and-security.md)). Approval workflows beyond single-user confirmation are the backend's business (orpc-agent).
+### Memory and orchestration
 
-**10. A tool that exposes the whole DOM automatically.**
-This is the founding non-goal. There is deliberately no "expose everything" switch, no auto-annotation codemod in core, no implicit registration. If a future DX tool suggests annotations, it outputs *code for humans to review*, never runtime exposure.
+There is no persistence of agent state, embedding store, workflow graph, retry DAG, or saga engine. One invocation executes one capability. Composition belongs in the agent loop or backend.
 
-## Boundary clarifications
+### Generative UI
 
-- **In scope:** registry, identity, schemas, snapshot, invocation, policies, confirmation evidence, errors, audit events, React lifecycle bindings, oRPC references, testing harness, adapter contract.
-- **Out of scope but adjacent (host's job):** the model/agent loop, auth systems, routers, data fetching, design systems, audit *persistence*, server approvals.
-- **Deferred, not refused (see [Roadmap](project/12-roadmap.md)):** cross-tab/multi-window surfaces, MCP bridge, relevance ranking, iframe/worker isolation for third-party registrants, deep binding paths, binary payloads.
+The library does not create components. It binds capabilities to components the application already renders.
 
-## Known limitations (honest, normative — directive §9.4)
+### Authorization system
 
-Things the current design *cannot* do, stated so nobody discovers them in production:
+There is no role store, policy language, or approval workflow engine. Browser policies delegate to host context; servers remain authoritative.
 
-1. **No same-realm isolation.** Malicious JavaScript in the page can call the registry like any other code. Trust labels and guards segment *honest* registrants; containment requires an out-of-realm boundary that does not exist in 0.x ([Policies & Security §trust](06-policies-and-security.md#trust-model-for-registrants)).
-2. **Bounded idempotency window.** Dedupe is LRU + TTL (`dedupeCacheSize`/`dedupeCacheTtlMs`), not a forever guarantee: a retry after eviction re-executes (D22). Handlers with hard exactly-once needs enforce it server-side.
-3. **Cooperative cancellation only.** JS cannot force-kill a handler; timeout/cancel/unmount abort `ctx.signal` and classify the result, but a non-cooperative handler keeps running (its late settlement is only logged).
-4. **No contextual gating for autonomous server-side agents in 0.x.** Frontend `when`/bindings gate agents that reach the surface through a live page (embedded, per-turn frontend tools). An agent with no page open sees whatever the server exposes — syncing frontend context to it is OQ-5, unbuilt.
-5. **No automatic relevance ranking.** Snapshot size is governed by manual `scope`/`priority`/budgets; nothing guarantees the model sees "what matters now" (OQ-4).
-6. **No cross-tab semantics.** One registry per JS realm; two tabs are two unrelated surfaces (OQ-3).
-7. **Schema subset limits (D19).** Only the allowlisted JSON Schema keywords cross the boundary; some Zod/Valibot features won't convert and fail at registration by design.
-8. **Third-party drift.** Provider tool APIs, WebMCP, and orpc-agent evolve independently; adapters absorb drift but can lag. The registry contract is the stable part, adapters are the weather.
+### Wire protocol
+
+Core snapshots and invocations are in-memory types. Adapters translate them to provider or browser protocols. WebMCP is one adapter, not the foundation of the architecture.
+
+## Scope summary
+
+| In agent-surface | Host or server responsibility |
+|---|---|
+| compiler manifest and authority | model and provider integration |
+| registry, identity, snapshot, invocation | application handlers and UI |
+| schemas, policies, confirmation evidence | authentication and permission data |
+| errors, audit events, bounded concurrency | persistent audit and exactly-once effects |
+| React lifecycle bindings | router and data layer |
+| contextual oRPC references | backend procedure implementation |
+| testing harness and adapters | cross-process transport |
+
+## Current limitations
+
+1. **No same-realm isolation.** Code running in the page can call application functions or provider SDKs directly. The authority guarantee covers public agent-surface execution APIs, not arbitrary host JavaScript.
+2. **Bounded idempotency.** Dedupe uses LRU plus TTL. A retry after eviction is a new attempt; handlers requiring durable exactly-once semantics must enforce them server-side.
+3. **Cooperative cancellation.** Timeout, cancellation, and unmount abort `ctx.signal`, but JavaScript cannot force-stop a non-cooperative handler. Late settlement is ignored and audited.
+4. **Live-page context only.** `when`, bindings, and frontend confirmation govern agents that reach a live registry. Context synchronization to an autonomous server agent is not provided.
+5. **Manual catalog relevance.** Hosts select direct or meta tools and may configure scope or budgets. The library does not rank capabilities by model relevance.
+6. **One registry per JavaScript realm.** Tabs and windows are independent surfaces.
+7. **JSON Schema subset.** Only the [supported keywords](03-core-api.md#supported-json-schema-subset) cross the boundary. Unsupported schema features fail during compilation or registration.
+8. **External protocol drift.** WebMCP and provider APIs can change independently. Their adapters are Experimental where marked; the registry contract remains protocol-neutral.

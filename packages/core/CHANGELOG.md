@@ -296,7 +296,7 @@
 
   No host change is required, and the meta tool block stays byte-stable across mounts (`AS-META-005`). Calls that were already well-formed behave identically; malformed ones that used to fail as `EXECUTION_FAILED` now fail as `INVALID_INPUT`, and some that used to fail now succeed. `AS-META-002` (a disjoint scope returns an empty surface) is untouched.
 
-  The `core` size budget moves 18.5 → 19.5 kB (measured 18.86 kB). About 530 B is the envelope check shared by the three verbs plus the repair and its error strings; the model-facing descriptions were trimmed first, since those bytes are re-billed in every request carrying the tool block while the validator is paid once. This is the deliberate revision [02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines) asks for, not drift.
+  The `core` size budget moves 18.5 → 19.5 kB (measured 18.86 kB). About 530 B is the envelope check shared by the three verbs plus the repair and its error strings; the model-facing descriptions were trimmed first, since those bytes are re-billed in every request carrying the tool block while the validator is paid once. This is the deliberate revision [02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines) asks for, not drift.
 
 ### Patch Changes
 
@@ -345,7 +345,7 @@
 
   **What changes if you set neither flag** (i.e. you were on the defaults): `AgentTool.description` no longer contains `[currently unavailable: …]` or the binding's contextual note, and `AgentProcedureDescriptor.description` no longer has the note folded in. Both signals are still there as data — `AgentTool.state {available, unavailableReason?, note?}` and `AgentProcedureDescriptor.contextualNote` — and **you must render them somewhere the model reads**, or it will plan steps it cannot take. [09 §rendering-capability-state](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/09-adapters.md#rendering-capability-state) has the trailing-block pattern.
 
-  **Why removal instead of the planned flip.** [19 §C4](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/project/19-catalog-scale-rfc.md) scheduled the flags for one minor: introduce, flip, remove. D28 landed in 0.3 rather than the 0.2 the RFC was written against, and 0.4 shipped without the flip, so they had already run three minors on 0.1 behavior. Pre-1.0, two code paths for one composition were carrying a migration nobody had asked for. Flipping first would have bought a second breaking change one minor later for the same hosts.
+  **Why removal instead of the planned flip.** [19 §C4](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/project/19-catalog-scale-rfc.md) scheduled the flags for one minor: introduce, flip, remove. D28 landed in 0.3 rather than the 0.2 the RFC was written against, and 0.4 shipped without the flip, so they had already run three minors on 0.1 behavior. Pre-1.0, two code paths for one composition were carrying a migration nobody had asked for. Flipping first would have bought a second breaking change one minor later for the same hosts.
 
   Also: `core` drops to **18.12 kB** and its size budget is retightened 19 → 18.5 kB.
 
@@ -358,9 +358,9 @@
   0.4.0 shipped D31 alone, which left several published statements false:
 
   - **`descriptionIncludesState` and `snapshotMergesContextualNote` JSDoc** said the `true` default lasts "for one minor". It has now lasted three (0.2, 0.3, 0.4). This text ships in the `.d.ts`, so hosts read it in their editor — it now says "default through 0.4; flips in 0.5".
-  - **[19 §C4](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/project/19-catalog-scale-rfc.md)** scheduled the D28 flags as introduce-0.2 → flip-0.3 → remove-0.4. D28 landed in 0.3, and 0.4 shipped without the flip, so the live schedule is **flip in 0.5, remove in 0.6**. The accepted RFC answer is annotated rather than rewritten; the record of what was decided stays intact.
-  - **[02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)** claimed the 19 kB `core` budget returns at 0.5. Removal is 0.6, and flipping a default frees nothing regardless — both branches stay in the bundle while the flags exist.
-  - **README and [12](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/project/12-roadmap.md)** still described 0.4 as the unshipped "adoption and enforcement" milestone and pinned the packages at 0.3.0. v0.4 is recut as shipped; the enforcement work moves to v0.5.
+  - **[19 §C4](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/project/19-catalog-scale-rfc.md)** scheduled the D28 flags as introduce-0.2 → flip-0.3 → remove-0.4. D28 landed in 0.3, and 0.4 shipped without the flip, so the live schedule is **flip in 0.5, remove in 0.6**. The accepted RFC answer is annotated rather than rewritten; the record of what was decided stays intact.
+  - **[02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines)** claimed the 19 kB `core` budget returns at 0.5. Removal is 0.6, and flipping a default frees nothing regardless — both branches stay in the bundle while the flags exist.
+  - **README and [12](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/project/12-roadmap.md)** still described 0.4 as the unshipped "adoption and enforcement" milestone and pinned the packages at 0.3.0. v0.4 is recut as shipped; the enforcement work moves to v0.5.
 
   The D28 default flip is **not** in this release — it is a deliberate breaking change for any host that sets neither flag, and it needs a migration note rather than a patch bump.
 
@@ -390,7 +390,7 @@
 
   Additive in both cases — no host or adapter change is required, and tool-block size stays invariant in the catalog. One related fix: a disjoint scope combined with a `budget` no longer reports the budget's `truncated` count, which was computed against a surface the payload does not contain.
 
-  The `core` size budget moves 18 → 19 kB (measured 18.33 kB). The descriptions are the change, so this is the deliberate revision [02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/main/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines) asked for rather than drift. It is not temporary: the D28 default flip frees no bytes, and the compatibility branches only leave in 0.5.
+  The `core` size budget moves 18 → 19 kB (measured 18.33 kB). The descriptions are the change, so this is the deliberate revision [02 §budgets](https://github.com/Wiseair-srl/agent-surface/blob/9c8271a/docs/02-architecture.md#bundle-and-performance-budgets-first-measured-baselines) asked for rather than drift. It is not temporary: the D28 default flip frees no bytes, and the compatibility branches only leave in 0.5.
 
 ## 0.3.0
 

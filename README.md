@@ -1,46 +1,60 @@
 # agent-surface
 
-Typed, policy-aware capabilities for agents operating application surfaces.
+Typed, policy-aware capabilities for agents operating frontend applications.
 
-The repository contract is compiler-generated from the real production module graph. Runtime state may decide whether a declared capability is mounted, visible or callable; it cannot mint capability identity or governance metadata.
+agent-surface turns statically declared application capabilities into a compiler-verified contract. Runtime state can decide whether a declared capability is mounted, visible, available, or callable. It cannot create new capability identity or governance metadata.
 
-## Core invariant
-
-Every supported exposed tool crosses one authority path:
+## One authority path
 
 ```text
-token.manifestHash == runningManifest.hash
-token.declarationId exists in runningManifest
-token.contractHash matches runningManifest
-runtime semantics match the declared contract
-proof is present in a private WeakMap
+production Vite graph
+  → @agent-surface/compiler
+  → immutable CapabilityAuthority
+  → authorized runtime binding
+  → AgentSurfaceRegistry
+  → registry-owned tools and adapters
 ```
 
-Unknown, raw, stale or mismatched registrations fail closed. A registry cannot be created without the compiler authority; provider/MCP tools use the same authority boundary.
+Every supported execution path is rooted in one verified authority manifest:
 
-## Quick start
+- the compiler derives the canonical contract from the resolved production graph;
+- the virtual module exposes the matching immutable authority;
+- the registry requires that authority at construction;
+- React and oRPC bind live behavior only to compiled contracts;
+- the registry verifies manifest membership, hashes, schemas, effects, confirmation, and policy attachments;
+- adapters execute through the registry; standalone provider tools require the authority-backed exposure gateway.
+
+Unknown, dynamic, stale, or semantically mismatched capabilities fail closed. The guarantee covers the library's public execution APIs. A host can still bypass the library by calling its own functions or a provider SDK directly, and servers remain authoritative for persistent or domain effects.
+
+## Install
 
 ```bash
 pnpm add @agent-surface/core @agent-surface/react
 pnpm add -D @agent-surface/compiler @agent-surface/cli
 ```
 
+Add the compiler to Vite:
+
 ```ts
 // vite.config.ts
-import { defineConfig } from "vite";
 import { agentSurface } from "@agent-surface/compiler";
+import { defineConfig } from "vite";
 
 export default defineConfig({ plugins: [agentSurface()] });
 ```
+
+Declare static semantics and bind live behavior:
 
 ```tsx
 import {
   actionContract,
   defineAgentComponentContract,
+  emptyObjectSchema,
   fromJsonSchema,
   observationContract,
 } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
+import { useState } from "react";
 
 export const counterContract = defineAgentComponentContract({
   type: "demo.counter",
@@ -52,67 +66,76 @@ export const counterContract = defineAgentComponentContract({
     }),
   },
   actions: {
-    increment: actionContract<Record<string, never>>({
+    increment: actionContract({
       description: "Increment once",
-      input: fromJsonSchema({ type: "object", properties: {}, additionalProperties: false }),
+      input: emptyObjectSchema,
       effect: "local-state",
     }),
   },
 });
 
-function Counter() {
+export function Counter() {
   const [value, setValue] = useState(0);
+
   useAgentComponent(counterContract, {
     observations: { value: { read: () => value } },
     actions: { increment: { execute: () => setValue((n) => n + 1) } },
   });
+
   return <button onClick={() => setValue((n) => n + 1)}>{value}</button>;
 }
 ```
 
-Install the generated authority at the composition root:
+Create one registry at the application root and provide it to React:
 
-```ts
+```tsx
 import authority from "virtual:agent-surface-contract";
 import { createAgentSurfaceRegistry } from "@agent-surface/core";
+import { AgentSurfaceProvider } from "@agent-surface/react";
+import { createRoot } from "react-dom/client";
 
 const registry = createAgentSurfaceRegistry({ authority });
+
+createRoot(document.getElementById("root")!).render(
+  <AgentSurfaceProvider registry={registry}>
+    <App />
+  </AgentSurfaceProvider>,
+);
 ```
 
-Then commit the canonical review artifact:
+Commit the reviewable contract and check it in CI:
 
 ```bash
 pnpm exec agent-surface snapshot
+git add .agent-surface/contract.json
 pnpm exec agent-surface check --base origin/main --format github
 ```
+
+Continue with the [getting started guide](docs/getting-started.md), [architecture](docs/02-architecture.md), or [runnable example](examples/devices-app).
 
 ## Packages
 
 | Package | Purpose |
 |---|---|
-| `@agent-surface/core` | Contracts, registry, policy, confirmation, invocation, gateway |
+| `@agent-surface/core` | Contracts, authority, registry, policies, confirmation, invocation, gateway |
 | `@agent-surface/compiler` | Vite production-graph compiler and canonical manifest |
-| `@agent-surface/react` | Lifecycle-correct runtime bindings |
-| `@agent-surface/orpc` | Contextual authoritative domain procedure bindings |
-| `@agent-surface/testing` | Deterministic runtime harness and matchers |
-| `@agent-surface/webmcp` | WebMCP adapter |
-| `@agent-surface/cli` | Inspect, snapshot, integrity and PR drift |
+| `@agent-surface/react` | React provider and lifecycle-correct runtime bindings |
+| `@agent-surface/orpc` | Contextual, authoritative domain procedure bindings |
+| `@agent-surface/testing` | Deterministic harness, helpers, and matchers |
+| `@agent-surface/webmcp` | WebMCP transport adapter |
+| `@agent-surface/cli` | Contract inspection, snapshots, integrity, and PR drift |
 
-## What changed in 0.16
+## Runtime guarantees
 
-The compiler contract supersedes heuristic extraction and scenario mounts (D40). Removed CLI concepts: config mount functions, scenarios, depth, scope, coverage joins, runtime baselines, unresolved/coverage allowlists, jsdom and `init`.
-
-Static contracts own identity, descriptions, schemas, effects, confirmation, tags and policy attachments. Runtime bindings own handlers, state, availability, bound values and instances.
-
-## Guarantees
-
-- Production static/lazy chunks and virtual modules contribute through Vite’s resolved graph.
-- Dynamic or non-serializable contract construction is a compiler error.
-- Dependency/remote contracts are content-addressed sidecars.
-- A second declaration of the same capability id remains a distinct review row.
-- Canonical output is byte-identical across checkout paths.
-- `check` separates source/snapshot integrity from snapshot/base PR drift.
-- Runtime behavior tests remain useful, but never define repository reach.
+- Static and lazy production modules contribute through Vite's resolved graph.
+- Dynamic or non-serializable contract construction fails compilation.
+- Dependency and remote contracts are pinned by content-addressed sidecars.
+- Registration verifies private compiler proof and current runtime semantics.
+- Generated API inventory and packed-artifact checks cover every published boundary.
+- Availability and policy are re-evaluated at invocation time.
+- Confirmation is single-use and bound to the validated effective input.
+- Stale registrations and conflicting invocation identities fail closed.
+- Runtime queues, caches, tombstones, and confirmation storage are bounded.
 
 ## Development
 
@@ -122,10 +145,11 @@ pnpm build
 pnpm typecheck
 pnpm test
 pnpm check:conformance
+pnpm check:api-closure
+pnpm check:artifact
 pnpm publint
 pnpm size
+pnpm docs:build
 ```
-
-Documentation starts at [docs/index.md](docs/index.md). CLI contract: [docs/20-cli.md](docs/20-cli.md). Example: [examples/devices-app](examples/devices-app).
 
 MIT © Paolo Barbato / Wiseair.

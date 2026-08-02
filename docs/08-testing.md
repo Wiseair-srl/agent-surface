@@ -1,7 +1,7 @@
-# 08 — Testing (`@agent-surface/testing`)
+# Testing (`@agent-surface/testing`)
 
 > [!NOTE]
-> **Status: Draft.** Guiding constraint (normative): **no test in this ecosystem requires an LLM.** The surface is a typed contract; contracts are tested deterministically. The testing package is also the reference consumer: if something can't be tested through it, the core API is missing a seam — that's a spec bug.
+> No test requires an LLM. Contracts, discovery, invocation, confirmation, concurrency, and staleness are tested deterministically.
 
 ## Package shape
 
@@ -103,7 +103,7 @@ expect(result).toFailWith("STALE_CAPABILITY", { reason: "registration-replaced" 
 expect(surface).toMatchSurfaceSnapshot();                       // semantic snapshot, below
 ```
 
-Matcher semantics are exact: `toExpose` = present **and available** for the harness consumer; `toExposeUnavailable` = present with `available: false` (+ optional reason match); absence assertions distinguish "hidden" from "disabled" because that distinction is the security model ([Policies & Security §hide-vs-disable](06-policies-and-security.md#hide-vs-disable-d11d12-restated-as-the-policy-authors-rule)).
+Matcher semantics are exact: `toExpose` means present **and available** for the harness consumer; `toExposeUnavailable` means present with `available: false` and an optional reason match. Absence assertions distinguish hidden from disabled because that distinction is part of the [security model](06-policies-and-security.md#hide-vs-disable).
 
 ## Semantic snapshots
 
@@ -183,13 +183,13 @@ expect(r).toFailWith("INVALID_INPUT", { lockedFields: ["deviceIds"] });
 
 **Concurrency & dedupe** — fire two invokes with the same consumer + `invocationId` + request: handler executed once, both promises resolve with the identical result (`duplicate-call-joins-inflight`). Fire N>queue actions: overflow fails `RATE_LIMITED {reason: "queue-full"}`.
 
-**Invocation-id conflict (D22)** — same consumer + same `invocationId` + *different* input (or capability): `INVOCATION_CONFLICT {reason: "id-reused-with-different-request"}`, original record untouched (`invocation-id-conflict-fails-closed`). Two *different* consumers reusing one provider tool-call id: both succeed independently.
+**Invocation-id conflict** — same consumer + same `invocationId` + *different* input or capability: `INVOCATION_CONFLICT {reason: "id-reused-with-different-request"}`, original record untouched (`invocation-id-conflict-fails-closed`). Two different consumers may reuse one provider tool-call id independently.
 
-**Confirmation binds effective input (D21)** — with a live binding, the pending confirmation's `input` contains the **bound** values (not just agent-visible ones); a binding value changed after discovery shows up in the confirmation; a binding value changed **after approval** fails `CONFIRMATION_INVALID {reason: "mismatch"}`, not execution (`confirmation-approved-input-changed`). A malformed binding (`binding-throws-before-confirmation`) or a supplied locked field fails at phase 5 with **no confirmation record created**. Approval for input A can never execute input B; approval does not validate for another consumer or registration.
+**Confirmation binds effective input** — with a live binding, the pending confirmation's `input` contains the bound values. A binding changed after discovery appears in the confirmation; a binding changed after approval returns `CONFIRMATION_INVALID {reason: "mismatch"}` instead of executing. Malformed bindings and supplied locked fields fail before a confirmation record is created.
 
-**Navigation settlement (D23)** — a navigation handler that commits the route and triggers its own unmount in the same task settles `ok` (`navigation-commit-then-owner-unmount`); a handler rejecting before commit settles typed failure; unmount before dispatch is `COMPONENT_UNMOUNTED`; a timeout cannot fire after the handler already resolved.
+**Navigation settlement** — a handler that commits the route and unmounts its owner in the same task settles `ok`; rejection before commit returns a typed failure; unmount before dispatch returns `COMPONENT_UNMOUNTED`; a timeout cannot overwrite a resolved result.
 
-**Observation bounds (D24)** — saturate one consumer beyond `maxConcurrentObservationsPerConsumer` + queue: overflow fails `RATE_LIMITED {reason: "queue-full"}` while a second consumer still executes (fake timers; slots released on settle/cancel/timeout).
+**Observation bounds** — saturate one consumer beyond its concurrency and queue limits; overflow returns `RATE_LIMITED {reason: "queue-full"}` while another consumer can still execute. Verify slot release on settlement, cancellation, and timeout.
 
 **Timeout/cancellation** — fake timers; a hanging handler settles `TIMEOUT`, its `signal` is aborted, a late resolve is ignored and shows up as `late-settlement` in `auditLog()`.
 
@@ -200,8 +200,8 @@ expect(r).toFailWith("INVALID_INPUT", { lockedFields: ["deviceIds"] });
 ## CI posture
 
 - All of the above runs in jsdom/node, no browser, no network, no model.
-- Runtime harness snapshots remain useful for behavior and policy projections, but they do not define repository reach. The repository gate is `.agent-surface/contract.json`; `agent-surface check` validates source integrity and Git-base PR drift. No scenario or runtime state participates in that denominator (D40).
+- Runtime harness snapshots verify behavior and policy projections. The repository inventory is `.agent-surface/contract.json`; `agent-surface check` validates source integrity and Git-base drift.
 - Library CI additionally runs the core suite under both `environment: "test"` and `"development"` (to keep dev-only diagnostics from drifting), and the React suite under Strict Mode and React 18 + 19 matrices.
-- CI also runs `scripts/check-conformance.mjs`: every requirement ID in `spec/conformance.json` must reference existing test files that mention the ID, `spec/error-matrix.json` must stay in lockstep with the implemented error enum, and a `status: "implemented"` requirement with no test fails the build (directive §4.2).
-- **Property-based invariants** (directive §6.4) live in `packages/core/test/property/` (fast-check): id grammar and wire-codec round-trips, canonical-JSON stability under key order, D19 allowlist-only acceptance, unique-live-identity preservation under arbitrary register/unregister sequences, dedupe never-double-executes, and evidence-validates-iff-digest-identical. The named race list (directive §6.3) is `packages/core/test/conformance/races.test.ts` — each race exists by its canonical name.
-- **Performance baselines** run via `pnpm bench` (`packages/core/bench/`); numbers are recorded in [Architecture §budgets](02-architecture.md#bundle-and-performance-budgets) and revised consciously.
+- `scripts/check-conformance.mjs` verifies that every implemented requirement in `spec/conformance.json` names an existing test containing that requirement id, and that `spec/error-matrix.json` matches the implemented error enum.
+- Property-based invariants live in `packages/core/test/property/`: id and wire-codec round trips, canonical JSON, schema subset acceptance, live identity uniqueness, dedupe, and confirmation digest equality. Named race tests live in `packages/core/test/conformance/races.test.ts`.
+- Performance baselines run via `pnpm bench` (`packages/core/bench/`); representative numbers are recorded under [Architecture §performance budgets](02-architecture.md#performance-budgets).

@@ -15,7 +15,7 @@ import { deepFreeze, jsonDeepEqual } from "./utils.js";
 import { sha256 } from "./sha256.js";
 
 /** Contract format emitted by @agent-surface/compiler. */
-export const CAPABILITY_CONTRACT_FORMAT_VERSION = 4 as const;
+export const CAPABILITY_CONTRACT_FORMAT_VERSION = 5 as const;
 
 export type CapabilityContractKind = "observation" | "action" | "procedure" | "external";
 
@@ -40,10 +40,29 @@ export interface CapabilityContractEntry {
   origin: string;
 }
 
-export interface ExternalCapabilityContractDigest {
-  package?: string;
+/**
+ * How a dependency's capabilities entered this manifest.
+ *
+ * Two facts are recorded separately because they answer different questions.
+ * `contractDigest` is *integrity*: what the dependency actually contributed to
+ * this build. `authorization` is *consent*: what the consumer approved. A
+ * dependency that changes its contract moves the first and not the second, and
+ * the build fails until a human updates the allow list.
+ */
+export interface ExternalContractAttribution {
+  /** npm package name — the stable key an allow list is written against. */
+  package: string;
+  /** Where the contribution came from, relative to the build root. */
   source: string;
-  digest: string;
+  /** How the dependency contributed. */
+  route: "sidecar" | "source";
+  /** sha256 of the contribution as this build computed it. */
+  contractDigest: string;
+  /** What the consumer explicitly approved. */
+  authorization: {
+    mode: "pinned";
+    expectedDigest: string;
+  };
 }
 
 export interface CapabilityContractManifest {
@@ -51,7 +70,7 @@ export interface CapabilityContractManifest {
   compilerVersion: string;
   targets: string[];
   capabilities: CapabilityContractEntry[];
-  externalContracts: ExternalCapabilityContractDigest[];
+  externalContracts: ExternalContractAttribution[];
   completeness: { status: "proven" };
   /** sha256 of the canonical manifest payload without this field. */
   hash: string;

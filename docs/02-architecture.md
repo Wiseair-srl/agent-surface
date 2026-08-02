@@ -1,64 +1,143 @@
-# 02 — Architecture
+# Architecture
 
-## Compiler-generated contract (D40)
+agent-surface has one library-owned path from source declaration to execution. The compiler manifest is the source of truth; runtime state can only narrow it.
+
+## Compiler-generated contract
 
 ```text
-production entrypoints + lazy/virtual modules + pinned sidecars
+production entry points + lazy/virtual modules + pinned sidecars
   → @agent-surface/compiler
-  → canonical manifest + embedded provenance
-  → registry / exposure gateway
-  → agent
+  → canonical manifest
+  → immutable CapabilityAuthority
 ```
 
-The compiler consumes Vite's resolved production graph, not tsconfig globs. It emits `completeness: proven` or fails. The registry verifies manifest, declaration and contract hashes before accepting strict bindings. Runtime state can narrow a compiled inventory; it cannot widen it. The CLI diffs the same artifact and never mounts the application.
+The compiler reads Vite's resolved production graph. It emits a complete, canonical manifest or fails the build. Each declaration and capability carries stable provenance and content hashes; the complete manifest has its own hash.
 
-## Mandatory runtime authority (D41)
+The same manifest serves four consumers:
 
-The contract is now an enforced authority, not optional registry configuration:
+- the virtual module used by the application runtime;
+- the registry's authorization checks;
+- the committed review artifact;
+- CLI integrity and Git-base comparisons.
+
+The standard Vite integration has no separate authored registry or runtime inventory.
+
+`createCapabilityAuthority(manifest)` is the public minting boundary used by the virtual module. It accepts only a complete, internally hash-consistent manifest, clones and freezes it, and records its identity privately. A direct caller may explicitly install such a manifest as its source of truth; execution is still closed over that manifest. The compiler is the production path that proves the manifest corresponds to the resolved application graph.
+
+## Mandatory runtime authority
 
 ```text
-production graph
-  → canonical format-v4 manifest
-  → immutable CapabilityAuthority
-  → privately proven binding
-  → registry registration
-  → registry-owned adapter/tool execution
+CapabilityAuthority
+  → compiled contract
+  → private binding proof
+  → registry semantic verification
+  → registry-owned invocation
 ```
 
-These invariants are structural across every published, library-owned boundary:
+The authority is structural across the library's public execution boundaries:
 
-- `virtual:agent-surface-contract` returns the nominal `CapabilityAuthority` by default; the named `manifest` export exists for review tooling.
-- authority creation clones and deep-freezes the manifest, then verifies format, completeness, each declaration hash and the whole-manifest hash;
-- registry construction without a genuine authority throws;
-- compiler proof lives in private `WeakMap`s, not symbols or writable object properties;
-- every registration verifies authority membership and actual runtime kind, description, effect, schemas, confirmation floor and required policy implementation;
-- React and oRPC expose only contract-first hooks. Removed raw/granular overloads cannot become an alternate registration path;
-- registry-backed adapters always execute through `registry.invoke`; WebMCP curation may hide or rename presentation but cannot replace execution;
-- standalone provider tools must pass `createAgentExposureGateway(authority)`.
+1. `virtual:agent-surface-contract` exposes an immutable `CapabilityAuthority` minted from the compiler manifest.
+2. `createAgentSurfaceRegistry` requires a genuine authority.
+3. A compiled component or procedure contract can bind runtime behavior only after its declaration is found in that authority.
+4. Authorization proof is stored in private `WeakMap`s, not writable object fields or exported symbols.
+5. Registration verifies the declaration hash and actual runtime semantics: kind, description, schemas, effect, confirmation floor, and required policies.
+6. React and oRPC accept compiled contracts plus runtime bindings.
+7. Registry-backed tools and adapters execute through `registry.invoke`.
+8. Standalone provider tools pass through `createAgentExposureGateway(authority)`.
 
-The repository's raw test helpers run only because Vitest loads a source-only unsafe seam. That seam is absent from package exports and published artifacts. `@agent-surface/testing` callers must supply either an authorized registry or the authority used to create one.
+### Closed capability authority
 
-Threat boundary: this prevents bypass through supported library APIs. JavaScript cannot stop a malicious host in the same realm from calling its own functions, a provider SDK or a fake registry directly; those calls are outside agent-surface. The server remains the security authority for persistent/domain effects.
+The authority defines a closed set of executable capability identities and semantics. Public APIs may bind handlers or narrow live exposure, but no public path can add a capability outside the manifest. Proof cannot be copied into a raw object, and adapters cannot replace registry-owned execution.
 
-> [!NOTE]
-> **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [Concepts](01-concepts.md); APIs in [Core API](03-core-api.md)–[oRPC integration](05-orpc-integration.md).
+Missing, unknown, incomplete, stale, or semantically mismatched inputs fail closed. A registration cannot gain identity, effect, schema, confirmation posture, tags, or policy attachments from runtime data.
 
-Read this page to learn three things: **where code lives** (packages and their dependency rules), **how a call flows** (registration → discovery → the ten-phase invocation pipeline), and **what the runtime guarantees** (ordering, concurrency, memory bounds). If you're deciding whether the library fits your app, the [responsibilities table](#where-responsibilities-live) at the bottom is the fastest answer to "what would be mine to build".
+### Guarantee boundary
+
+The guarantee applies to public APIs owned by agent-surface. JavaScript cannot prevent the host application from calling its own functions, constructing unrelated provider tools, or using a fake registry. Those operations are outside the library boundary.
+
+The browser is also not authoritative for persistent or domain effects. The server must authenticate, authorize, validate, rate-limit, and audit domain operations independently.
+
+## Closure gates
+
+Two build-time gates prove that every published construction, execution, and exposure boundary is classified and authority-bound. The guarantee follows the generated public API and packed artifacts, so adding an export or changing package output requires the corresponding authority classification and conformance evidence.
+
+### Public API closure
+
+`spec/api-surface.json` classifies every symbol reachable through a published `exports` subpath. `scripts/check-api-closure.mjs` derives the inventory from each built declaration file and verifies its classification against the manifest.
+
+| Class | Meaning |
+| --- | --- |
+| `authority-boundary` | Mints or verifies a `CapabilityAuthority`. |
+| `capability-construction` | Produces a definition, contract or binding that could become an invocable capability. |
+| `execution-boundary` | Can cause a capability handler to run. |
+| `exposure-boundary` | Projects capabilities to an agent, provider or transport. |
+| `introspection-only` | Read-only projection of already-authorized state. |
+| `utility` / `type` | No capability semantics. |
+
+The first four classes must also declare **how** they require an authority (`authority`, `verifies`, `mints`, `proof`, `registry`, `compiler`, `inert`) and cite at least one conformance requirement whose status is `implemented`. The gate fails on an unclassified export, a classified export that vanished, a kind mismatch, an unknown class, or a citation that is missing or not implemented.
+
+`inert` classifies a construction API whose output cannot reach execution. `defineAgentComponent`, `action`, `observation`, and `composeInvokeChain` build values, but no published execution boundary accepts those values. `AS-CLOSURE-004` verifies that behavior.
+
+### Published artifact closure
+
+`scripts/check-published-artifact.mjs` runs `npm pack` for every package, inspects the resulting tarball, and asserts:
+
+- the `exports` map is wildcard-free, and `main`/`module`/`types` point only at declared subpaths;
+- the repository-only seam (`enableUnsafeAuthorityTestMode`, `disableUnsafeAuthorityTestMode`) appears in no shipped JavaScript or declaration file;
+- internal symbols that do survive bundling (`isUnsafeAuthorityTestMode`) are exported from nothing.
+
+This verifies the artifact consumers actually install.
+
+### Closure boundary
+
+The [guarantee boundary](#guarantee-boundary) excludes a same-realm hostile host, and the server remains authoritative for persistent effects.
+
+## External contract authorization
+
+A dependency can contribute capabilities to the manifest two ways, and neither is something the consumer opts into:
+
+- **sidecar** — the package declares `agentSurface.contract` in its `package.json`, and any module of it reaching the production graph pulls the contract in;
+- **source** — the package calls a contract macro in its own shipped source, which the compiler extracts directly. There is no sidecar file and nothing to address by path.
+
+Discovery is not authorization. Both routes require an explicit approval, keyed by package name — a path is a property of the installer, a name is what a reviewer approves:
+
+```ts
+agentSurface({
+  externalContracts: {
+    allow: [{ package: "@vendor/plugin", digest: "6f4b…" }],
+  },
+})
+```
+
+The manifest then records two facts that answer different questions:
+
+| Field | Question |
+| --- | --- |
+| `contractDigest` | What did the dependency contribute to *this* build? |
+| `authorization.expectedDigest` | What did the consumer approve? |
+
+They are equal whenever the build passes. Separating them is what makes the two failures distinguishable: an unapproved package is a **new** contributor, a digest mismatch is an **approved** contributor that changed. The first prints the entry to add; the second prints both digests so the change is reviewed before consent moves. Neither has an escape flag.
+
+For the source route the digest covers the canonical set of entries extracted from that package, since there is no file to hash. Any module resolving outside `node_modules` is first-party — so a workspace package linked into a build is part of that build rather than a dependency of it.
+
+A sidecar that no production module reaches can be named explicitly with `path`. The package name still comes from where the file lives, not from the approving entry, so a path-pinned contract cannot authorize itself under a name the consumer chose.
 
 ## Package layout
 
-```text
-@agent-surface/core       framework-agnostic: types, ids, schema layer, registry,
-                          policy pipeline, confirmation, audit, toolset, errors
-@agent-surface/react      React bindings: provider + hooks (lifecycle-correct)
-@agent-surface/orpc       domain procedure references + oRPC executor bridge
-@agent-surface/testing    test harness, matchers, semantic snapshots (no LLM)
-@agent-surface/webmcp     WebMCP transport adapter               [Experimental]
-```
+| Package | Responsibility |
+|---|---|
+| `@agent-surface/compiler` | Compile the production graph and virtual authority module |
+| `@agent-surface/core` | Contracts, authority, registry, policy, confirmation, invocation, tool projection |
+| `@agent-surface/react` | Provider and lifecycle-correct component bindings |
+| `@agent-surface/orpc` | Contextual bindings to authoritative oRPC procedures |
+| `@agent-surface/testing` | Deterministic harness and matchers |
+| `@agent-surface/webmcp` | WebMCP transport adapter |
+| `@agent-surface/cli` | Inspect, snapshot, integrity, and contract drift |
 
 ```mermaid
 flowchart BT
-    core["@agent-surface/core\n(zero runtime deps)"]
+    core["@agent-surface/core\nzero runtime dependencies"]
+    compiler["@agent-surface/compiler"] --> core
     react["@agent-surface/react"] --> core
     orpc["@agent-surface/orpc"] --> core
     orpcReact["@agent-surface/orpc/react"] --> react
@@ -67,192 +146,144 @@ flowchart BT
     testingReact["@agent-surface/testing/react"] --> react
     testingReact --> testing
     webmcp["@agent-surface/webmcp"] --> core
+    cli["@agent-surface/cli"] --> compiler
+    cli --> core
 ```
 
-Dependency rules (normative):
+Dependency constraints:
 
-- `core` MUST have zero runtime dependencies and MUST NOT import React, oRPC, WebMCP types, DOM APIs (beyond standard JS), or any AI-provider SDK.
-- `react` depends only on `core` + `react` (peer, `>=18.2`, React 19 supported).
-- `orpc` depends on `core` + oRPC client packages (peer). Its React entry point is the subpath `@agent-surface/orpc/react`.
-- `testing` depends on `core`; its React entry `@agent-surface/testing/react` peers on `@testing-library/react`.
-- Schema libraries (Zod, Valibot, ArkType) are integrated through the `AgentSchema` interface and Standard Schema; none is a dependency of core (D20).
-- All packages are ESM-only, tree-shakeable, side-effect-free at import time (`"sideEffects": false`).
+- `core` has no runtime dependencies and does not import a framework, provider SDK, oRPC, or WebMCP type.
+- `react` depends on `core` and peers on React 18.2 or newer.
+- `orpc` depends on `core`; its React API is exported from `@agent-surface/orpc/react`.
+- `testing` depends on `core`; React helpers are exported from `@agent-surface/testing/react`.
+- schema libraries integrate through `AgentSchema` or Standard Schema and are not core dependencies.
+- packages are ESM-only, tree-shakeable, and side-effect-free at import time.
 
-## The planes at the architecture level
+## Runtime topology
 
 ```mermaid
 flowchart LR
-    subgraph Browser["Browser (untrusted)"]
-        subgraph App["Host application"]
-            RC["React components"] -- "useAgentComponent / useAgentProcedure" --> REG["AgentSurfaceRegistry\n(@agent-surface/core)"]
-            CONF["Confirmation UI\n(host-rendered)"] <--> REG
-        end
-        REG --> TS["Embedded toolset adapter"]
-        REG --> WM["WebMCP adapter (exp.)"]
-        REG --> TA["Testing harness"]
-        REG -- "domain: invocations" --> EXEC["oRPC executor\n(@agent-surface/orpc)"]
+    subgraph Browser["Browser — untrusted"]
+        Compiler["Compiler authority"] --> Registry["AgentSurfaceRegistry"]
+        Components["React components"] -- "compiled contracts + live bindings" --> Registry
+        Registry <--> Confirm["Host confirmation UI"]
+        Registry --> Tools["Embedded toolset"]
+        Registry --> WebMCP["WebMCP adapter"]
+        Registry --> Bridge["oRPC bridge"]
     end
-    TS --> LLM["Embedded agent loop\n(host-owned, any provider)"]
-    WM --> UA["Browser agent via navigator.modelContext"]
-    EXEC -- "normal oRPC transport\n(cookies/auth of the user session)" --> SRV["Backend: oRPC + orpc-agent\nAUTHORITATIVE"]
-    SRV -.->|"policies, approval, audit,\nauthz re-checked on every call"| SRV
+    Tools --> Agent["Host-owned agent loop"]
+    WebMCP --> BrowserAgent["Browser agent"]
+    Bridge --> Server["Authoritative server"]
 ```
 
-Key boundary statements:
+- `view:` observations and actions execute in mounted frontend registrations.
+- `domain:` capabilities are references to backend procedures. The registry applies frontend context and policy, then calls the host-provided executor.
+- the model and provider are host concerns. agent-surface supplies tools and executes calls; it does not call a model.
+- every adapter carries a stable consumer identity so policy and invocation identity remain scoped.
 
-- The **registry** is the single in-page source of truth for the surface. Adapters and hooks are thin layers around it.
-- **`view:` invocations** terminate inside the page (handlers registered by components).
-- **`domain:` invocations** are *forwarded*, not executed: the registry applies frontend policy (availability, bindings, confirmation UX), then hands the call to the host-provided oRPC executor, which uses the user's normal authenticated transport. The server re-validates everything. The frontend is never a security boundary.
-- The **agent loop / model** is always outside the library. agent-surface produces tool catalogs and executes tool calls; it never talks to an AI provider itself.
-
-## Core internal modules
-
-Implementers SHOULD structure `@agent-surface/core` as:
-
-```text
-src/
-  ids.ts            grammar, parse/format/validate, wire-name codec
-  schema.ts         AgentSchema, fromStandardSchema, fromJsonSchema,
-                    JSON Schema subset validator (D19)
-  definition.ts     definition types + defineAgentComponent/action/observation
-                    helpers + definition validation (caps, plane rules)
-  registry.ts       registrations, availability, versioning, events
-  snapshot.ts       descriptor projection, filtering, budgets
-  invoke.ts         invocation pipeline: dedupe/conflict → resolve → authorize →
-                    effective input → invoke policies → precondition →
-                    concurrency → execute → settle; tombstones
-  policy.ts         policy types, composition, built-in policies
-  confirmation.ts   pending-confirmation store, evidence lifecycle
-  audit.ts          AuditSink, memory + console sinks
-  toolset.ts        provider-neutral tool projection (embedded adapter)
-  errors.ts         AgentSurfaceError, codes, payload serialization
-  events.ts         event types + ordered dispatcher
-```
-
-## Runtime data flow
-
-### Registration → discovery → invocation
+## Capability lifecycle
 
 ```mermaid
 sequenceDiagram
-    participant C as Component (React)
-    participant R as Registry (core)
+    participant C as Component
+    participant R as Registry
     participant A as Adapter
-    participant M as Agent/model
+    participant M as Agent
 
-    C->>R: register(definition) → handle {registrationId}
-    R-->>A: event surface-changed (v42)
-    A->>R: snapshot({consumer})
-    R-->>A: catalog (descriptors, availability, v42)
-    A-->>M: tools / context
-    M->>A: call view:devices.table.selectRows {ids}
-    A->>R: invoke({capabilityId, input, registrationId, invocationId})
-    R->>R: resolve → authorize → effective input → invoke policies → slot
-    R->>C: execute(input, ctx) via latest handler ref
+    C->>R: register(authorized binding)
+    R-->>A: surface-changed
+    A->>R: snapshot({ consumer })
+    R-->>A: descriptors + resolution tokens
+    A-->>M: tool definitions and state
+    M->>A: tool call
+    A->>R: invoke(request, { consumer })
+    R->>R: resolve, authorize, validate, admit
+    R->>C: execute(effectiveInput, context)
     C-->>R: result
-    R-->>A: {status:"ok", output, surfaceVersion}
+    R-->>A: typed outcome
     A-->>M: tool result
-    C->>R: unregister() on unmount
-    R-->>A: surface-changed (v43) → adapter refreshes
+    C->>R: unregister on unmount
 ```
 
-### Invocation pipeline (normative order)
+Registration freezes structural semantics for that `registrationId`. Handlers and runtime gates are read through live references. Unmounting removes executable references and invalidates stale calls.
 
-For every `invoke`, the registry MUST execute exactly these phases in order; the first failing phase produces the typed error shown. The order is a protocol guarantee, corrected by [Spec Corrections RFC](project/18-spec-corrections-rfc.md) (D21): **the validated effective input exists before any input-aware policy or confirmation decision runs** — a confirmation can only bind to an input that has been fully constructed and validated.
+## Invocation pipeline
+
+Every invocation follows this order. The first failing phase returns its typed error.
 
 ```text
- 1. dedupe + conflict   key (consumerKey, invocationId): join in-flight / return
-                        cached terminal; same key with a different request
-                        fingerprint → INVOCATION_CONFLICT (fail closed, D22)
- 2. resolve             capabilityId (+instanceId) → live registration; staleness tokens
-                        └─ STALE_CAPABILITY | COMPONENT_UNMOUNTED | CAPABILITY_NOT_FOUND | AMBIGUOUS_INSTANCE
- 3. availability        enabled + when() re-evaluated → CAPABILITY_NOT_AVAILABLE
- 4. authorize           pre-input authority policies: onAuthorize onion + onDiscovery
-                        re-check (registry → component → capability); NO agent input
-                        is available to this phase, by type construction
-                        └─ NOT_AUTHENTICATED | NOT_AUTHORIZED | RATE_LIMITED | CAPABILITY_NOT_FOUND (hide) | ...
- 5. effective input     reject supplied locked fields → parse agent-facing input →
-                        evaluate live bind() → merge per overridable-field rules →
-                        validate against the FULL original schema
-                        └─ INVALID_INPUT | PRECONDITION_FAILED(binding-failed)
- 6. invoke policies     post-input policies: onInvoke onion over the validated
-                        effective input; input-aware rate decisions; the
-                        confirmation decision + evidence validation (digest over
-                        effective input); audit enrichment
-                        └─ CONFIRMATION_REQUIRED | CONFIRMATION_INVALID | RATE_LIMITED | ...
- 7. precondition        capability precondition(effectiveInput, live state) → PRECONDITION_FAILED
- 8. concurrency         action queue slot / observation admission → RATE_LIMITED(queue-full) or wait
- 9. execute             handler / procedure executor, with AbortSignal + timeout
-                        └─ TIMEOUT | CANCELLED | COMPONENT_UNMOUNTED (mid-flight) | EXECUTION_FAILED
-10. settle              validate/serialize output, classify, update dedupe record,
-                        audit, ordered events
+ 1. identity         dedupe by (consumerKey, invocationId); reject conflicting reuse
+ 2. resolution       resolve capability, instance, registration, surface version
+ 3. availability     re-evaluate enabled and when()
+ 4. authorization    run pre-input authority policies; agent input is unavailable
+ 5. effective input  reject locked fields, parse input, bind live values, validate full schema
+ 6. invoke policy    run input-aware policy and confirmation over validated effective input
+ 7. precondition     evaluate the capability precondition against live state
+ 8. admission        enter the action queue or observation concurrency pool
+ 9. execution        call the handler or procedure executor with AbortSignal and timeout
+10. settlement       validate output, cache terminal result, emit audit and ordered events
 ```
 
-Availability and policies are evaluated **at invocation time**, never trusted from discovery time (a capability may have been discovered when valid and invoked after the state changed). Phases 5–6 are the reason `PendingConfirmation.input` always shows the **bound** values the operation will actually run with — never a raw agent guess (AS-INVOKE-001…005).
+The effective input is complete and validated before any input-aware policy or confirmation decision runs. Confirmation evidence therefore binds to the same values passed to execution, including live bound fields.
+
+Discovery is never execution authority. Availability, policy, staleness, and preconditions are checked again when the call runs.
 
 ## Concurrency and ordering guarantees
 
-Normative, implementable guarantees (details and tunables in [Core API](03-core-api.md)):
+- surface mutations receive a total `surfaceVersion` order;
+- events dispatch after their mutation and preserve mutation order;
+- listener failures are isolated, and re-entrant operations are queued;
+- actions targeting one component instance run in a bounded FIFO queue;
+- observations use bounded per-consumer and global concurrency with bounded FIFO waiting;
+- `(consumerKey, invocationId)` joins an identical in-flight request or returns its cached terminal result;
+- reusing that identity for a different request returns `INVOCATION_CONFLICT`;
+- dedupe records, tombstones, confirmation records, and queues are bounded by capacity and TTL.
 
-1. **Single-threaded determinism.** The registry assumes a JS event loop; all state transitions are atomic within a task.
-2. **Total order of surface mutations.** Every register/unregister/availability-change is assigned the next `surfaceVersion`. Observers can reconstruct the exact sequence from events.
-3. **Event delivery.** Events are dispatched in mutation order, after the mutation completes. Listener exceptions are caught and reported; they never corrupt registry state or skip other listeners. Registry methods called *from* listeners are queued and run after the current dispatch completes (no re-entrant dispatch). `surface-changed` MAY coalesce multiple mutations within one microtask; the event always carries the latest version.
-4. **Action serialization; bounded observation concurrency.** Actions targeting the same component instance run serially (FIFO), with a bounded wait queue. Observations run concurrently up to per-consumer and global limits with a bounded per-consumer FIFO queue; overflow is `RATE_LIMITED`, and observations never consume the action queue. (D13, amended by D24)
-5. **At-most-once execution per invocation key.** The dedupe key is `(consumerKey, invocationId)` scoped to the registry (`surfaceId`). Terminal results are cached; a retry with the same key **and the same request fingerprint** returns the cached result or joins the in-flight execution; the same key with a **different** fingerprint fails closed with `INVOCATION_CONFLICT`. The window is bounded (LRU + TTL). (D14, corrected by D22)
-6. **Bounded memory.** Dedupe cache, tombstones (recently unmounted registrations, used to distinguish `COMPONENT_UNMOUNTED` from `CAPABILITY_NOT_FOUND`), pending confirmations (`maxPendingConfirmations`), and observation queues are bounded LRU/TTL/cap structures with documented defaults. No runtime collection is unbounded.
+See [Core API](03-core-api.md#concurrency-timeouts-cancellation) for limits and cancellation behavior.
 
-## SSR, hydration, and environments
+## Environments
 
-- The registry is an in-memory, per-JS-realm object. On the server (SSR/RSC) the React hooks are inert: registration happens in effects, effects don't run during server rendering, so the server-side surface is empty and no cleanup is needed. Snapshot on a server-created registry simply returns an empty surface.
-- Hydration performs registrations in mount effects after hydration completes. There is no hydration mismatch risk because registration never renders anything.
-- Multiple browser tabs/windows each have their own registry; cross-window surface aggregation is **Future** ([Roadmap](project/12-roadmap.md)).
-- The registry accepts an `environment` (`"development" | "production" | "test"`): development enables strict validation errors, serializability probes, and loud collision diagnostics; production degrades the same conditions to safe rejections plus audit events.
+- The registry is in-memory and scoped to one JavaScript realm.
+- React registration happens in effects, so server rendering exposes no live surface.
+- Hydration registers capabilities after mount and does not affect rendered markup.
+- Tabs and windows have independent registries and authorities.
+- `development` enables detailed validation diagnostics. `production` safely rejects runtime collisions and records audit events.
 
-## Where responsibilities live
+## Responsibility boundaries
 
 | Concern | Library | Host application | Server |
 |---|---|---|---|
-| Declaring components/capabilities | primitives | authors them | — |
-| Surface catalog, versioning, staleness | ✅ | — | — |
-| view-action execution | dispatch + guarantees | handler logic | — |
-| domain execution | forwarding + binding + UX policy | oRPC client/executor wiring | ✅ authoritative |
-| AuthN/AuthZ | policy *interfaces* + context plumbing | provides auth context | ✅ authoritative |
-| Confirmation | protocol, evidence, expiry, audit | renders the dialog | optional second approval |
-| Rate limiting | advisory client-side policy | config | ✅ authoritative |
-| Audit | events + sink interface | persistent sink | ✅ authoritative for domain |
-| Agent loop / model calls | ❌ never | ✅ (or external agent) | ✅ (orpc-agent) |
-| Router, data fetching, design system | ❌ never | ✅ | — |
+| Static capability contract | compile and verify | author declarations | — |
+| Runtime component behavior | dispatch and lifecycle | handlers and state | — |
+| Catalog, versioning, staleness | enforce | — | — |
+| Domain execution | contextual forwarding | executor wiring | authoritative implementation |
+| Authentication and authorization | policy interfaces | provide browser context | authoritative enforcement |
+| Confirmation | evidence protocol | render and resolve UI | optional independent approval |
+| Rate limiting | bounded client controls | configure | authoritative enforcement |
+| Audit | events and sink interface | persist browser audit | persist domain audit |
+| Model and provider calls | — | own or integrate | own or integrate |
 
-## Bundle and performance budgets
+## Performance budgets
 
-`size-limit` enforces these in CI. The budget is the number CI fails on; the measurement is what the last release shipped.
+`size-limit` enforces these package budgets:
 
-| Entry | Measured (min+brotli) | Budget |
-|---|---|---|
+| Entry | Measured min+brotli | Budget |
+|---|---:|---:|
 | `@agent-surface/core` | 21.49 kB | 22 kB |
 | `@agent-surface/core/explain` | 1.42 kB | 2 kB |
 | `@agent-surface/react` | 1.84 kB | 4 kB |
 
-**A budget moves only in the PR whose feature moved it, and the PR says why.** Never as a side effect of unrelated work. D41 moves core to 22 kB for synchronous SHA-256, immutable authority validation and runtime semantic comparison; removing React's legacy/granular paths reduces its entry.
+Representative local `pnpm bench` results:
 
-Two kinds of bytes live in that number and they are not equally expensive. **Machinery** is paid once, at download. **Model-facing description text** — currently ~430 B of `core` — is re-billed in every request carrying the tool block, so it is trimmed first and to what is load-bearing: every description names where its value comes from and nothing else.
+| Operation | Mean |
+|---|---:|
+| create registry | ~1.5 µs |
+| register and unregister 100 components | ~1.6 ms |
+| snapshot 100 components with warm descriptor cache | ~0.16 ms |
+| build direct tools for 300 components | ~2.1 ms |
+| no-op action invocation | ~0.04 ms |
+| action invocation with two authorization policies | ~0.12 ms |
+| observation invocation | ~0.02 ms |
+| canonical request digest at ~32 kB input | ~1.9 ms |
 
-(The original ~10 kB aspiration predates the invocation pipeline, the confirmation store, and the toolset.)
-
-Runtime baselines from `pnpm bench` (`packages/core/bench/core.bench.ts`, Node 22, Apple-silicon dev machine, 2026-07-30). Machine-local reference points, not CI thresholds — directive §7.2 sets those once CI hardware baselines are stable.
-
-| Operation | mean |
-|---|---|
-| `createAgentSurfaceRegistry()` | ~1.5 µs |
-| register + unregister, 10 / 100 / 1000 components | ~0.17 ms / ~1.6 ms / ~17 ms |
-| `snapshot()` at 100 components (warm descriptor cache) | ~0.16 ms |
-| `buildDirectTools()` at 40 / 300 components | ~0.30 ms / ~2.1 ms |
-| action invoke end-to-end, no-op handler | ~0.04 ms |
-| action invoke + 2-policy authorize chain | ~0.12 ms |
-| observation invoke end-to-end | ~0.02 ms |
-| canonical digest (fingerprint) at ~32 kB input | ~1.9 ms |
-
-Reading the numbers: registration stays allocation-light through a route transition (100 registrations ≈ 1.5 ms, spread across commits); pipeline overhead without handler work is tens of microseconds; the request fingerprint is O(input size) — negligible for typical tool inputs, ~2 ms at the 32 kB ceiling (it runs once per invoke, phase 1). The toolset projection is linear in mounted components (7.5× the components ≈ 6–7× the time), which is the point of the D28-era instance-detection pre-pass — the previous per-component re-filter was O(n²) on a path a remote loop runs every step.
-
-- `snapshot()` is O(registrations) with cheap descriptor projection; descriptors are cached per registration and invalidated on version bump.
-- No polling anywhere: everything is event-driven.
+These are machine-local reference points, not CI thresholds. Snapshot and tool projection are linear in mounted registrations; descriptors are cached per registration and invalidated by structural change. The runtime uses events rather than polling.
