@@ -15,6 +15,9 @@ hero:
     - theme: alt
       text: Core API
       link: /03-core-api
+    - theme: alt
+      text: View on GitHub
+      link: https://github.com/Wiseair-srl/agent-surface
 
 features:
   - title: One source of truth
@@ -52,3 +55,7 @@ compiled declaration
 ```
 
 Runtime data can narrow the compiled surface but cannot add identities, effects, schemas, confirmation posture, or policy attachments. Unsupported registrations and tool exposure fail closed. See [Architecture](/02-architecture) for the full guarantee and its boundary.
+
+## Project
+
+Source, issues, and releases live on GitHub: [Wiseair-srl/agent-surface](https://github.com/Wiseair-srl/agent-surface). Packages are published to npm under `@agent-surface/*`, starting with [`@agent-surface/core`](https://www.npmjs.com/package/@agent-surface/core). Contributions start with [CONTRIBUTING.md](https://github.com/Wiseair-srl/agent-surface/blob/main/CONTRIBUTING.md); security reports go through [SECURITY.md](https://github.com/Wiseair-srl/agent-surface/blob/main/SECURITY.md).

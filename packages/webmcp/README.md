@@ -4,7 +4,7 @@
 
 WebMCP transport adapter for [agent-surface](https://github.com/Wiseair-srl/agent-surface): one wire-named tool per **available** capability, re-provided on every `surface-changed`. Unavailable capabilities are not registered (WebMCP has no disabled state today — the availability reason is lost on this transport; accepted limitation). The user agent is treated as the least-trusted consumer: scope the adapter and keep two-phase confirmations.
 
-Docs: https://agent-surface-docs.vercel.app
+Docs: https://agent-surface.dev
 
 ## Install
 
