@@ -2,6 +2,8 @@ import { defineConfig } from "vitepress";
 import { withMermaid } from "vitepress-plugin-mermaid";
 import { slug } from "github-slugger";
 
+const REPOSITORY = "https://github.com/Wiseair-srl/agent-surface";
+
 export default withMermaid(
   defineConfig({
     title: "agent-surface",
@@ -57,8 +59,14 @@ export default withMermaid(
       ],
       outline: { level: [2, 3], label: "On this page" },
       search: { provider: "local" },
+      socialLinks: [{ icon: "github", link: REPOSITORY }],
+      editLink: {
+        pattern: `${REPOSITORY}/edit/main/docs/:path`,
+        text: "Edit this page on GitHub",
+      },
       footer: {
-        message: "Compiler-authorized frontend capabilities for agents.",
+        message: `Compiler-authorized frontend capabilities for agents. <a href="${REPOSITORY}">Source on GitHub</a>.`,
+        copyright: "MIT © Paolo Barbato / Wiseair",
       },
     },
   }),
