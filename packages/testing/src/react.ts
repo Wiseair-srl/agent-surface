@@ -26,6 +26,10 @@ interface CapturedRenderFailure {
   componentStack?: string;
 }
 
+interface ReactCaughtErrorInfo {
+  componentStack?: string | null;
+}
+
 interface RenderFailureBoundaryProps {
   children: ReactNode;
   onError(error: unknown, componentStack?: string): void;
@@ -106,8 +110,9 @@ export async function renderAgentSurface(
         // React 19 calls this with the same original error and component stack
         // the boundary sees. Supplying it also prevents React's default stderr
         // dump; React 18 ignores the unknown root option and uses componentDidCatch.
-        onCaughtError: (error, info) => capture(error, info.componentStack),
-      } as Parameters<typeof render>[1]);
+        onCaughtError: (error: unknown, info: ReactCaughtErrorInfo) =>
+          capture(error, info.componentStack),
+      } as unknown as Parameters<typeof render>[1]);
     });
     // React can defer passive-effect failures until the next act turn. Keep
     // that turn inside the boundary's capture window rather than returning a
