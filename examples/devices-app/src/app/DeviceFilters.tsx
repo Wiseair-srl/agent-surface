@@ -1,6 +1,6 @@
-import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
-import { FiltersPatchSchema, FiltersStateSchema, type FiltersStateT } from "../schemas.js";
+import type { FiltersStateT } from "../schemas.js";
+import { deviceFiltersContract } from "../agent/contracts.js";
 import { Search, X } from "./Icons.js";
 import { Select } from "./Select.js";
 
@@ -20,27 +20,17 @@ export function DeviceFilters(props: {
   const { filters, onChange } = props;
   const dirty = filters.status !== "all" || Boolean(filters.city);
 
-  useAgentComponent({
-    type: "devices.filters",
+  useAgentComponent(deviceFiltersContract, {
     ...(props.instance ? { instanceId: props.instance } : {}),
-    description: "Status and city filters applied to the devices table",
     observations: {
-      read: observation({
-        description: "Currently active filters",
-        output: FiltersStateSchema,
+      read: {
         read: () => filters,
-      }),
+      },
     },
     actions: {
-      set: action({
-        description:
-          "Update one or both filters; omitted fields are unchanged. " +
-          "The table refreshes through the app's normal data fetching.",
-        input: FiltersPatchSchema,
-        effect: "local-state",
-        idempotent: true,
+      set: {
         execute: (patch) => onChange({ ...filters, ...patch }),
-      }),
+      },
     },
   });
 

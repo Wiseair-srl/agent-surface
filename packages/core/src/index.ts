@@ -138,3 +138,37 @@ export { createAgentToolset } from "./toolset.js";
 export type { AgentToolset, AgentToolsetOptions, AgentTool } from "./toolset.js";
 
 export { jsonDeepEqual } from "./utils.js";
+
+export {
+  CAPABILITY_CONTRACT_FORMAT_VERSION,
+  COMPILED_CAPABILITY_PROVENANCE,
+  observationContract,
+  actionContract,
+  defineAgentComponentContract,
+  defineAgentProcedureContract,
+  defineExternalAgentToolContract,
+  compiledCapabilityToken,
+  tryCompiledCapabilityToken,
+  assertDefinitionInManifest,
+  createAgentExposureGateway,
+} from "./contract.js";
+export type {
+  CapabilityContractKind,
+  CapabilityPolicyAttachment,
+  CapabilityContractEntry,
+  ExternalCapabilityContractDigest,
+  CapabilityContractManifest,
+  CompiledCapabilityToken,
+  CompiledComponentProvenance,
+  AgentObservationContract,
+  AgentActionContract,
+  AgentComponentContractDefinition,
+  AgentComponentRuntimeBindings,
+  AgentComponentContract,
+  ExternalAgentToolContractDefinition,
+  AgentProcedureContractDefinition,
+  AgentProcedureContract,
+  CompiledExternalAgentTool,
+  ExternalAgentToolContract,
+  AgentExposureGateway,
+} from "./contract.js";

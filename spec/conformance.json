@@ -894,228 +894,249 @@
       "title": "The rendered inspect view contains every capability the snapshot contains",
       "source": "20-cli.md#inspect",
       "decision": "D33",
-      "tests": [
-        "packages/cli/test/view-model.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-002": {
       "title": "Exit codes are 0 clean, 1 a finding, 2 the command could not run \u2014 and check is the only command that fails on a finding",
       "source": "20-cli.md#check",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts",
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-003": {
       "title": "Piped, --plain, CI and NO_COLOR output is plain text and byte-stable across runs",
       "source": "20-cli.md#output-modes",
       "decision": "D33",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-004": {
       "title": "stdout carries only the command's output, so --json parses whatever the mounted app logs",
       "source": "20-cli.md#output-modes",
       "decision": "D33",
-      "tests": [
-        "packages/cli/test/bin-process.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-005": {
       "title": "The command exits even when the mounted app leaves the event loop busy, naming the held handles",
       "source": "20-cli.md#exiting",
       "decision": "D33",
-      "tests": [
-        "packages/cli/test/bin-process.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-006": {
       "title": "Registrations rejected during a mount appear in inspect output and JSON, and fail check",
       "source": "20-cli.md#inspect",
       "decision": "D37",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-007": {
       "title": "Counts are never printed without their qualifier: the scenario, any active scope, and the hidden capabilities themselves",
       "source": "20-cli.md#inspect",
       "decision": "D37",
-      "tests": [
-        "packages/cli/test/cli.test.ts",
-        "packages/cli/test/view-model.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-008": {
       "title": "--depth selects which halves are computed, and every command reports which ones it did not",
       "source": "20-cli.md#depth",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts",
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-009": {
       "title": "One normalized, deterministic scenario report feeds JSON, baselines and check; it always includes hidden capabilities while detail adds attribution only",
       "source": "20-cli.md#output-modes",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-010": {
       "title": "Committed baselines include a scenario manifest; removed and stale scenarios fail check; unread baseline data exits 2; scenario names cannot escape baselineDir",
       "source": "20-cli.md#check",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-011": {
       "title": "Full depth consumes an authoritative oRPC manifest as the domain denominator and applies effective config or CLI scope to every plane",
       "source": "20-cli.md#the-verdict",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-012": {
       "title": "Human output leads with a verdict, groups complete static results compactly, and reserves raw origins and non-gating inventories for --detail",
       "source": "20-cli.md#output-modes",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts",
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-013": {
       "title": "A report opens with the run it describes and the summary it produced \u2014 the catalog, the per-scenario tables and every other detail follow it",
       "source": "20-cli.md#summaries-first-details-after",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-CLI-014": {
       "title": "Every command renders one report model through one presenter: the same blocks, findings and label grid, drawn by the terminal UI or by plain text per stream",
       "source": "20-cli.md#one-report-one-look",
       "decision": "D39",
-      "tests": [
-        "packages/cli/test/cli.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-001": {
       "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
       "source": "20-cli.md#the-catalog---depth-static",
       "decision": "D35",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-002": {
       "title": "A registration the extractor cannot fully enumerate is emitted with resolution \"unresolved\" and an origin \u2014 never absent from both the catalog and the unread list",
       "source": "20-cli.md#the-catalog---depth-static",
       "decision": "D35",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-003": {
       "title": "check exits non-zero when any call site is unread and --allow-unresolved was not passed",
       "source": "20-cli.md#check",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-004": {
       "title": "A policy-hidden capability is classified reached, because a scenario mounted it",
       "source": "20-cli.md#the-verdict",
       "decision": "D36",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-005": {
       "title": "Coverage exit codes mirror AS-CLI-002, and a stale allowlist entry fails the command",
       "source": "20-cli.md#the-allowlist-ratchet",
       "decision": "D36",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-006": {
       "title": "The static catalog is never reachable from the agent-facing package root",
       "source": "project/21-surface-coverage-rfc.md#what-this-rfc-does-not-change",
       "decision": "D35",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-007": {
       "title": "The authored-minus-reached gap reaches inspect, snapshot and check; a scope filters the catalog by the same predicate as the mount; and a scenario that did not mount yields no verdict at all",
       "source": "20-cli.md#the-verdict",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-008": {
       "title": "An unread call site can be accepted per semantic site via unresolved-allow.json; a second site in the same file/reason class needs its own entry, and stale entries fail",
       "source": "20-cli.md#the-allowlist-ratchet",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-009": {
       "title": "A registration whose type is a parameter resolves from its wrapper's call sites when they pass string literals; a same-named function elsewhere is never attributed, and unresolved call sites are still reported",
       "source": "20-cli.md#a-wrapper-hook-resolves-one-hop-up",
       "decision": "D38",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-010": {
       "title": "A registration is identified through its import binding, so an aliased or namespaced hook is read; a binding the extractor cannot follow is reported unread with a stable reason, and a same-named local function is never attributed",
       "source": "20-cli.md#a-rename-is-still-the-same-hook",
       "decision": "D35",
-      "tests": [
-        "packages/cli/test/coverage.test.ts"
-      ],
-      "status": "implemented"
+      "status": "deprecated"
     },
     "AS-COVER-011": {
       "title": "A capability every scenario mounted and none could call is reported by inspect, apart from the gate, and never fails the build",
       "source": "20-cli.md#mounted-and-callable-in-nothing",
       "decision": "D36",
+      "status": "deprecated"
+    },
+    "AS-COMPILER-001": {
+      "title": "The compiler consumes production static/lazy chunks and virtual modules; aliases resolve by imported compiler-macro identity",
+      "source": "02-architecture.md#compiler-generated-contract-d40",
+      "decision": "D40",
       "tests": [
-        "packages/cli/test/cli.test.ts"
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COMPILER-002": {
+      "title": "Canonical manifests are byte-identical across checkout paths and contain no runtime volatility",
+      "source": "20-cli.md#artifact",
+      "decision": "D40",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COMPILER-003": {
+      "title": "A second declaration of an existing capability id remains a distinct reviewable declaration",
+      "source": "20-cli.md#artifact",
+      "decision": "D40",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-COMPILER-004": {
+      "title": "Dynamic or non-serializable contract construction fails compilation; there is no unresolved bucket",
+      "source": "20-cli.md#snapshot",
+      "decision": "D40",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONTRACT-001": {
+      "title": "Every strict runtime registration requires compiler provenance matching the running manifest",
+      "source": "03-core-api.md#contract-and-binding-split-d40",
+      "decision": "D40",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONTRACT-002": {
+      "title": "Compiler manifest, declaration and contract hashes bind static identity to runtime handlers",
+      "source": "02-architecture.md#compiler-generated-contract-d40",
+      "decision": "D40",
+      "tests": [
+        "packages/compiler/test/compiler.test.ts",
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONTRACT-003": {
+      "title": "Raw or unknown capabilities cannot widen a strict registry after build",
+      "source": "03-core-api.md#contract-and-binding-split-d40",
+      "decision": "D40",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CONTRACT-004": {
+      "title": "Stale manifest hashes and mismatched contract hashes fail closed",
+      "source": "03-core-api.md#contract-and-binding-split-d40",
+      "decision": "D40",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-EXPOSURE-001": {
+      "title": "The final provider/MCP exposure gateway rejects tools without matching compiler provenance",
+      "source": "09-adapters.md",
+      "decision": "D40",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-015": {
+      "title": "check separates current source/snapshot integrity from snapshot/base PR drift and classifies every structural change",
+      "source": "20-cli.md#check",
+      "decision": "D40",
+      "tests": [
+        "packages/cli/test/contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-CLI-016": {
+      "title": "Canonical machine, human, Markdown and GitHub output derive from one diff model",
+      "source": "20-cli.md#output",
+      "decision": "D40",
+      "tests": [
+        "packages/cli/test/contract.test.ts"
       ],
       "status": "implemented"
     }

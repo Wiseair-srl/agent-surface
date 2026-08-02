@@ -1,5 +1,7 @@
 # 09 — Adapters and Interoperability
 
+> **D40 exposure boundary:** supported provider/MCP assembly passes compiled tools through `createAgentExposureGateway(manifest)`. Raw appended tools are rejected. Registry-backed adapters inherit the same guarantee because strict registration already verified provenance.
+
 > [!NOTE]
 > **Status:** adapter contract and embedded toolset **Draft**; meta-tools mode and WebMCP adapter **Experimental**; MCP bridge and Playwright fallback **Future**. The core model never depends on any protocol here — adapters are replaceable skins over the registry, and the library must stay valuable if any given protocol (WebMCP included) changes or fades.
 

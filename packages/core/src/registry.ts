@@ -30,6 +30,8 @@ import {
 import { AgentSurfaceDefinitionError } from "./errors.js";
 import { formatViewCapabilityId } from "./ids.js";
 import { randomBase62 } from "./utils.js";
+import type { CapabilityContractManifest } from "./contract.js";
+import { assertDefinitionInManifest } from "./contract.js";
 
 export interface RegistrationCandidate {
   definition: AgentComponentDefinition; // includes origin (default "first-party")
@@ -56,6 +58,8 @@ export interface RegistryOptions {
   limits?: Partial<AgentSurfaceLimits>;
   /** Injectable clock (docs/08 determinism); default Date.now. */
   now?: () => number;
+  /** Compiler-generated runtime ceiling. When present, raw/stale bindings fail closed. */
+  manifest?: CapabilityContractManifest;
 }
 
 export interface AgentRegistrationHandle {
@@ -253,6 +257,8 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
 
     register(definition: AgentComponentDefinition): AgentRegistrationHandle {
       if (internals.disposed) throw new Error("register() called on a disposed registry");
+
+      if (options?.manifest) assertDefinitionInManifest(definition, options.manifest);
 
       // Structural defects throw in EVERY environment (docs/03 §registry, D4).
       validateComponentDefinition(definition, limits, {

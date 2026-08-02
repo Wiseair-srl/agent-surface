@@ -1,5 +1,9 @@
 # 12 — Roadmap
 
+## v0.16 — compiler contract (D40)
+
+Issue #45 replaces D35–D39's observer architecture with `@agent-surface/compiler`: production-graph inventory, canonical committed contract, runtime provenance ceiling, audited external-tool gateway, and source/snapshot/base CLI diff. Scenario mounts, heuristic extraction, depths, scopes, coverage joins, runtime baselines and allowlists are removed.
+
 > [!NOTE]
 > **Status:** planning document, not a commitment. Versions are pre-1.0: minor versions may break APIs labeled Draft, and WILL break APIs labeled Experimental. Every release documents breaking changes; the spec in `docs/` is updated in the same PR as the code that changes behavior.
 

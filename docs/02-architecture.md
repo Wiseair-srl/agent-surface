@@ -1,5 +1,17 @@
 # 02 — Architecture
 
+## Compiler-generated contract (D40)
+
+```text
+production entrypoints + lazy/virtual modules + pinned sidecars
+  → @agent-surface/compiler
+  → canonical manifest + embedded provenance
+  → registry / exposure gateway
+  → agent
+```
+
+The compiler consumes Vite's resolved production graph, not tsconfig globs. It emits `completeness: proven` or fails. The registry verifies manifest, declaration and contract hashes before accepting strict bindings. Runtime state can narrow a compiled inventory; it cannot widen it. The CLI diffs the same artifact and never mounts the application.
+
 > [!NOTE]
 > **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [Concepts](01-concepts.md); APIs in [Core API](03-core-api.md)–[oRPC integration](05-orpc-integration.md).
 

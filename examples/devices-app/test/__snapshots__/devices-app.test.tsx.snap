@@ -13,7 +13,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "navigation",
           "idempotent": false,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "page": {
@@ -22,7 +21,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "comparison",
                   "reports",
                 ],
-                "type": "string",
               },
             },
             "required": [
@@ -43,7 +41,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "description": "Current page",
           "name": "current",
           "outputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "page": {
@@ -52,7 +49,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "comparison",
                   "reports",
                 ],
-                "type": "string",
               },
             },
             "required": [
@@ -75,7 +71,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "local-state",
           "idempotent": false,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "deviceId": {
@@ -98,7 +93,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "local-state",
           "idempotent": false,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {},
             "type": "object",
@@ -117,7 +111,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "description": "Whether the drawer is open and for which device",
           "name": "state",
           "outputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "deviceId": {
@@ -155,9 +148,7 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "local-state",
           "idempotent": true,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
-            "description": "Fields omitted are left unchanged",
             "properties": {
               "city": {
                 "anyOf": [
@@ -168,7 +159,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                     "type": "null",
                   },
                 ],
-                "description": "Exact city name filter, null = all cities",
               },
               "status": {
                 "enum": [
@@ -176,7 +166,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "online",
                   "offline",
                 ],
-                "type": "string",
               },
             },
             "type": "object",
@@ -194,7 +183,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "description": "Currently active filters",
           "name": "read",
           "outputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "city": {
@@ -206,7 +194,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                     "type": "null",
                   },
                 ],
-                "description": "Exact city name filter, null = all cities",
               },
               "status": {
                 "enum": [
@@ -214,7 +201,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "online",
                   "offline",
                 ],
-                "type": "string",
               },
             },
             "required": [
@@ -238,11 +224,9 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "local-state",
           "idempotent": false,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "ids": {
-                "description": "Device ids to select",
                 "items": {
                   "type": "string",
                 },
@@ -256,12 +240,10 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "add",
                   "remove",
                 ],
-                "type": "string",
               },
             },
             "required": [
               "ids",
-              "mode",
             ],
             "type": "object",
           },
@@ -276,7 +258,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "effect": "local-state",
           "idempotent": true,
           "inputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "by": {
@@ -285,14 +266,12 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                   "status",
                   "city",
                 ],
-                "type": "string",
               },
               "dir": {
                 "enum": [
                   "asc",
                   "desc",
                 ],
-                "type": "string",
               },
             },
             "required": [
@@ -314,7 +293,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
           "description": "Visible rows, current selection, current sorting",
           "name": "readState",
           "outputSchema": {
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
             "additionalProperties": false,
             "properties": {
               "selectedIds": {
@@ -332,14 +310,12 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                       "status",
                       "city",
                     ],
-                    "type": "string",
                   },
                   "dir": {
                     "enum": [
                       "asc",
                       "desc",
                     ],
-                    "type": "string",
                   },
                 },
                 "required": [
@@ -349,7 +325,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                 "type": "object",
               },
               "visibleRows": {
-                "description": "Rows currently rendered under the active filters",
                 "items": {
                   "additionalProperties": false,
                   "properties": {
@@ -368,7 +343,6 @@ exports[`the devices page exposes exactly the documented surface (docs/10) > exp
                         "offline",
                         "disabled",
                       ],
-                      "type": "string",
                     },
                   },
                   "required": [

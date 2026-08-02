@@ -1,5 +1,7 @@
 # devices-app example
 
+Production reach is compiled from [`src/agent/contracts.ts`](src/agent/contracts.ts) through Vite and committed as [`.agent-surface/contract.json`](.agent-surface/contract.json). Runtime tests verify behavior; they are not repository inventory.
+
 The [docs/10](../../docs/10-examples.md) devices page, end to end: status/city filters, a multi-select sortable table, a detail drawer, top-level navigation, a confirmation host, and a "Disable" flow backed by the mock authoritative backend through `domain:devices.disable` — bound to the live selection, locked, and gated by user confirmation.
 
 This example is the acceptance artifact for the spec (docs/14 M10):

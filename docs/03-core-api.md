@@ -1,5 +1,11 @@
 # 03 — Core API (`@agent-surface/core`)
 
+## Contract and binding split (D40)
+
+`defineAgentComponentContract`, `observationContract`, `actionContract`, and `defineAgentProcedureContract` declare static identity/governance. `.bind()` supplies runtime handlers/state. `createAgentSurfaceRegistry({ manifest })` rejects raw, unknown, stale, incomplete, or hash-mismatched bindings. `defineExternalAgentToolContract` plus `createAgentExposureGateway(manifest)` applies the same ceiling at provider/MCP assembly.
+
+The historical `defineAgentComponent`/raw `register` seam remains for internal tests only when no manifest is installed. It makes no production completeness claim.
+
 > [!NOTE]
 > **Status: Draft** unless marked otherwise. Every type here is public API and every signature is normative: an implementation MUST NOT change one incompatibly without a spec change. `D…` references resolve in the [decision log](project/13-open-questions.md).
 

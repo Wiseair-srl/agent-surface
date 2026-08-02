@@ -2,22 +2,30 @@
 import { act, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createAgentToolset } from "@agent-surface/core";
-import { mountScenario } from "@agent-surface/cli/vitest";
 import { matchers } from "@agent-surface/testing/matchers";
+import { renderAgentSurface } from "@agent-surface/testing/react";
 import { runDevicesScenario } from "../src/agent/scripted-agent.js";
-import surfaceConfig from "../agent-surface.config.js";
+import { createApp } from "../src/agent/setup.js";
+import { App } from "../src/app/App.js";
 
 expect.extend(matchers);
 
 /**
- * The scenarios come from `agent-surface.config.tsx` — the same file
- * `agent-surface inspect` and `agent-surface check` read. This suite used to
- * build the app a second way, which meant "signed-in operator on /devices"
- * existed twice and could drift; now there is one definition and three
- * consumers of it.
+ * Runtime behavior stays an application-test concern. Repository inventory is
+ * compiled from the production graph; this harness mounts production wiring.
  */
 async function renderApp(scenario: "admin" | "anonymous" = "admin") {
-  const { surface, app: wiring } = await mountScenario(surfaceConfig, scenario);
+  const wiring = createApp({
+    environment: "test",
+    user:
+      scenario === "admin"
+        ? { id: "u_admin", permissions: ["devices:read", "devices:write"] }
+        : null,
+  });
+  const surface = await renderAgentSurface(<App app={wiring} agentConsole={false} />, {
+    registry: wiring.registry,
+    consumer: { id: "test", kind: "test" },
+  });
   return { wiring, surface };
 }
 

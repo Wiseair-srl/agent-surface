@@ -1,6 +1,6 @@
-import { observation, action } from "@agent-surface/core";
 import { useAgentComponent } from "@agent-surface/react";
-import { GoToSchema, RouteStateSchema, type PageT } from "../schemas.js";
+import type { PageT } from "../schemas.js";
+import { navigationContract } from "../agent/contracts.js";
 
 const LABELS: Record<PageT, string> = {
   devices: "Devices",
@@ -11,23 +11,16 @@ const LABELS: Record<PageT, string> = {
 /** The router stays the app's; navigation is just another capability.
  *  Enum-of-known-pages beats free-form paths (docs/10). */
 export function AgentNavigation(props: { page: PageT; onNavigate: (page: PageT) => void }) {
-  useAgentComponent({
-    type: "app.navigation",
-    description: "Top-level navigation between application pages",
+  useAgentComponent(navigationContract, {
     observations: {
-      current: observation({
-        description: "Current page",
-        output: RouteStateSchema,
+      current: {
         read: () => ({ page: props.page }),
-      }),
+      },
     },
     actions: {
-      goTo: action({
-        description: "Navigate to a known application page",
-        input: GoToSchema,
-        effect: "navigation",
+      goTo: {
         execute: ({ page }) => props.onNavigate(page),
-      }),
+      },
     },
   });
 
