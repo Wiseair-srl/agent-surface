@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { COMPILED_CAPABILITY_PROVENANCE } from "@agent-surface/core";
+import { deriveAgentComponentBinding } from "@agent-surface/core";
 import type {
   AgentActionContext,
   AgentActionDefinition,
@@ -44,22 +44,18 @@ export function useAgentComponent<
 >(
   contract: AgentComponentContract<TObservations, TActions>,
   bindings: AgentComponentRuntimeBindings<TObservations, TActions>,
-): AgentComponentHandle;
-/** @deprecated Use a compiler-generated contract plus runtime bindings. */
-export function useAgentComponent(config: UseAgentComponentConfig): AgentComponentHandle;
-export function useAgentComponent<
-  TObservations extends Record<string, any>,
-  TActions extends Record<string, any>,
->(
-  contractOrConfig: AgentComponentContract<TObservations, TActions> | UseAgentComponentConfig,
-  runtimeBindings?: AgentComponentRuntimeBindings<TObservations, TActions>,
 ): AgentComponentHandle {
-  const config: UseAgentComponentConfig =
-    "kind" in contractOrConfig && contractOrConfig.kind === "agent-component-contract"
-      ? contractOrConfig.bind(
-          (runtimeBindings ?? {}) as AgentComponentRuntimeBindings<TObservations, TActions>,
-        ) as UseAgentComponentConfig
-      : contractOrConfig;
+  return useAgentComponentDefinition(contract.bind(bindings));
+}
+
+/** @internal Repository test seam. Not exported from the package root. */
+export function useUnsafeAgentComponent(config: UseAgentComponentConfig): AgentComponentHandle {
+  return useAgentComponentDefinition(config);
+}
+
+function useAgentComponentDefinition(
+  config: UseAgentComponentConfig,
+): AgentComponentHandle {
   const registry = useAgentSurface();
   const type = config.type;
   const instanceId = config.instanceId ?? "default";
@@ -211,16 +207,7 @@ function buildDelegatingDefinition(latest: LatestRef): AgentComponentDefinition 
     ...(Object.keys(observations).length > 0 ? { observations } : {}),
     ...(Object.keys(actions).length > 0 ? { actions } : {}),
   };
-  const provenance = (cfg as UseAgentComponentConfig & {
-    [COMPILED_CAPABILITY_PROVENANCE]?: unknown;
-  })[COMPILED_CAPABILITY_PROVENANCE];
-  if (provenance) {
-    Object.defineProperty(definition, COMPILED_CAPABILITY_PROVENANCE, {
-      value: provenance,
-      enumerable: false,
-    });
-  }
-  return definition;
+  return deriveAgentComponentBinding(cfg, definition);
 }
 
 function evaluateReason(

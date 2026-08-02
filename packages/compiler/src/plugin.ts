@@ -10,7 +10,7 @@ import type { Plugin } from "vite";
 import { canonicalManifestJson, computeManifestHash, sha256, verifyManifest } from "./canonical.js";
 import { extractModule } from "./extract.js";
 
-export const COMPILER_VERSION = "0.16.0";
+export const COMPILER_VERSION = "0.17.0";
 export const CONTRACT_FILE = "agent-surface.contract.json";
 export const VIRTUAL_CONTRACT_ID = "virtual:agent-surface-contract";
 const RESOLVED_VIRTUAL_CONTRACT_ID = `\0${VIRTUAL_CONTRACT_ID}`;
@@ -113,7 +113,10 @@ export function agentSurface(options: AgentSurfaceCompilerOptions = {}): Plugin 
     },
     load(id) {
       if (id !== RESOLVED_VIRTUAL_CONTRACT_ID) return null;
-      return `export default ${manifestPlaceholder};`;
+      return `import { createCapabilityAuthority } from "@agent-surface/core";
+const manifest = ${manifestPlaceholder};
+export { manifest };
+export default createCapabilityAuthority(manifest);`;
     },
     buildStart() {
       entries = [];
@@ -172,7 +175,7 @@ export function agentSurface(options: AgentSurfaceCompilerOptions = {}): Plugin 
       validateEntries(capabilities);
       const targets = [...new Set(capabilities.flatMap((entry) => entry.targets))].sort();
       const payload = {
-        formatVersion: 3 as const,
+        formatVersion: 4 as const,
         compilerVersion: COMPILER_VERSION,
         targets,
         capabilities,

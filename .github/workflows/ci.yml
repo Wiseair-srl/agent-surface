@@ -74,11 +74,18 @@ jobs:
           mkdir -p /tmp/esm-smoke && cd /tmp/esm-smoke
           echo '{"name":"esm-smoke","type":"module","private":true}' > package.json
           node --input-type=module -e "
+            const { readFileSync } = await import('node:fs');
             const core = await import('$GITHUB_WORKSPACE/packages/core/dist/index.js');
             if (typeof core.createAgentSurfaceRegistry !== 'function') {
               throw new Error('core ESM entry did not export createAgentSurfaceRegistry');
             }
-            const registry = core.createAgentSurfaceRegistry({ environment: 'test' });
+            let rejected = false;
+            try { core.createAgentSurfaceRegistry({ environment: 'test' }); }
+            catch { rejected = true; }
+            if (!rejected) throw new Error('registry accepted missing authority');
+            const manifest = JSON.parse(readFileSync('$GITHUB_WORKSPACE/examples/devices-app/.agent-surface/contract.json', 'utf8'));
+            const authority = core.createCapabilityAuthority(manifest);
+            const registry = core.createAgentSurfaceRegistry({ environment: 'test', authority });
             const snapshot = registry.snapshot({ consumer: { id: 'smoke', kind: 'embedded' } });
             if (!Array.isArray(snapshot.components)) throw new Error('snapshot shape broken');
             console.log('ESM smoke OK');

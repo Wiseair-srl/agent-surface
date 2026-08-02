@@ -1,5 +1,9 @@
 # 12 — Roadmap
 
+## v0.17 — mandatory capability authority (D41)
+
+The D40 contract becomes technically mandatory: format-v4 verified/frozen authority, private compiler proof, semantic registration checks, contract-only React/oRPC paths, registry-owned WebMCP execution and authority-gated external tools. The source-only repository test seam is not published.
+
 ## v0.16 — compiler contract (D40)
 
 Issue #45 replaces D35–D39's observer architecture with `@agent-surface/compiler`: production-graph inventory, canonical committed contract, runtime provenance ceiling, audited external-tool gateway, and source/snapshot/base CLI diff. Scenario mounts, heuristic extraction, depths, scopes, coverage joins, runtime baselines and allowlists are removed.

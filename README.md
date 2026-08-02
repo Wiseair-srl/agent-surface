@@ -6,15 +6,17 @@ The repository contract is compiler-generated from the real production module gr
 
 ## Core invariant
 
-Every supported exposed tool carries compiler provenance:
+Every supported exposed tool crosses one authority path:
 
 ```text
 token.manifestHash == runningManifest.hash
 token.declarationId exists in runningManifest
 token.contractHash matches runningManifest
+runtime semantics match the declared contract
+proof is present in a private WeakMap
 ```
 
-Unknown, raw, stale or mismatched registrations fail closed when the manifest is installed. Provider/MCP tools pass through the same audited exposure gateway.
+Unknown, raw, stale or mismatched registrations fail closed. A registry cannot be created without the compiler authority; provider/MCP tools use the same authority boundary.
 
 ## Quick start
 
@@ -68,13 +70,13 @@ function Counter() {
 }
 ```
 
-Install the generated manifest at the production composition root:
+Install the generated authority at the composition root:
 
 ```ts
-import manifest from "virtual:agent-surface-contract";
+import authority from "virtual:agent-surface-contract";
 import { createAgentSurfaceRegistry } from "@agent-surface/core";
 
-const registry = createAgentSurfaceRegistry({ manifest });
+const registry = createAgentSurfaceRegistry({ authority });
 ```
 
 Then commit the canonical review artifact:

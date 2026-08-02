@@ -3,7 +3,8 @@ import { StrictMode, useState } from "react";
 import { act } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { action, fromJsonSchema, observation } from "@agent-surface/core";
-import { useAgentComponent, usePendingConfirmations } from "@agent-surface/react";
+import { usePendingConfirmations } from "@agent-surface/react";
+import { useUnsafeAgentComponent } from "../src/use-agent-component.js";
 import { renderAgentSurface } from "@agent-surface/testing/react";
 import { matchers } from "@agent-surface/testing/matchers";
 import { DevicesTable } from "./fixtures.js";
@@ -75,7 +76,7 @@ describe("useAgentComponent lifecycle (docs/04)", () => {
   it("handler freshness (D3): handlers see current state without re-registration", async () => {
     function Counter() {
       const [count, setCount] = useState(0);
-      useAgentComponent({
+      useUnsafeAgentComponent({
         type: "widget.counter",
         description: "Counter",
         observations: {
@@ -131,7 +132,7 @@ describe("useAgentComponent lifecycle (docs/04)", () => {
 
   it("enabled: false ⇒ visible-disabled (mounted but not presented)", async () => {
     function Tab(props: { active: boolean }) {
-      useAgentComponent({
+      useUnsafeAgentComponent({
         type: "widget.tab",
         description: "Tab content",
         enabled: props.active,
@@ -185,7 +186,7 @@ describe("useAgentComponent lifecycle (docs/04)", () => {
   it("structural config change on a live registration logs and re-registers (D2)", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     function Mutating(props: { description: string }) {
-      useAgentComponent({
+      useUnsafeAgentComponent({
         type: "widget.mutating",
         description: props.description,
         actions: {
@@ -213,7 +214,7 @@ describe("useAgentComponent lifecycle (docs/04)", () => {
 
   it("unmount mid-invoke through real React settles COMPONENT_UNMOUNTED", async () => {
     function Hanging() {
-      useAgentComponent({
+      useUnsafeAgentComponent({
         type: "widget.hanging",
         description: "hangs",
         actions: {
@@ -240,7 +241,7 @@ describe("useAgentComponent lifecycle (docs/04)", () => {
 describe("usePendingConfirmations (docs/04)", () => {
   it("renders pending confirmations reactively; approve resolves the evidence", async () => {
     function Guarded() {
-      useAgentComponent({
+      useUnsafeAgentComponent({
         type: "widget.guarded",
         description: "guarded",
         actions: {

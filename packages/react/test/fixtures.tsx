@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { action, fromJsonSchema, observation, type JsonValue } from "@agent-surface/core";
-import { useAgentComponent } from "@agent-surface/react";
+import { useUnsafeAgentComponent } from "../src/use-agent-component.js";
 
 export const TableStateSchema = fromJsonSchema<JsonValue>({
   type: "object",
@@ -28,7 +28,7 @@ export const ROWS = [
 
 export function DevicesTable(props: { instance?: string; onSelection?: (ids: string[]) => void }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  useAgentComponent({
+  useUnsafeAgentComponent({
     type: "devices.table",
     ...(props.instance ? { instanceId: props.instance } : {}),
     description: "Table of devices matching the active filters",

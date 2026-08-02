@@ -8,5 +8,4 @@ export type {
   ClientTree,
 } from "./bridge.js";
 
-export { bindAgentProcedure, reduceInputSchema } from "./binding.js";
 export type { AgentProcedureBindingConfig } from "./binding.js";

@@ -5,11 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   action,
   createAgentSurfaceRegistry,
+  defineAgentProcedureContract,
   fromJsonSchema,
   observation,
   type JsonValue,
 } from "@agent-surface/core";
-import { useAgentComponent } from "@agent-surface/react";
+import { useUnsafeAgentComponent } from "../../react/src/use-agent-component.js";
 import { createOrpcAgentBridge, type OrpcAgentManifest } from "@agent-surface/orpc";
 import { useAgentProcedure } from "@agent-surface/orpc/react";
 import { renderAgentSurface } from "@agent-surface/testing/react";
@@ -17,10 +18,10 @@ import { matchers } from "@agent-surface/testing/matchers";
 
 expect.extend(matchers);
 
-interface DisableInput {
+type DisableInput = {
   deviceIds: string[];
   reason?: string;
-}
+};
 
 const manifest: OrpcAgentManifest = {
   tools: {
@@ -46,6 +47,13 @@ const ROWS = [
   { id: "d3", status: "online", city: "Roma" },
 ];
 
+const disableContract = defineAgentProcedureContract<DisableInput, { disabled: number }>({
+  id: "domain:devices.disable",
+  description: "Disable the given devices",
+  input: fromJsonSchema<DisableInput>(manifest.tools["devices.disable"]!.inputSchema),
+  effect: "destructive",
+});
+
 /** Mirrors the docs/10 setup: registry + bridge wired BEFORE any rendering. */
 function makeApp(log: Array<{ input: unknown }> = []) {
   const bridge = createOrpcAgentBridge({
@@ -67,7 +75,7 @@ function makeApp(log: Array<{ input: unknown }> = []) {
 function DevicesPage(props: { bridge: ReturnType<typeof makeApp>["bridge"] }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useAgentComponent({
+  useUnsafeAgentComponent({
     type: "devices.table",
     description: "Table of devices matching the active filters",
     observations: {
@@ -92,7 +100,7 @@ function DevicesPage(props: { bridge: ReturnType<typeof makeApp>["bridge"] }) {
     },
   });
 
-  useAgentProcedure(props.bridge.refs.devices.disable, {
+  useAgentProcedure(disableContract, props.bridge.refs.devices.disable, {
     when: () => selectedIds.length > 0,
     unavailableReason: "Select at least one device first",
     bind: () => ({ deviceIds: selectedIds }),
@@ -171,10 +179,10 @@ describe("useAgentProcedure (docs/05, docs/10 scenario)", () => {
       description: "not exposed by the manifest",
       inputSchema: { type: "object" },
       effect: "destructive" as const,
-      call: async () => ({}),
+      call: async () => ({ disabled: 0 }),
     };
     function Page() {
-      useAgentProcedure(fakeRef, {});
+      useAgentProcedure(disableContract, fakeRef, {});
       return null;
     }
     const surface = await renderAgentSurface(<Page />, { registry });

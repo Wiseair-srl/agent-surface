@@ -21,7 +21,7 @@ The contract owns type, descriptions, schemas, effects, confirmation, tags and p
 
 Registration still occurs in an effect and handlers use latest refs. Strict Mode, remounts, stale references, availability pushes and cleanup retain the lifecycle guarantees documented in [Core](03-core-api.md).
 
-Inline object registration and granular capability hooks are outside the compiled architecture. A production compiler build rejects them. Tests may use legacy raw definitions only when no runtime manifest is installed; that mode makes no repository-completeness claim.
+Inline registration overloads and granular capability hooks are removed from the public API. The only public hook path is contract + runtime bindings; private WeakMap proof survives React's latest-ref delegate without becoming forgeable object metadata.
 
 For domain procedures, pass a compiled procedure contract first:
 

@@ -1,7 +1,8 @@
 /// <reference types="vite/client" />
 
 declare module "virtual:agent-surface-contract" {
-  import type { CapabilityContractManifest } from "@agent-surface/core";
-  const manifest: CapabilityContractManifest;
-  export default manifest;
+  import type { CapabilityAuthority, CapabilityContractManifest } from "@agent-surface/core";
+  const authority: CapabilityAuthority;
+  export const manifest: CapabilityContractManifest;
+  export default authority;
 }

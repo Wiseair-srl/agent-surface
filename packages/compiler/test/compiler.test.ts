@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Plugin } from "vite";
+import { createCapabilityAuthority } from "@agent-surface/core";
 import { canonicalManifestJson, compileCapabilityContract } from "../src/index.js";
 
 const CORE = fileURLToPath(new URL("../../core/src/index.ts", import.meta.url));
@@ -82,6 +83,7 @@ async function compile(root: string) {
 describe("production graph compiler", () => {
   it("collects aliases, lazy chunks, virtual modules, and duplicate capability ids", async () => {
     const manifest = await compile(fixture());
+    expect(manifest.formatVersion).toBe(4);
     expect(manifest.completeness.status).toBe("proven");
     expect(manifest.capabilities.map((entry) => entry.capabilityId)).toEqual([
       "view:fixture.panel.state",
@@ -92,6 +94,9 @@ describe("production graph compiler", () => {
       .toHaveLength(2);
     expect(manifest.capabilities[0]?.policies).toEqual([{ name: "session", phase: "authorize" }]);
     expect(manifest.capabilities[0]?.tags).toEqual(["fixture"]);
+    const authority = createCapabilityAuthority(manifest);
+    expect(authority.manifest.hash).toBe(manifest.hash);
+    expect(Object.isFrozen(authority.manifest.capabilities)).toBe(true);
   });
 
   it("is byte-identical across checkout paths", async () => {

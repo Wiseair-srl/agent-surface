@@ -58,17 +58,17 @@ function Counter() {
 
 Contract fields must be statically serializable. Runtime bindings contain handlers, live state, availability, preconditions and bound values.
 
-## 4. Install the runtime ceiling
+## 4. Install the runtime authority
 
-The compiler exposes the same manifest to the production bundle:
+The compiler exposes an immutable authority backed by the same manifest:
 
 ```ts
-import manifest from "virtual:agent-surface-contract";
+import authority from "virtual:agent-surface-contract";
 
-const registry = createAgentSurfaceRegistry({ manifest });
+const registry = createAgentSurfaceRegistry({ authority });
 ```
 
-With a manifest installed, raw, missing, stale or hash-mismatched registrations fail closed.
+Authority is mandatory. Raw, missing, stale, semantically changed or hash-mismatched registrations fail closed.
 
 ## 5. Commit and check
 

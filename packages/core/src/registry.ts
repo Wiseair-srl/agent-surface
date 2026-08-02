@@ -30,8 +30,12 @@ import {
 import { AgentSurfaceDefinitionError } from "./errors.js";
 import { formatViewCapabilityId } from "./ids.js";
 import { randomBase62 } from "./utils.js";
-import type { CapabilityContractManifest } from "./contract.js";
-import { assertDefinitionInManifest } from "./contract.js";
+import type { CapabilityAuthority } from "./contract.js";
+import {
+  assertCapabilityAuthority,
+  assertDefinitionAuthorized,
+  isUnsafeAuthorityTestMode,
+} from "./contract.js";
 
 export interface RegistrationCandidate {
   definition: AgentComponentDefinition; // includes origin (default "first-party")
@@ -58,8 +62,8 @@ export interface RegistryOptions {
   limits?: Partial<AgentSurfaceLimits>;
   /** Injectable clock (docs/08 determinism); default Date.now. */
   now?: () => number;
-  /** Compiler-generated runtime ceiling. When present, raw/stale bindings fail closed. */
-  manifest?: CapabilityContractManifest;
+  /** Compiler-generated runtime source of truth. Required outside repository tests. */
+  authority?: CapabilityAuthority;
 }
 
 export interface AgentRegistrationHandle {
@@ -90,6 +94,14 @@ export interface AgentSurfaceRegistry {
 }
 
 export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurfaceRegistry {
+  const unsafeTestMode = isUnsafeAuthorityTestMode();
+  if (!options?.authority && !unsafeTestMode) {
+    throw new AgentSurfaceDefinitionError(
+      "INVALID_DEFINITION",
+      "createAgentSurfaceRegistry requires a compiler-generated capability authority",
+    );
+  }
+  if (options?.authority) assertCapabilityAuthority(options.authority);
   const environment = options?.environment ?? "production";
   const limits: AgentSurfaceLimits = { ...DEFAULT_LIMITS, ...(options?.limits ?? {}) };
   const now = options?.now ?? (() => Date.now());
@@ -258,7 +270,10 @@ export function createAgentSurfaceRegistry(options?: RegistryOptions): AgentSurf
     register(definition: AgentComponentDefinition): AgentRegistrationHandle {
       if (internals.disposed) throw new Error("register() called on a disposed registry");
 
-      if (options?.manifest) assertDefinitionInManifest(definition, options.manifest);
+      if (options?.authority) assertDefinitionAuthorized(definition, options.authority);
+      else if (!unsafeTestMode) {
+        throw new AgentSurfaceDefinitionError("INVALID_DEFINITION", "capability authority unavailable");
+      }
 
       // Structural defects throw in EVERY environment (docs/03 §registry, D4).
       validateComponentDefinition(definition, limits, {

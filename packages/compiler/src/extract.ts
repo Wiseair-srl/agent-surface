@@ -3,8 +3,6 @@ import ts from "typescript";
 import type {
   CapabilityContractEntry,
   CapabilityPolicyAttachment,
-  CompiledCapabilityToken,
-  CompiledComponentProvenance,
   JsonSchema,
 } from "@agent-surface/core";
 import { canonicalJson, sha256 } from "./canonical.js";
@@ -23,6 +21,19 @@ const WRAPPERS = new Set([
 ]);
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+
+interface CompiledCapabilityToken {
+  manifestHash: string;
+  declarationId: string;
+  capabilityId: string;
+  contractHash: string;
+}
+
+interface CompiledComponentProvenance {
+  manifestHash: string;
+  declarationId: string;
+  capabilities: Record<string, CompiledCapabilityToken>;
+}
 
 export interface ExtractedModule {
   code: string;

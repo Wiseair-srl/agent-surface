@@ -48,12 +48,12 @@ export interface WebMcpModelContext {
 export interface CreateWebMcpAdapterOptions {
   snapshotContext?: Omit<SnapshotContext, "consumer">;
   /**
-   * Map/curate before exposing; return null to skip a capability, undefined
-   * to keep the default mapping.
+   * Curate presentation before exposing. Execution always remains registry-routed.
+   * Return null to skip; undefined to keep defaults.
    */
   exposeCapability?: (
     descriptor: AgentCapabilityDescriptorUnion,
-  ) => WebMcpToolInit | null | undefined;
+  ) => { description?: string } | null | undefined;
   /** Test seam: defaults to (navigator as any).modelContext. */
   modelContext?: WebMcpModelContext;
 }
@@ -130,14 +130,13 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
             const curated = options?.exposeCapability?.(obs);
             if (options?.exposeCapability && curated === null) continue;
             tools.push(
-              curated ??
-                toTool(
-                  obs,
-                  obs.capabilityId,
-                  component.registrationId,
-                  { type: "object", properties: {}, additionalProperties: false },
-                  `[view · read] ${obs.description}`,
-                ),
+              toTool(
+                obs,
+                obs.capabilityId,
+                component.registrationId,
+                { type: "object", properties: {}, additionalProperties: false },
+                curated?.description ?? `[view · read] ${obs.description}`,
+              ),
             );
           }
           for (const act of component.actions) {
@@ -145,14 +144,13 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
             const curated = options?.exposeCapability?.(act);
             if (options?.exposeCapability && curated === null) continue;
             tools.push(
-              curated ??
-                toTool(
-                  act,
-                  act.capabilityId,
-                  component.registrationId,
-                  act.inputSchema,
-                  `[view · ${act.effect}] ${act.description}`,
-                ),
+              toTool(
+                act,
+                act.capabilityId,
+                component.registrationId,
+                act.inputSchema,
+                curated?.description ?? `[view · ${act.effect}] ${act.description}`,
+              ),
             );
           }
         }
@@ -161,14 +159,14 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
           const curated = options?.exposeCapability?.(proc);
           if (options?.exposeCapability && curated === null) continue;
           tools.push(
-            curated ??
-              toTool(
-                proc,
-                proc.procedureId,
-                proc.registrationId,
-                proc.inputSchema,
+            toTool(
+              proc,
+              proc.procedureId,
+              proc.registrationId,
+              proc.inputSchema,
+              curated?.description ??
                 `[domain · ${proc.effect}${proc.confirmation === "required" ? " · requires confirmation" : ""}] ${proc.description}`,
-              ),
+            ),
           );
         }
 

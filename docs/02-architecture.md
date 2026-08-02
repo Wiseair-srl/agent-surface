@@ -12,6 +12,34 @@ production entrypoints + lazy/virtual modules + pinned sidecars
 
 The compiler consumes Vite's resolved production graph, not tsconfig globs. It emits `completeness: proven` or fails. The registry verifies manifest, declaration and contract hashes before accepting strict bindings. Runtime state can narrow a compiled inventory; it cannot widen it. The CLI diffs the same artifact and never mounts the application.
 
+## Mandatory runtime authority (D41)
+
+The contract is now an enforced authority, not optional registry configuration:
+
+```text
+production graph
+  → canonical format-v4 manifest
+  → immutable CapabilityAuthority
+  → privately proven binding
+  → registry registration
+  → registry-owned adapter/tool execution
+```
+
+These invariants are structural across every published, library-owned boundary:
+
+- `virtual:agent-surface-contract` returns the nominal `CapabilityAuthority` by default; the named `manifest` export exists for review tooling.
+- authority creation clones and deep-freezes the manifest, then verifies format, completeness, each declaration hash and the whole-manifest hash;
+- registry construction without a genuine authority throws;
+- compiler proof lives in private `WeakMap`s, not symbols or writable object properties;
+- every registration verifies authority membership and actual runtime kind, description, effect, schemas, confirmation floor and required policy implementation;
+- React and oRPC expose only contract-first hooks. Removed raw/granular overloads cannot become an alternate registration path;
+- registry-backed adapters always execute through `registry.invoke`; WebMCP curation may hide or rename presentation but cannot replace execution;
+- standalone provider tools must pass `createAgentExposureGateway(authority)`.
+
+The repository's raw test helpers run only because Vitest loads a source-only unsafe seam. That seam is absent from package exports and published artifacts. `@agent-surface/testing` callers must supply either an authorized registry or the authority used to create one.
+
+Threat boundary: this prevents bypass through supported library APIs. JavaScript cannot stop a malicious host in the same realm from calling its own functions, a provider SDK or a fake registry directly; those calls are outside agent-surface. The server remains the security authority for persistent/domain effects.
+
 > [!NOTE]
 > **Status: Draft** (normative where marked MUST/SHOULD). Concepts in [Concepts](01-concepts.md); APIs in [Core API](03-core-api.md)–[oRPC integration](05-orpc-integration.md).
 
@@ -201,11 +229,11 @@ Normative, implementable guarantees (details and tunables in [Core API](03-core-
 
 | Entry | Measured (min+brotli) | Budget |
 |---|---|---|
-| `@agent-surface/core` | 18.86 kB | 19.5 kB |
-| `@agent-surface/core/explain` | 1.41 kB | 2 kB |
-| `@agent-surface/react` | 2.08 kB | 4 kB |
+| `@agent-surface/core` | 21.49 kB | 22 kB |
+| `@agent-surface/core/explain` | 1.42 kB | 2 kB |
+| `@agent-surface/react` | 1.84 kB | 4 kB |
 
-**A budget moves only in the PR whose feature moved it, and the PR says why.** Never as a side effect of unrelated work. Core's has moved three times — up for D31's meta-verb parameter descriptions, down when D28's compatibility branches were deleted, up again for D32's envelope validator; each is recorded in [Roadmap](project/12-roadmap.md) under the release that did it.
+**A budget moves only in the PR whose feature moved it, and the PR says why.** Never as a side effect of unrelated work. D41 moves core to 22 kB for synchronous SHA-256, immutable authority validation and runtime semantic comparison; removing React's legacy/granular paths reduces its entry.
 
 Two kinds of bytes live in that number and they are not equally expensive. **Machinery** is paid once, at download. **Model-facing description text** — currently ~430 B of `core` — is re-billed in every request carrying the tool block, so it is trimmed first and to what is load-bearing: every description names where its value comes from and nothing else.
 
