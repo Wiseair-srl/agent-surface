@@ -7,8 +7,8 @@ import {
 } from "@agent-surface/compiler";
 import { diffContracts, type ChangeClassification } from "./diff.js";
 import { DEFAULT_SNAPSHOT, readBaseManifest, readManifest, writeManifest } from "./files.js";
-import type { ContractReport, OutputFormat, RenderOptions } from "./report.js";
-import { renderReport } from "./report.js";
+import type { ContractReport, OutputFormat, RenderOptions, Verbosity } from "./report.js";
+import { renderReport, supportsColor } from "./report.js";
 
 export interface CommandOptions {
   root: string;
@@ -21,7 +21,9 @@ export interface CommandOptions {
   /** Dependencies approved to contribute, as `--allow <package>=<sha256>`. */
   externalContracts?: ExternalContractPolicy;
   plain?: boolean;
+  /** Deprecated alias for `verbosity: "detail"`. */
   detail?: boolean;
+  verbosity?: Verbosity;
 }
 
 function mergeManifests(manifests: CapabilityContractManifest[]): CapabilityContractManifest {
@@ -88,13 +90,17 @@ async function present(report: ContractReport, options: CommandOptions): Promise
     process.stdout.isTTY === true &&
     !process.env["CI"] &&
     !process.env["NO_COLOR"];
-  const render: RenderOptions = { root: options.root, ...(options.detail ? { detail: true } : {}) };
+  const verbosity = options.verbosity ?? (options.detail ? "detail" : "normal");
+  const render: RenderOptions = { root: options.root, verbosity };
   if (interactive) {
     const { renderInk } = await import("./ink.js");
     await renderInk(report, render);
     return;
   }
-  process.stdout.write(renderReport(report, options.format, render));
+  // `--plain` at a terminal still paints; a pipe, CI, or NO_COLOR never does.
+  process.stdout.write(
+    renderReport(report, options.format, { ...render, color: supportsColor(process.stdout) }),
+  );
 }
 
 export async function runInspect(options: CommandOptions): Promise<number> {
@@ -157,5 +163,9 @@ export async function runCheck(options: CommandOptions): Promise<number> {
     ...(pr ? { pullRequest: pr } : {}),
   };
   await present(report, options);
+  // stderr, like the report hint in orpc-agent: it survives a piped report.
+  if (failed && !integrityCurrent && options.format === "human") {
+    process.stderr.write("\nUpdate the snapshot in this change: agent-surface snapshot\n");
+  }
   return failed ? 1 : 0;
 }
