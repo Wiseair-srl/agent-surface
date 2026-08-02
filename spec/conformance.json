@@ -1077,9 +1077,9 @@
       "status": "implemented"
     },
     "AS-CONTRACT-001": {
-      "title": "Every strict runtime registration requires compiler provenance matching the running manifest",
-      "source": "03-core-api.md#contract-and-binding-split-d40",
-      "decision": "D40",
+      "title": "Every runtime registration requires compiler proof matching the running authority",
+      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
       ],
@@ -1097,8 +1097,8 @@
     },
     "AS-CONTRACT-003": {
       "title": "Raw or unknown capabilities cannot widen a strict registry after build",
-      "source": "03-core-api.md#contract-and-binding-split-d40",
-      "decision": "D40",
+      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
       ],
@@ -1106,10 +1106,47 @@
     },
     "AS-CONTRACT-004": {
       "title": "Stale manifest hashes and mismatched contract hashes fail closed",
-      "source": "03-core-api.md#contract-and-binding-split-d40",
-      "decision": "D40",
+      "source": "03-core-api.md#contract-binding-and-authority-d40d41",
+      "decision": "D41",
       "tests": [
         "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AUTHORITY-001": {
+      "title": "Registry construction requires a genuine immutable capability authority",
+      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "decision": "D41",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AUTHORITY-002": {
+      "title": "Compiler proof is private and cannot be forged through public object metadata",
+      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "decision": "D41",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AUTHORITY-003": {
+      "title": "Authority verifies hashes and registration semantics against source truth",
+      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "decision": "D41",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-AUTHORITY-004": {
+      "title": "Library adapters cannot replace authority-routed capability execution",
+      "source": "02-architecture.md#mandatory-runtime-authority-d41",
+      "decision": "D41",
+      "tests": [
+        "packages/core/test/compiled-contract.test.ts",
+        "packages/webmcp/test/webmcp.test.ts"
       ],
       "status": "implemented"
     },

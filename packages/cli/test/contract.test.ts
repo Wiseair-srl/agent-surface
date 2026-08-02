@@ -6,7 +6,7 @@ import { renderReport } from "../src/report.js";
 
 function manifest(capabilities: CapabilityContractEntry[], hash = "hash"): CapabilityContractManifest {
   return {
-    formatVersion: 3,
+    formatVersion: 4,
     compilerVersion: "test",
     targets: ["web-production"],
     capabilities,

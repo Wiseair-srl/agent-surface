@@ -36,7 +36,7 @@ function mergeManifests(manifests: CapabilityContractManifest[]): CapabilityCont
     }
   }
   const payload = {
-    formatVersion: 3 as const,
+    formatVersion: 4 as const,
     compilerVersion: manifests[0]?.compilerVersion ?? "unknown",
     targets: [...new Set(manifests.flatMap((manifest) => manifest.targets))].sort(),
     capabilities: [...entries.values()].sort((a, b) =>

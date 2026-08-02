@@ -10,13 +10,13 @@ const contract = defineAgentComponentContract({
   actions: { selectRows: actionContract({ description: "Select", input, effect: "local-state" }) },
 });
 
-const registry = createAgentSurfaceRegistry({ manifest });
+const registry = createAgentSurfaceRegistry({ authority });
 registry.register(contract.bind({
   observations: { readState: { read } },
   actions: { selectRows: { execute } },
 }));
 ```
 
-With a compiler manifest installed, raw/unknown/stale/mismatched registrations fail closed. Use `createAgentExposureGateway()` at final provider/MCP assembly.
+The compiler authority is mandatory. Raw/unknown/stale/changed registrations fail closed. Use `createAgentExposureGateway(authority)` at final provider/MCP assembly.
 
 See [Core API](../../docs/03-core-api.md).

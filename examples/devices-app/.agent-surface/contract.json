@@ -405,13 +405,13 @@
       ]
     }
   ],
-  "compilerVersion": "0.16.0",
+  "compilerVersion": "0.17.0",
   "completeness": {
     "status": "proven"
   },
   "externalContracts": [],
-  "formatVersion": 3,
-  "hash": "bb68e0d615badd5a0f3ac9f365e2c56b930b8657d2e4856e066eb29498e6a46c",
+  "formatVersion": 4,
+  "hash": "7e826283698d87730a40c17b808fad27c244d383d0de25dbd94a3f61b76d5824",
   "targets": [
     "web-production"
   ]

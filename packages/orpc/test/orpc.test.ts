@@ -1,12 +1,11 @@
 // Conformance: AS-BIND-001 (schema surgery matrix D7), AS-BIND-002 (locking/override/full-schema revalidation D8), AS-BIND-003 (manifest exposure gating)
 import { describe, expect, it } from "vitest";
 import {
-  bindAgentProcedure,
   createOrpcAgentBridge,
   isBridgeRef,
-  reduceInputSchema,
   type OrpcAgentManifest,
 } from "@agent-surface/orpc";
+import { bindAgentProcedure, reduceInputSchema } from "../src/binding.js";
 import { createTestSurface } from "@agent-surface/testing";
 import { matchers } from "@agent-surface/testing/matchers";
 import type { JsonValue, ProcedureCallInfo } from "@agent-surface/core";

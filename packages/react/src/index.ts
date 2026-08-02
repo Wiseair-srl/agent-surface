@@ -7,13 +7,6 @@ export type { UseAgentComponentConfig, AgentComponentHandle } from "./use-agent-
 export { usePendingConfirmations } from "./confirmations.js";
 export type { PendingConfirmationView } from "./confirmations.js";
 
-export {
-  AgentComponentScope,
-  useAgentAction,
-  useAgentObservation,
-} from "./granular.js";
-export type { AgentComponentScopeProps } from "./granular.js";
-
 // Internal seam for @agent-surface/orpc/react (render-scope context link).
 export {
   readRenderScopeContext as unstable_readRenderScopeContext,

@@ -1,6 +1,6 @@
 # 01 — Concepts
 
-> **D40:** a capability exists in the repository only through a compiler-generated production contract. Static declarations own identity and governance metadata; runtime bindings own handlers, state and availability. The generated contract is both repository inventory and runtime exposure ceiling. Older inline-registration examples below describe only the legacy test seam when no manifest is installed.
+> **D40/D41:** a capability exists only through the compiler-generated production contract and its runtime authority. Static declarations own identity/governance metadata; runtime bindings own handlers, state and availability. Raw definitions are inert: no published execution boundary accepts them.
 
 > [!NOTE]
 > **Status: Draft** (normative). This document defines the conceptual model and the terminology used by every other document. When other documents conflict with this one, this one wins and the conflict is a spec bug.

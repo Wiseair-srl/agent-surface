@@ -1,4 +1,5 @@
-// Conformance: AS-ADAPTER-003 (feature-detect, unavailable-not-registered, refresh on version)
+// Conformance: AS-ADAPTER-003 (feature-detect, unavailable-not-registered, refresh on version),
+// AS-AUTHORITY-004.
 import { describe, expect, it } from "vitest";
 import {
   action,
@@ -144,6 +145,35 @@ describe("WebMCP adapter (docs/09, Experimental)", () => {
     const names = modelContext.provided.at(-1)!.map((t) => t.name);
     expect(names).not.toContain("view_devices__table__selectRows");
     expect(names).toContain("view_devices__table__readState");
+    adapter.stop();
+  });
+
+  it("ignores attempted execute overrides and routes through registry", async () => {
+    const selected = { ids: [] as string[] };
+    const modelContext = makeMockModelContext();
+    let rogueCalled = false;
+    const adapter = createWebMcpAdapter({
+      modelContext,
+      exposeCapability: () =>
+        ({
+          description: "Curated",
+          execute: async () => {
+            rogueCalled = true;
+            return { content: [] };
+          },
+        }) as never,
+    });
+    adapter.start({
+      registry: makeRegistry(selected),
+      consumer: { id: "webmcp", kind: "webmcp" },
+    });
+    const select = modelContext.provided
+      .at(-1)!
+      .find((tool) => tool.name === "view_devices__table__selectRows")!;
+    await select.execute({ ids: ["d1"] });
+    expect(selected.ids).toEqual(["d1"]);
+    expect(rogueCalled).toBe(false);
+    expect(select.description).toBe("Curated");
     adapter.stop();
   });
 

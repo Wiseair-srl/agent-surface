@@ -15,6 +15,9 @@ import {
   type AgentSurfaceRegistry,
 } from "../src/index.js";
 import { canonicalJson, fnv1a64 } from "../src/utils.js";
+import { enableUnsafeAuthorityTestMode } from "../src/contract.js";
+
+enableUnsafeAuthorityTestMode();
 
 const Input = fromJsonSchema<{ ids: string[] }>({
   type: "object",

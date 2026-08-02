@@ -11,9 +11,11 @@ import { AgentSurfaceDefinitionError } from "./errors.js";
 import type { AgentPolicy } from "./policy.js";
 import type { AgentSchema } from "./schema.js";
 import type { AgentConcurrency, AgentEffect, JsonSchema, JsonValue } from "./types.js";
+import { deepFreeze, jsonDeepEqual } from "./utils.js";
+import { sha256 } from "./sha256.js";
 
 /** Contract format emitted by @agent-surface/compiler. */
-export const CAPABILITY_CONTRACT_FORMAT_VERSION = 3 as const;
+export const CAPABILITY_CONTRACT_FORMAT_VERSION = 4 as const;
 
 export type CapabilityContractKind = "observation" | "action" | "procedure" | "external";
 
@@ -68,14 +70,40 @@ export interface CompiledComponentProvenance {
   capabilities: Record<string, CompiledCapabilityToken>;
 }
 
-/** Shared across duplicate copies of core in a bundle. Not enumerable/serializable. */
-export const COMPILED_CAPABILITY_PROVENANCE = Symbol.for(
-  "@agent-surface/core.compiled-capability-provenance",
-);
+declare const CAPABILITY_AUTHORITY_TYPE: unique symbol;
 
-type ProvenanceCarrier = {
-  [COMPILED_CAPABILITY_PROVENANCE]?: CompiledComponentProvenance | CompiledCapabilityToken;
-};
+/** Immutable runtime source of truth. Only objects minted here are accepted. */
+export interface CapabilityAuthority {
+  readonly manifest: CapabilityContractManifest;
+  readonly [CAPABILITY_AUTHORITY_TYPE]: true;
+}
+
+interface CapabilityAuthorityState {
+  manifest: CapabilityContractManifest;
+  index: Map<string, CapabilityContractEntry>;
+}
+
+const authorityStates = new WeakMap<object, CapabilityAuthorityState>();
+const componentBindingProofs = new WeakMap<object, CompiledComponentProvenance>();
+const capabilityContractProofs = new WeakMap<object, CompiledCapabilityToken>();
+const externalToolProofs = new WeakMap<object, CompiledCapabilityToken>();
+
+let unsafeAuthorityTestMode = false;
+
+/** @internal Repository-only test seam. Not exported from the package root. */
+export function enableUnsafeAuthorityTestMode(): void {
+  unsafeAuthorityTestMode = true;
+}
+
+/** @internal */
+export function disableUnsafeAuthorityTestMode(): void {
+  unsafeAuthorityTestMode = false;
+}
+
+/** @internal */
+export function isUnsafeAuthorityTestMode(): boolean {
+  return unsafeAuthorityTestMode;
+}
 
 export interface AgentObservationContract<TOut extends JsonValue> {
   description: string;
@@ -188,6 +216,12 @@ export function defineAgentComponentContract<
   TActions extends Record<string, AgentActionContract<any, any>> = Record<never, never>,
 >(
   definition: AgentComponentContractDefinition<TObservations, TActions>,
+): AgentComponentContract<TObservations, TActions>;
+export function defineAgentComponentContract<
+  TObservations extends Record<string, AgentObservationContract<any>> = Record<never, never>,
+  TActions extends Record<string, AgentActionContract<any, any>> = Record<never, never>,
+>(
+  definition: AgentComponentContractDefinition<TObservations, TActions>,
   compiled?: CompiledComponentProvenance,
 ): AgentComponentContract<TObservations, TActions> {
   const contract: AgentComponentContract<TObservations, TActions> = {
@@ -242,7 +276,7 @@ export function defineAgentComponentContract<
           ...(runtime.policies ? { policies: runtime.policies } : {}),
         };
       }
-      const bound: AgentComponentDefinition & ProvenanceCarrier = {
+      const bound: AgentComponentDefinition = {
         type: definition.type,
         description: definition.description,
         ...(bindings.instanceId !== undefined ? { instanceId: bindings.instanceId } : {}),
@@ -257,12 +291,7 @@ export function defineAgentComponentContract<
         ...(Object.keys(actions).length > 0 ? { actions } : {}),
         ...(bindings.procedures ? { procedures: bindings.procedures } : {}),
       };
-      if (compiled) {
-        Object.defineProperty(bound, COMPILED_CAPABILITY_PROVENANCE, {
-          value: compiled,
-          enumerable: false,
-        });
-      }
+      if (compiled) componentBindingProofs.set(bound, compiled);
       return bound;
     },
   };
@@ -291,12 +320,17 @@ export interface AgentProcedureContractDefinition<TIn extends JsonValue, TOut ex
   tags?: string[];
 }
 
-export interface AgentProcedureContract<TIn extends JsonValue, TOut extends JsonValue>
-  extends ProvenanceCarrier {
+export interface AgentProcedureContract<TIn extends JsonValue, TOut extends JsonValue> {
   readonly kind: "agent-procedure-contract";
   readonly definition: AgentProcedureContractDefinition<TIn, TOut>;
 }
 
+export function defineAgentProcedureContract<
+  TIn extends JsonValue,
+  TOut extends JsonValue = JsonValue,
+>(
+  definition: AgentProcedureContractDefinition<TIn, TOut>,
+): AgentProcedureContract<TIn, TOut>;
 export function defineAgentProcedureContract<
   TIn extends JsonValue,
   TOut extends JsonValue = JsonValue,
@@ -308,12 +342,7 @@ export function defineAgentProcedureContract<
     kind: "agent-procedure-contract",
     definition,
   };
-  if (compiled) {
-    Object.defineProperty(contract, COMPILED_CAPABILITY_PROVENANCE, {
-      value: compiled,
-      enumerable: false,
-    });
-  }
+  if (compiled) capabilityContractProofs.set(contract, compiled);
   return contract;
 }
 
@@ -322,7 +351,6 @@ export interface CompiledExternalAgentTool<TIn extends JsonValue = JsonValue, TO
   description: string;
   inputSchema: JsonSchema;
   execute(input: TIn): TOut | Promise<TOut>;
-  [COMPILED_CAPABILITY_PROVENANCE]: CompiledCapabilityToken;
 }
 
 export interface ExternalAgentToolContract<TIn extends JsonValue, TOut extends JsonValue> {
@@ -331,6 +359,12 @@ export interface ExternalAgentToolContract<TIn extends JsonValue, TOut extends J
   bind(binding: { execute(input: TIn): TOut | Promise<TOut> }): CompiledExternalAgentTool<TIn, TOut>;
 }
 
+export function defineExternalAgentToolContract<
+  TIn extends JsonValue,
+  TOut extends JsonValue = JsonValue,
+>(
+  definition: ExternalAgentToolContractDefinition<TIn, TOut>,
+): ExternalAgentToolContract<TIn, TOut>;
 export function defineExternalAgentToolContract<
   TIn extends JsonValue,
   TOut extends JsonValue = JsonValue,
@@ -354,40 +388,38 @@ export function defineExternalAgentToolContract<
         inputSchema: definition.input.jsonSchema,
         execute: binding.execute,
       } as CompiledExternalAgentTool<TIn, TOut>;
-      Object.defineProperty(tool, COMPILED_CAPABILITY_PROVENANCE, {
-        value: compiled,
-        enumerable: false,
-      });
+      externalToolProofs.set(tool, compiled);
       return tool;
     },
   };
-  if (compiled) {
-    Object.defineProperty(contract, COMPILED_CAPABILITY_PROVENANCE, {
-      value: compiled,
-      enumerable: false,
-    });
-  }
+  if (compiled) capabilityContractProofs.set(contract, compiled);
   return contract;
 }
 
-export function compiledCapabilityToken(
-  contract: AgentProcedureContract<any, any> | ExternalAgentToolContract<any, any>,
-): CompiledCapabilityToken {
-  const token = (contract as ProvenanceCarrier)[COMPILED_CAPABILITY_PROVENANCE];
-  if (!token || "capabilities" in token) {
-    throw new AgentSurfaceDefinitionError(
-      "INVALID_DEFINITION",
-      `contract "${contract.definition.id}" has no compiler provenance`,
-    );
-  }
-  return token;
+/** Preserve compiler proof while an adapter replaces handlers with latest-ref delegates. */
+export function deriveAgentComponentBinding(
+  source: AgentComponentDefinition,
+  derived: AgentComponentDefinition,
+): AgentComponentDefinition {
+  const proof = componentBindingProofs.get(source);
+  if (proof) componentBindingProofs.set(derived, proof);
+  return derived;
 }
 
-export function tryCompiledCapabilityToken(
-  contract: AgentProcedureContract<any, any> | ExternalAgentToolContract<any, any>,
-): CompiledCapabilityToken | undefined {
-  const token = (contract as ProvenanceCarrier)[COMPILED_CAPABILITY_PROVENANCE];
-  return token && !("capabilities" in token) ? token : undefined;
+/** Bind a compiled procedure contract to its contextual runtime definition. */
+export function authorizeAgentProcedureBinding(
+  contract: AgentProcedureContract<any, any>,
+  definition: AgentComponentDefinition,
+): AgentComponentDefinition {
+  const token = capabilityContractProofs.get(contract);
+  if (token) {
+    componentBindingProofs.set(definition, {
+      manifestHash: token.manifestHash,
+      declarationId: token.declarationId,
+      capabilities: { [token.capabilityId]: token },
+    });
+  }
+  return definition;
 }
 
 function manifestIndex(manifest: CapabilityContractManifest): Map<string, CapabilityContractEntry> {
@@ -401,6 +433,13 @@ function manifestIndex(manifest: CapabilityContractManifest): Map<string, Capabi
   }
   const index = new Map<string, CapabilityContractEntry>();
   for (const entry of manifest.capabilities) {
+    const { contractHash, targets: _targets, ...contract } = entry;
+    if (sha256(canonicalContractJson(contract)) !== contractHash) {
+      throw new AgentSurfaceDefinitionError(
+        "INVALID_DEFINITION",
+        `compiled contract hash is invalid for "${entry.capabilityId}"`,
+      );
+    }
     const key = `${entry.declarationId}\0${entry.capabilityId}`;
     if (index.has(key)) {
       throw new AgentSurfaceDefinitionError(
@@ -410,7 +449,57 @@ function manifestIndex(manifest: CapabilityContractManifest): Map<string, Capabi
     }
     index.set(key, entry);
   }
+  const { hash, ...payload } = manifest;
+  if (sha256(canonicalContractJson(payload)) !== hash) {
+    throw new AgentSurfaceDefinitionError("INVALID_DEFINITION", "compiled manifest hash is invalid");
+  }
   return index;
+}
+
+function canonicalContractValue(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "null";
+  if (typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("contract contains a non-finite number");
+    return JSON.stringify(Object.is(value, -0) ? 0 : value);
+  }
+  if (Array.isArray(value)) return `[${value.map(canonicalContractValue).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .filter((key) => record[key] !== undefined)
+    .map((key) => `${JSON.stringify(key)}:${canonicalContractValue(record[key])}`)
+    .join(",")}}`;
+}
+
+function canonicalContractJson(value: unknown): string {
+  return `${canonicalContractValue(value)}\n`;
+}
+
+export function createCapabilityAuthority(manifest: CapabilityContractManifest): CapabilityAuthority {
+  const snapshot = deepFreeze(
+    JSON.parse(JSON.stringify(manifest)) as CapabilityContractManifest,
+  );
+  const authority = Object.freeze({ manifest: snapshot }) as CapabilityAuthority;
+  authorityStates.set(authority, { manifest: snapshot, index: manifestIndex(snapshot) });
+  return authority;
+}
+
+function authorityState(authority: CapabilityAuthority): CapabilityAuthorityState {
+  const state = authorityStates.get(authority);
+  if (!state) {
+    throw new AgentSurfaceDefinitionError(
+      "INVALID_DEFINITION",
+      "invalid capability authority: use compiler-generated authority",
+    );
+  }
+  return state;
+}
+
+/** @internal Registry constructor guard. */
+export function assertCapabilityAuthority(authority: CapabilityAuthority): void {
+  authorityState(authority);
 }
 
 function assertToken(
@@ -439,33 +528,131 @@ function assertToken(
   }
 }
 
-/** Runtime exposure ceiling used by the registry. */
-export function assertDefinitionInManifest(
-  definition: AgentComponentDefinition,
-  manifest: CapabilityContractManifest,
-): void {
-  const provenance = (definition as AgentComponentDefinition & ProvenanceCarrier)[
-    COMPILED_CAPABILITY_PROVENANCE
+interface RuntimeCapabilityShape {
+  capabilityId: string;
+  kind: "observation" | "action" | "procedure";
+  description: string;
+  effect: AgentEffect;
+  inputSchema?: JsonSchema;
+  outputSchema?: JsonSchema;
+  confirmation?: "never" | "optional" | "required";
+  policies: AgentPolicy[];
+}
+
+const CONFIRMATION_RANK = { never: 0, optional: 1, required: 2 } as const;
+
+function effectiveProcedureConfirmation(
+  binding: AgentProcedureBinding<any, any>,
+): "never" | "optional" | "required" {
+  if (binding.ref.requiresApproval || binding.config.confirmation === "required") return "required";
+  return binding.config.confirmation ?? "never";
+}
+
+function runtimeCapabilities(definition: AgentComponentDefinition): RuntimeCapabilityShape[] {
+  const sharedPolicies = definition.policies ?? [];
+  return [
+    ...Object.entries(definition.observations ?? {}).map(([name, observation]) => ({
+      capabilityId: `view:${definition.type}.${name}`,
+      kind: "observation" as const,
+      description: observation.description,
+      effect: "read" as const,
+      outputSchema: observation.output.jsonSchema,
+      policies: [...sharedPolicies, ...(observation.policies ?? [])],
+    })),
+    ...Object.entries(definition.actions ?? {}).map(([name, action]) => ({
+      capabilityId: `view:${definition.type}.${name}`,
+      kind: "action" as const,
+      description: action.description,
+      effect: action.effect,
+      inputSchema: action.input.jsonSchema,
+      ...(action.output ? { outputSchema: action.output.jsonSchema } : {}),
+      confirmation: action.confirmation ?? "never",
+      policies: [...sharedPolicies, ...(action.policies ?? [])],
+    })),
+    ...(definition.procedures ?? []).map((binding) => ({
+      capabilityId: binding.ref.id,
+      kind: "procedure" as const,
+      description: binding.ref.description,
+      effect: binding.ref.effect,
+      inputSchema: binding.ref.inputSchema,
+      ...(binding.ref.outputSchema ? { outputSchema: binding.ref.outputSchema } : {}),
+      confirmation: effectiveProcedureConfirmation(binding),
+      policies: [...sharedPolicies, ...(binding.config.policies ?? [])],
+    })),
   ];
-  if (!provenance || !("capabilities" in provenance)) {
+}
+
+function assertPolicyCoverage(
+  declared: readonly CapabilityPolicyAttachment[] | undefined,
+  runtime: readonly AgentPolicy[],
+  capabilityId: string,
+): void {
+  for (const attachment of declared ?? []) {
+    const policy = runtime.find((candidate) => candidate.name === attachment.name);
+    const phaseImplemented =
+      !attachment.phase ||
+      (attachment.phase === "discovery" && typeof policy?.onDiscovery === "function") ||
+      (attachment.phase === "authorize" && typeof policy?.onAuthorize === "function") ||
+      (attachment.phase === "invoke" && typeof policy?.onInvoke === "function");
+    if (!policy || !phaseImplemented) {
+      throw new AgentSurfaceDefinitionError(
+        "INVALID_DEFINITION",
+        `capability "${capabilityId}" omits required policy "${attachment.name}"${attachment.phase ? ` at ${attachment.phase}` : ""}`,
+      );
+    }
+  }
+}
+
+function assertRuntimeMatchesContract(
+  runtime: RuntimeCapabilityShape,
+  declared: CapabilityContractEntry,
+): void {
+  const mismatch = (field: string): never => {
+    throw new AgentSurfaceDefinitionError(
+      "INVALID_DEFINITION",
+      `runtime ${field} mismatch for "${runtime.capabilityId}"`,
+    );
+  };
+  if (declared.kind !== runtime.kind) mismatch("kind");
+  if (declared.description !== runtime.description) mismatch("description");
+  if (declared.effect !== runtime.effect) mismatch("effect");
+  if (!jsonDeepEqual(declared.inputSchema as JsonValue | undefined, runtime.inputSchema as JsonValue | undefined)) {
+    mismatch("input schema");
+  }
+  if (!jsonDeepEqual(declared.outputSchema as JsonValue | undefined, runtime.outputSchema as JsonValue | undefined)) {
+    mismatch("output schema");
+  }
+  const declaredConfirmation = declared.confirmation ?? "never";
+  const runtimeConfirmation = runtime.confirmation ?? "never";
+  if (CONFIRMATION_RANK[runtimeConfirmation] < CONFIRMATION_RANK[declaredConfirmation]) {
+    mismatch("confirmation");
+  }
+  assertPolicyCoverage(declared.policies, runtime.policies, runtime.capabilityId);
+}
+
+/** Mandatory runtime authority check used by every registry registration. */
+export function assertDefinitionAuthorized(
+  definition: AgentComponentDefinition,
+  authority: CapabilityAuthority,
+): void {
+  const state = authorityState(authority);
+  const provenance = componentBindingProofs.get(definition);
+  if (!provenance) {
     throw new AgentSurfaceDefinitionError(
       "INVALID_DEFINITION",
       `raw registration "${definition.type}" rejected: bind a compiler-generated contract`,
     );
   }
-  if (provenance.manifestHash !== manifest.hash) {
+  if (provenance.manifestHash !== state.manifest.hash) {
     throw new AgentSurfaceDefinitionError(
       "INVALID_DEFINITION",
       `stale contract "${provenance.declarationId}": manifest hash mismatch`,
     );
   }
-  const index = manifestIndex(manifest);
-  const expected = [
-    ...Object.keys(definition.observations ?? {}).map((name) => `view:${definition.type}.${name}`),
-    ...Object.keys(definition.actions ?? {}).map((name) => `view:${definition.type}.${name}`),
-    ...(definition.procedures ?? []).map((binding) => binding.ref.id),
-  ];
-  for (const capabilityId of expected) {
+  const capabilities = runtimeCapabilities(definition);
+  const expected = capabilities.map((capability) => capability.capabilityId);
+  for (const capability of capabilities) {
+    const capabilityId = capability.capabilityId;
     const token = provenance.capabilities[capabilityId];
     if (!token) {
       throw new AgentSurfaceDefinitionError(
@@ -473,7 +660,9 @@ export function assertDefinitionInManifest(
         `capability "${capabilityId}" is absent from compiled contract "${provenance.declarationId}"`,
       );
     }
-    assertToken(token, manifest, index);
+    assertToken(token, state.manifest, state.index);
+    const declared = state.index.get(`${token.declarationId}\0${token.capabilityId}`)!;
+    assertRuntimeMatchesContract(capability, declared);
   }
   for (const capabilityId of Object.keys(provenance.capabilities)) {
     if (!expected.includes(capabilityId)) {
@@ -490,19 +679,38 @@ export interface AgentExposureGateway {
 }
 
 /** Final provider/MCP boundary: arbitrary tool objects cannot pass. */
-export function createAgentExposureGateway(manifest: CapabilityContractManifest): AgentExposureGateway {
-  const index = manifestIndex(manifest);
+export function createAgentExposureGateway(authority: CapabilityAuthority): AgentExposureGateway {
+  const state = authorityState(authority);
   return {
     expose<T extends CompiledExternalAgentTool>(tools: readonly T[]): T[] {
       return tools.map((tool) => {
-        const token = tool[COMPILED_CAPABILITY_PROVENANCE];
+        const token = externalToolProofs.get(tool);
         if (!token) {
           throw new AgentSurfaceDefinitionError(
             "INVALID_DEFINITION",
             `raw provider tool "${tool.name}" rejected by compiled exposure gateway`,
           );
         }
-        assertToken(token, manifest, index);
+        assertToken(token, state.manifest, state.index);
+        const declared = state.index.get(`${token.declarationId}\0${token.capabilityId}`)!;
+        if (declared.kind !== "external") {
+          throw new AgentSurfaceDefinitionError(
+            "INVALID_DEFINITION",
+            `runtime kind mismatch for "${tool.name}"`,
+          );
+        }
+        if (declared.capabilityId !== tool.name || declared.description !== tool.description) {
+          throw new AgentSurfaceDefinitionError(
+            "INVALID_DEFINITION",
+            `runtime external tool mismatch for "${tool.name}"`,
+          );
+        }
+        if (!jsonDeepEqual(declared.inputSchema as JsonValue, tool.inputSchema as JsonValue)) {
+          throw new AgentSurfaceDefinitionError(
+            "INVALID_DEFINITION",
+            `runtime input schema mismatch for "${tool.name}"`,
+          );
+        }
         return tool;
       });
     },

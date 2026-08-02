@@ -15,7 +15,8 @@
 
 ```ts
 export interface TestSurfaceOptions {
-  registry?: AgentSurfaceRegistry;         // default: fresh registry, environment "test"
+  registry?: AgentSurfaceRegistry;         // authorized registry; takes precedence
+  authority?: CapabilityAuthority;         // required when registry is omitted
   consumer?: AgentConsumer;                // default {id:"test", kind:"test"}
   host?: Record<string, unknown>;          // overrides RegistryOptions.context()
 }
@@ -61,6 +62,8 @@ export interface TestSurface {
 
 export function createTestSurface(options?: TestSurfaceOptions): TestSurface;
 ```
+
+The published harness has no raw-execution exception. Supply the application authority or a registry already created with it. The repository's own low-level tests use a non-exported Vitest setup seam solely to test registry mechanics in isolation.
 
 Determinism requirements on the implementation: the harness MUST work under fake timers (vitest/jest) for TTL/timeout tests — core takes an injectable clock (`RegistryOptions` internal, exposed for tests as `limits`-adjacent option) rather than free-running `Date.now()` reads it can't virtualize.
 
@@ -118,7 +121,7 @@ These are the behaviors the spec obliges implementations and apps to be able to 
 
 **Discovery**
 ```ts
-const surface = await renderAgentSurface(<DevicesPage />);
+const surface = await renderAgentSurface(<DevicesPage />, { authority });
 expect(surface).toExpose("view:devices.filters.set");
 expect(surface).toMatchSurfaceSnapshot();
 ```

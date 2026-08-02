@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  COMPILED_CAPABILITY_PROVENANCE,
-  tryCompiledCapabilityToken,
+  authorizeAgentProcedureBinding,
 } from "@agent-surface/core";
 import type {
   AgentComponentDefinition,
@@ -37,26 +36,15 @@ export function useAgentProcedure<
   contract: AgentProcedureContract<TIn, TOut>,
   ref: AgentProcedureRef<TIn, TOut>,
   config?: AgentProcedureBindingConfig<TIn, TBound>,
-): void;
-/** @deprecated Pass a compiler-generated procedure contract as the first argument. */
-export function useAgentProcedure<
-  TIn extends object,
-  TOut,
-  TBound extends Partial<TIn> = Partial<TIn>,
->(ref: AgentProcedureRef<TIn, TOut>, config?: AgentProcedureBindingConfig<TIn, TBound>): void;
-export function useAgentProcedure(
-  contractOrRef: AgentProcedureContract<any, any> | AgentProcedureRef<any, any>,
-  refOrConfig?: AgentProcedureRef<any, any> | AgentProcedureBindingConfig<any, any>,
-  maybeConfig?: AgentProcedureBindingConfig<any, any>,
 ): void {
-  const contract: AgentProcedureContract<any, any> | undefined =
-    "kind" in contractOrRef && contractOrRef.kind === "agent-procedure-contract"
-      ? contractOrRef
-      : undefined;
-  const ref = (contract ? refOrConfig : contractOrRef) as AgentProcedureRef<any, any>;
-  const config = (contract ? maybeConfig : refOrConfig) as
-    | AgentProcedureBindingConfig<any, any>
-    | undefined;
+  useAgentProcedureDefinition(contract, ref, config);
+}
+
+function useAgentProcedureDefinition(
+  contract: AgentProcedureContract<any, any> | undefined,
+  ref: AgentProcedureRef<any, any>,
+  config: AgentProcedureBindingConfig<any, any> | undefined,
+): void {
   const registry = useAgentSurface();
 
   const latestConfig = useRef(config);
@@ -132,20 +120,8 @@ export function useAgentProcedure(
       description: `Contextual reference to ${ref.path}`,
       procedures: [binding],
     };
-    if (contract) {
-      const token = tryCompiledCapabilityToken(contract);
-      if (token) {
-        Object.defineProperty(definition, COMPILED_CAPABILITY_PROVENANCE, {
-          value: {
-            manifestHash: token.manifestHash,
-            declarationId: token.declarationId,
-            capabilities: { [token.capabilityId]: token },
-          },
-          enumerable: false,
-        });
-      }
-    }
-    const handle = registry.register(definition);
+    const authorized = contract ? authorizeAgentProcedureBinding(contract, definition) : definition;
+    const handle = registry.register(authorized);
     handleRef.current = handle;
     lastPushed.current = null;
     setStatus(handle.status === "active" ? "active" : "rejected");

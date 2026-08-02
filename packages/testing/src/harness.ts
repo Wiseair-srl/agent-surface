@@ -7,6 +7,7 @@ import {
   type AgentSurfaceRegistry,
   type AgentSurfaceSnapshot,
   type AuditEvent,
+  type CapabilityAuthority,
   type JsonValue,
   type PendingConfirmation,
   type SnapshotContext,
@@ -14,6 +15,7 @@ import {
 
 export interface TestSurfaceOptions {
   registry?: AgentSurfaceRegistry; // default: fresh registry, environment "test"
+  authority?: CapabilityAuthority; // required when registry is omitted
   consumer?: AgentConsumer; // default {id:"test", kind:"test"}
   host?: Record<string, unknown>; // overrides RegistryOptions.context()
 }
@@ -72,6 +74,7 @@ export function createTestSurface(options?: TestSurfaceOptions): TestSurface {
     options?.registry ??
     createAgentSurfaceRegistry({
       environment: "test",
+      ...(options?.authority ? { authority: options.authority } : {}),
       context: () => hostRef.current,
       audit: auditSink,
     });

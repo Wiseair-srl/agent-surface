@@ -26,6 +26,7 @@ export default defineConfig({
           name: "node",
           environment: "node",
           globals: true,
+          setupFiles: ["./vitest.setup.authority.ts"],
           include: [
             "packages/core/test/**/*.test.ts",
             "packages/compiler/test/**/*.test.ts",
@@ -42,7 +43,7 @@ export default defineConfig({
           name: "dom",
           environment: "jsdom",
           globals: true,
-          setupFiles: ["./vitest.setup.dom.ts"],
+          setupFiles: ["./vitest.setup.authority.ts", "./vitest.setup.dom.ts"],
           include: [
             "packages/react/test/**/*.test.tsx",
             "packages/react/test/**/*.test.ts",
