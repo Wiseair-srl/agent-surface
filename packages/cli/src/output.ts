@@ -1,33 +1,43 @@
 import type { ReactElement } from "react";
+import type { ReportStream } from "./render/summary.js";
 
 export interface OutputFlags {
   plain?: boolean;
   json?: boolean;
 }
 
+function streamFor(stream: ReportStream): NodeJS.WriteStream {
+  return stream === "err" ? process.stderr : process.stdout;
+}
+
 /**
- * Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI`
- * and `NO_COLOR` all fall back to plain text — a CLI whose output changes shape
- * when redirected is unusable in a build log.
+ * Terminal-aware only when there is a terminal — and asked *per stream*, because
+ * the two are redirected independently. `agent-surface check 2> report.txt` on a
+ * terminal is a run whose answer is drawn and whose findings are a file, and a
+ * file full of cursor escapes is a file nobody can read.
+ *
+ * `--plain`, `--json`, `CI` and `NO_COLOR` force plain on both: a CLI whose
+ * output changes shape when redirected is unusable in a build log.
  */
-export function isPlain(flags: OutputFlags): boolean {
+export function isPlain(flags: OutputFlags, stream: ReportStream = "out"): boolean {
   if (flags.json) return true;
   if (flags.plain) return true;
   if (process.env["CI"]) return true;
   if (process.env["NO_COLOR"]) return true;
-  if (process.stdout.isTTY !== true) return true;
+  const target = streamFor(stream);
+  if (target.isTTY !== true) return true;
   // A TTY that cannot report its width (some CI ptys, `script` on macOS) makes
   // Ink lay out at zero columns and emit one character per line. Plain text is
   // the only honest rendering for a terminal whose size is unknown.
-  return !process.stdout.columns;
+  return !target.columns;
 }
 
-export function write(text: string): void {
-  process.stdout.write(`${text}\n`);
+export function write(text: string, stream: ReportStream = "out"): void {
+  streamFor(stream).write(`${text}\n`);
 }
 
 export function writeError(text: string): void {
-  process.stderr.write(`${text}\n`);
+  write(text, "err");
 }
 
 type InkModule = typeof import("./render/ink.js");
@@ -53,10 +63,10 @@ export async function loadInk(): Promise<InkModule | null> {
   return cached;
 }
 
-/** Paints an Ink element once and returns when the frame has been flushed. */
-export async function paint(element: ReactElement): Promise<void> {
+/** Paints an Ink element once, onto one stream, and waits for the flush. */
+export async function paint(element: ReactElement, stream: ReportStream = "out"): Promise<void> {
   const { render } = await import("ink");
-  const instance = render(element);
+  const instance = render(element, { stdout: streamFor(stream) });
   instance.unmount();
   await instance.waitUntilExit();
 }

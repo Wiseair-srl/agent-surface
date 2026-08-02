@@ -6,6 +6,7 @@ import { DEPTHS, isDepth } from "./contract.js";
 import { installDom } from "./dom.js";
 import { findConfig } from "./load.js";
 import { writeError, write } from "./output.js";
+import { renderReportPlain } from "./render/plain.js";
 
 const USAGE = `agent-surface — the agent surface your app exposes
 
@@ -288,15 +289,26 @@ function exitWhenWedged(code: number): void {
     const held = heldHandles();
     if (held.length > 0) {
       const kinds = [...new Set(held)].sort().join(", ");
+      // Rendered plain, and through the report's own grid: this is a block of
+      // the report, so it has to line up with one — but it is written during a
+      // forced teardown, after the presenter has drawn its last frame and
+      // unmounted, and opening a new live frame there is how a command that was
+      // about to be killed hangs instead.
       writeError(
-        [
-          "",
-          "PROCESS CLEANUP  WARN",
-          `Open handles  ${held.length} (${kinds})`,
-          "Impact        report complete; exit code unchanged; process exit forced",
-          "Likely cause  polling, websocket, or a cache timer created during mount",
-          `Exit          ${code}`,
-        ].join("\n"),
+        `\n${renderReportPlain([
+          {
+            title: "PROCESS CLEANUP  WARN",
+            rows: [
+              { label: "Open handles", text: `${held.length} (${kinds})` },
+              { label: "Impact", text: "report complete; exit code unchanged; process exit forced" },
+              {
+                label: "Likely cause",
+                text: "polling, websocket, or a cache timer created during mount",
+              },
+              { label: "Exit", text: String(code) },
+            ],
+          },
+        ])}`,
       );
     }
     void flushOutput().then(() => process.exit(code));

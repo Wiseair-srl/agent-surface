@@ -1,8 +1,16 @@
 import { existsSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { UsageError } from "../analysis.js";
-import { authoredIds, extractCapabilities, findTsconfig, unresolved } from "../extract.js";
-import { isPlain, loadInk, write, writeError } from "../output.js";
+import { authoredIds, extractCapabilities, findTsconfig } from "../extract.js";
+import { isPlain, loadInk, writeError } from "../output.js";
+import { createPresenter } from "../render/present.js";
+import {
+  catalogDetailParts,
+  catalogRows,
+  displayPath,
+  READING_SOURCE,
+  type ReportPart,
+} from "../render/summary.js";
 
 export interface InitOptions {
   cwd: string;
@@ -63,13 +71,15 @@ export default defineSurface({
  * at yet.
  *
  * It mounts nothing and needs no config to exist — it is `--depth static` with
- * a file write on the end.
+ * a file write on the end, and it says so in the same blocks `inspect --depth
+ * static` uses, so the first report a reader ever sees is the one they will go
+ * on seeing.
  */
 export async function runInit(options: InitOptions): Promise<number> {
   const configPath = join(options.cwd, CONFIG_NAME);
   if (existsSync(configPath)) {
     throw new UsageError(
-      `${relative(process.cwd(), configPath)} already exists — edit it, or delete it and re-run`,
+      `${displayPath(configPath)} already exists — edit it, or delete it and re-run`,
     );
   }
 
@@ -81,57 +91,73 @@ export async function runInit(options: InitOptions): Promise<number> {
     );
   }
 
+  const present = await createPresenter(options);
+  await present.wait(READING_SOURCE);
   const inventory = extractCapabilities({ root: options.cwd, tsconfig });
   const ids = authoredIds(inventory);
-  const unread = unresolved(inventory);
-  const components = new Set(
-    [...ids].map((id) => id.replace(/^view:/, "").split(".").slice(0, -1).join(".")),
-  );
+  const entry = ENTRY_CANDIDATES.find((candidate) => existsSync(join(options.cwd, candidate)));
 
-  write(`Read ${inventory.filesAnalyzed} file${inventory.filesAnalyzed === 1 ? "" : "s"} from ${relative(process.cwd(), tsconfig) || "tsconfig.json"}`);
-  write("");
-  write(`  authored capabilities   ${ids.size}`);
-  write(`  components              ${components.size}`);
-  write(`  unread call sites       ${unread.length}`);
+  const parts: ReportPart[] = [
+    {
+      kind: "blocks",
+      blocks: [
+        {
+          title: "SURFACE INIT",
+          rows: [
+            { label: "Tsconfig", text: displayPath(tsconfig) },
+            { label: "Config", text: `${displayPath(configPath)} — to be written` },
+          ],
+        },
+        { title: "STATIC CATALOG", rows: catalogRows(inventory) },
+      ],
+    },
+    ...(ids.size > 0 ? catalogDetailParts(inventory) : []),
+  ];
 
   if (ids.size === 0) {
-    write("");
-    write(
-      "Nothing is annotated yet — that is the default, and it is the safe one: a capability " +
-        "exists only where someone wrote one. Start with `useAgentComponent` in a component " +
+    parts.push({
+      kind: "note",
+      lines: [
+        "Nothing is annotated yet — that is the default, and it is the safe one: a capability",
+        "exists only where someone wrote one. Start with `useAgentComponent` in a component",
         "that owns state worth acting on, then re-run this.",
-    );
-  } else {
-    write("");
-    for (const component of [...components].sort()) write(`  ${component}`);
+      ],
+    });
   }
 
-  const entry = ENTRY_CANDIDATES.find((candidate) => existsSync(join(options.cwd, candidate)));
-  write("");
-  write(`Write ${relative(process.cwd(), configPath)}?`);
-  write(
-    entry
-      ? `  it will import from ./${entry}, which you will still have to wire into a mount()`
-      : "  no app entry found, so the import line is a placeholder you will have to point somewhere",
-  );
+  parts.push({
+    kind: "note",
+    title: "SCAFFOLD",
+    lines: [
+      `  ${displayPath(configPath)}`,
+      entry
+        ? `  imports ./${entry}, which you will still have to wire into a mount()`
+        : "  no app entry found, so the import line is a placeholder you will have to point somewhere",
+    ],
+  });
+  await present.emit(...parts);
 
   if (!options.yes) {
     const answered = await ask(options, `Write ${CONFIG_NAME}?`);
     if (!answered) {
-      write("");
-      write("Nothing written.");
+      await present.emit({ kind: "note", lines: ["Nothing written."] });
       return 0;
     }
   }
 
   writeFileSync(configPath, scaffold(entry), "utf8");
-  write("");
-  write(`wrote ${relative(process.cwd(), configPath)}`);
-  write("");
-  write("Next:");
-  write("  1. fill in mount() — it should call your existing composition root");
-  write("  2. `agent-surface inspect` to see what an agent can reach");
-  write("  3. `agent-surface snapshot` to commit the baseline, then `check` in CI");
+  await present.emit(
+    { kind: "note", lines: [`wrote ${displayPath(configPath)}`] },
+    {
+      kind: "steps",
+      title: "NEXT STEPS",
+      steps: [
+        "fill in mount() — it should call your existing composition root",
+        "`agent-surface inspect` to see what an agent can reach",
+        "`agent-surface snapshot` to commit the baseline, then `check` in CI",
+      ],
+    },
+  );
   return 0;
 }
 

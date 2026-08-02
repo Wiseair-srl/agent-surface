@@ -17,22 +17,22 @@ import {
   type DiffEntry,
 } from "../baseline.js";
 import { ALLOWLIST_FILE, coverageExitCode, UNREAD_ALLOWLIST_FILE } from "../coverage.js";
+import { renderDriftPlain } from "../render/plain.js";
+import { createPresenter } from "../render/present.js";
 import {
-  renderCoveragePlain,
-  renderCheckOverviewPlain,
-  renderDriftPlain,
-  renderFailuresPlain,
-  renderNextStepsPlain,
-  renderNoVerdictPlain,
-  renderSectionsPlain,
-} from "../render/plain.js";
-import {
+  checkOverviewParts,
+  coverageSections,
   displayPath,
+  failureSection,
+  mountingLabel,
+  noVerdictSection,
+  READING_SOURCE,
   scenarioStats,
   type FindingSection,
+  type ReportPart,
   type ScenarioStats,
 } from "../render/summary.js";
-import { write, writeError } from "../output.js";
+import { write } from "../output.js";
 import { coverageReport, scenarioBaseline } from "../report.js";
 
 export interface CheckOptions {
@@ -85,10 +85,12 @@ interface RejectedScenario {
  *
  * The report is read top-down: the verdict, what it was computed over, one row
  * per class of finding whether or not it fired, one row per scenario, then the
- * findings themselves and the commands that clear them. Output is always plain,
- * with no rendering framework in its path at all: this is a report that gets
- * pasted into a pull request and read out of a CI log, and neither of those is
- * a terminal.
+ * findings themselves and the commands that clear them — the same shapes, in
+ * the same grid, that `inspect` uses for the same things. Its output is a
+ * report pasted into a pull request and read out of a CI log, and neither of
+ * those is a terminal — so neither of those gets a terminal UI: piped, `CI` and
+ * `NO_COLOR` all render plain text, and that is decided by the presenter, once,
+ * rather than by this command declining to have a renderer at all.
  */
 export async function runCheck(options: CheckOptions): Promise<number> {
   if (options.depth === "static") {
@@ -107,10 +109,29 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     ...(options.baselineDir ? { baselineDir: options.baselineDir } : {}),
   };
 
+  const present = await createPresenter(options);
+  if (!options.json) await present.wait(READING_SOURCE);
+
   const inventory = readInventory(analysis);
   // No streaming here, unlike `inspect`. A report is read top-down and has to
-  // lead with its findings, which means every finding has to exist first.
-  const runtime = await mountScenarios(analysis);
+  // lead with its findings, which means every finding has to exist first — so
+  // the terminal is told what it is waiting for instead, in the same words and
+  // with the same spinner `inspect` uses for the same wait.
+  let scenarios: string[] = [];
+  let mountedCount = 0;
+  const runtime = await mountScenarios(analysis, {
+    onPlan: async (plan) => {
+      scenarios = plan.scenarios;
+      if (scenarios.length > 0) await present.wait(mountingLabel(scenarios, 0));
+    },
+    onEach: async () => {
+      mountedCount += 1;
+      if (mountedCount < scenarios.length) {
+        await present.wait(mountingLabel(scenarios, mountedCount));
+      }
+    },
+  });
+  present.settle();
   if (!runtime) throw new UsageError("check needs a mount, and this depth performs none");
 
   const drifted: ScenarioDrift[] = [];
@@ -194,24 +215,24 @@ export async function runCheck(options: CheckOptions): Promise<number> {
   // ones that threw, which otherwise appear only at the bottom of the report.
   const stats: ScenarioStats[] = runtime.scenarios.map((scenario) => {
     const result = runtime.results.find((candidate) => candidate.scenario === scenario);
-    return result
-      ? { ...scenarioStats(result), baseline: baselineOf(scenario) }
-      : {
-          scenario,
-          callable: 0,
-          disabled: 0,
-          hidden: 0,
-          rejected: 0,
-          failed: true,
-          ...(runtime.failures.find((failure) => failure.scenario === scenario)?.message
-            ? {
-                failure: runtime.failures.find((failure) => failure.scenario === scenario)!.message,
-              }
-            : {}),
-        };
+    if (result) return { ...scenarioStats(result), baseline: baselineOf(scenario) };
+    const failure = runtime.failures.find((entry) => entry.scenario === scenario);
+    return {
+      scenario,
+      callable: 0,
+      disabled: 0,
+      hidden: 0,
+      rejected: 0,
+      failed: true,
+      ...(failure?.message ? { failure: failure.message } : {}),
+    };
   });
 
-  const overview = renderCheckOverviewPlain({
+  // A failing report goes to stderr in full. The verdict is the part a reader
+  // has to see, and a gate whose red is on the stream nobody captured is a gate
+  // that reads as green.
+  const stream = ok ? undefined : ("err" as const);
+  const parts: ReportPart[] = checkOverviewParts({
     status: couldNotRun ? "ERROR" : ok ? "PASS" : "FAIL",
     ...(coverage ? { coverage } : {}),
     unresolvedAllowed: options.allowUnresolved === true,
@@ -220,27 +241,27 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     scenarioManifestOk: !scenarioManifestMismatch && staleBaselineFiles.length === 0,
     rejected: rejected.reduce((sum, entry) => sum + entry.rejections.length, 0),
     mountFailures: runtime.failures.length,
-    scenarios: runtime.scenarios,
     context: {
       configPath: options.configPath,
       depth: options.depth,
       ...(runtime.scope ? { scope: runtime.scope } : {}),
     },
     stats,
-  });
-  if (ok) write(overview);
-  else writeError(overview);
+  }).map((part) => ({ ...part, ...(stream ? { stream } : {}) }));
 
   // The gap leads, because it is the finding this command could not previously
   // make at all. Drift follows, because it is the one it always could.
   if (coverage) {
-    const rendered = renderCoveragePlain(coverage, {
+    const gaps = coverageSections(coverage, {
       compact: true,
       ...(options.detail ? { detail: true } : {}),
     });
-    if (rendered) {
-      if (coverageFailed) writeError(`\n${rendered}`);
-      else write(`\n${rendered}`);
+    if (gaps.length > 0) {
+      parts.push({
+        kind: "findings",
+        sections: gaps,
+        ...(coverageFailed ? { stream: "err" as const } : {}),
+      });
     }
   }
 
@@ -291,9 +312,7 @@ export async function runCheck(options: CheckOptions): Promise<number> {
       lines: [
         `config:   ${declared.join(", ")}`,
         `manifest: ${committedScenarios?.join(", ") ?? "missing"}`,
-        ...(staleBaselineFiles.length > 0
-          ? [`stale:    ${staleBaselineFiles.join(", ")}`]
-          : []),
+        ...(staleBaselineFiles.length > 0 ? [`stale:    ${staleBaselineFiles.join(", ")}`] : []),
       ],
       hint:
         "run `agent-surface snapshot`, commit the manifest, and delete any baseline for a " +
@@ -343,11 +362,17 @@ export async function runCheck(options: CheckOptions): Promise<number> {
     );
   }
 
-  if (sections.length > 0) writeError(`\n${renderSectionsPlain(sections)}`);
+  if (sections.length > 0) parts.push({ kind: "findings", stream: "err", sections });
 
   if (couldNotRun) {
-    writeError(`\n${renderFailuresPlain(runtime.failures)}`);
-    if (inventory) writeError(`\n${renderNoVerdictPlain(runtime.failures)}`);
+    parts.push({
+      kind: "findings",
+      stream: "err",
+      sections: [
+        failureSection(runtime.failures),
+        ...(inventory ? [noVerdictSection(runtime.failures)] : []),
+      ],
+    });
     // First, and above every other remedy: nothing else in this report can be
     // trusted while a scenario the config declares never ran.
     steps.unshift(
@@ -362,7 +387,10 @@ export async function runCheck(options: CheckOptions): Promise<number> {
   // Last, and only when something failed: the tail of a CI log is what a reader
   // sees first, and a list of findings without the commands that clear them
   // leaves the reader to derive those from six different sections.
-  if (!ok && steps.length > 0) writeError(`\n${renderNextStepsPlain(steps)}`);
+  if (!ok && steps.length > 0) {
+    parts.push({ kind: "steps", stream: "err", title: "NEXT STEPS", steps });
+  }
 
+  await present.emit(...parts);
   return couldNotRun ? 2 : ok ? 0 : 1;
 }

@@ -1011,6 +1011,15 @@
       ],
       "status": "implemented"
     },
+    "AS-CLI-014": {
+      "title": "Every command renders one report model through one presenter: the same blocks, findings and label grid, drawn by the terminal UI or by plain text per stream",
+      "source": "20-cli.md#one-report-one-look",
+      "decision": "D39",
+      "tests": [
+        "packages/cli/test/cli.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-COVER-001": {
       "title": "Every statically resolvable registration call site in the analyzed program appears in the catalog",
       "source": "20-cli.md#the-catalog---depth-static",

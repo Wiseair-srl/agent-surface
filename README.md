@@ -253,12 +253,12 @@ The other gap is a route no scenario visits: it never registers, so it appears i
 
 ```text
 SURFACE SUMMARY
-Reach       11/12 authored capabilities reached · 1 unreached
-Callable    10/11 mounted capabilities are callable in at least one scenario · 1 never callable
-Risk        1 destructive · 1 confirmation-gated
-Catalog     every call site read
-Scenarios   2 mounted
-Verdict     1 authored capability is reached by no scenario
+Reach         11/12 authored capabilities reached · 1 unreached
+Callable      10/11 mounted capabilities are callable in at least one scenario · 1 never callable
+Risk          1 destructive · 1 confirmation-gated
+Catalog       every call site read
+Scenarios     2 mounted
+Verdict       1 authored capability is reached by no scenario
 
 UNREACHED — authored, and no scenario mounts it  (1)
 CAPABILITY                    ORIGIN
