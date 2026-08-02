@@ -5,15 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Plugin } from "vite";
+import { createServer, type Plugin } from "vite";
 import { createCapabilityAuthority } from "@agent-surface/core";
 import type { ExternalContractPolicy } from "../src/plugin.js";
 import {
+  agentSurface,
   canonicalJson,
   canonicalManifestJson,
   compileCapabilityContract,
   computeManifestHash,
   sha256,
+  VIRTUAL_CONTRACT_ID,
 } from "../src/index.js";
 
 const CORE = fileURLToPath(new URL("../../core/src/index.ts", import.meta.url));
@@ -200,5 +202,92 @@ describe("production graph compiler", () => {
     await expect(
       compile(root, { allow: [{ package: "@vendor/plugin", digest: "0".repeat(64) }] }),
     ).rejects.toThrow(new RegExp(`digest mismatch[\\s\\S]*approved 0{64}[\\s\\S]*computed ${stale}`));
+  });
+});
+
+/**
+ * The dev server and the test runner are the same pipeline, and neither runs
+ * Rollup's output hooks. Everything the build defers to `renderChunk` therefore
+ * has to be resolved before the first module is served, or a consumer gets an
+ * app that only works when bundled: `virtual:agent-surface-contract` fails to
+ * resolve, and any proof that did get injected carries a placeholder hash no
+ * authority can match.
+ */
+describe("serve mode", () => {
+  /**
+   * A project with a real `vite.config.ts`, because that is what the eager
+   * compile in `buildStart` re-reads — the same config the dev server itself
+   * was started from. A fixture whose plugins existed only as inline objects
+   * would be resolvable by the outer server and invisible to the inner build.
+   */
+  function serveFixture(): string {
+    const root = fixture();
+    // Drop the virtual-module import: that plugin is inline-only, and the
+    // build tests already cover it.
+    writeFileSync(join(root, "src/main.ts"), 'import "./direct.js"; import("./lazy.js");\n');
+    return root;
+  }
+
+  /**
+   * Deliberately configured INLINE, with no config file — the shape a vitest
+   * setup has. The eager compile has to inherit this resolution, or it
+   * compiles against modules the server never serves.
+   */
+  function serve(root: string) {
+    return createServer({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      server: { middlewareMode: true, hmr: false },
+      resolve: { alias: { "@agent-surface/core": CORE } },
+      plugins: [agentSurface()],
+    });
+  }
+
+  it("serves a real authority and proofs that match it, with no build", async () => {
+    const root = serveFixture();
+    const server = await serve(root);
+    try {
+      const virtual = await server.transformRequest(VIRTUAL_CONTRACT_ID);
+      expect(virtual?.code).toBeTruthy();
+      // The manifest is inlined, not left as a placeholder for a hook that
+      // never runs — the exact failure that made dev and vitest unusable.
+      expect(virtual!.code).not.toMatch(/__AGENT_SURFACE_MANIFEST/);
+
+      const manifest = await compileCapabilityContract({
+        root,
+        vite: { configFile: false, resolve: { alias: { "@agent-surface/core": CORE } } },
+      });
+      expect(virtual!.code).toContain(manifest.hash);
+
+      // And the proof the transform stamps into a contract module agrees with
+      // that manifest, which is what `assertDefinitionAuthorized` compares.
+      const direct = await server.transformRequest("/src/direct.ts");
+      expect(direct?.code).toBeTruthy();
+      expect(direct!.code).not.toMatch(/__AGENT_SURFACE_MANIFEST/);
+      expect(direct!.code).toContain(manifest.hash);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("leaves Vite's optimized dependency chunks alone", async () => {
+    const root = serveFixture();
+    mkdirSync(join(root, "node_modules/.vite/deps"), { recursive: true });
+    // Optimizer output is several dependencies concatenated, agent-surface
+    // among them. Reading the guard patterns back out of a vendor chunk used to
+    // refuse to serve the app at all.
+    writeFileSync(
+      join(root, "node_modules/.vite/deps/vendor.js"),
+      "export function r(){ registry.register({ type: 'x' }); }\n",
+    );
+    const server = await serve(root);
+    try {
+      await expect(
+        server.transformRequest("/node_modules/.vite/deps/vendor.js"),
+      ).resolves.toBeTruthy();
+    } finally {
+      await server.close();
+    }
   });
 });
