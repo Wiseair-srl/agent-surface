@@ -18,6 +18,7 @@ Options
   --snapshot <path>   committed contract (default: .agent-surface/contract.json)
   --target <name>     production build target; repeatable
   --base <git-ref>    render committed PR drift against Git base
+  --allow <pkg>=<d>   approve a dependency to contribute capabilities; repeatable
   --policy <mode>     all | widening | narrowing | neutral | none (default: all)
   --format <format>   human | json | github | markdown (default: human)
   --json              alias for --format json
@@ -48,6 +49,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         snapshot: { type: "string" },
         target: { type: "string", multiple: true },
         base: { type: "string" },
+        allow: { type: "string", multiple: true },
         policy: { type: "string", default: "all" },
         format: { type: "string", default: "human" },
         json: { type: "boolean", default: false },
@@ -85,6 +87,17 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     write(`--policy must be all, widening, narrowing, neutral, or none`, true);
     return 2;
   }
+  const allow = [];
+  for (const entry of values.allow ?? []) {
+    const separator = entry.lastIndexOf("=");
+    const name = separator === -1 ? "" : entry.slice(0, separator);
+    const digest = separator === -1 ? "" : entry.slice(separator + 1);
+    if (!name || !/^[0-9a-f]{64}$/.test(digest)) {
+      write(`--allow must be <package>=<sha256>, got "${entry}"`, true);
+      return 2;
+    }
+    allow.push({ package: name, digest });
+  }
   const options: CommandOptions = {
     root: values.root,
     ...(values.config ? { configFile: values.config } : {}),
@@ -93,6 +106,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     ...(values.base ? { base: values.base } : {}),
     format,
     policy: values.policy as CommandOptions["policy"],
+    ...(allow.length > 0 ? { externalContracts: { allow } } : {}),
     ...(values.plain ? { plain: true } : {}),
   };
   try {

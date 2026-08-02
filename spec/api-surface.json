@@ -1,0 +1,999 @@
+{
+  "$schema": "./api-surface.schema.json",
+  "description": "Public API closure manifest. Every symbol reachable through a published exports map subpath is classified. scripts/check-api-closure.mjs derives the inventory from the built .d.ts files and fails when it drifts from this file. Classifications are stable: reclassifying an export is a reviewable change, never a side effect.",
+  "classes": {
+    "authority-boundary": "Mints or verifies a CapabilityAuthority.",
+    "capability-construction": "Produces a definition, contract or binding that could become an invocable capability.",
+    "execution-boundary": "Can cause a capability handler to run.",
+    "exposure-boundary": "Projects capabilities to an agent, provider or transport.",
+    "introspection-only": "Read-only projection of already-authorized state. Cannot execute or expose.",
+    "utility": "No capability semantics: ids, schemas, errors, policies, sinks, constants.",
+    "type": "Type-only export. Cannot execute."
+  },
+  "requires": {
+    "authority": "Rejects construction/use without a genuine CapabilityAuthority.",
+    "verifies": "Is itself the verification step.",
+    "mints": "Produces the authority from a verified manifest.",
+    "proof": "Emits or forwards private compiler proof; the value is inert until an authority accepts it.",
+    "registry": "Executes only through registry.invoke, which already required authority.",
+    "compiler": "Build-time only. Produces the manifest; never executes a capability.",
+    "inert": "Reachable but cannot reach execution: no published boundary accepts its output."
+  },
+  "modules": {
+    "@agent-surface/cli": {
+      "ChangeClassification": {
+        "kind": "type",
+        "class": "type"
+      },
+      "changeCounts": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "ChangeKind": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ContractChange": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ContractReport": {
+        "kind": "type",
+        "class": "type"
+      },
+      "DEFAULT_SNAPSHOT": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "diffContracts": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "OutputFormat": {
+        "kind": "type",
+        "class": "type"
+      },
+      "readManifest": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "renderReport": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "writeManifest": {
+        "kind": "value",
+        "class": "introspection-only"
+      }
+    },
+    "@agent-surface/compiler": {
+      "AgentSurfaceCompilerOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "COMPILER_VERSION": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "CONTRACT_FILE": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "CompileCapabilityContractOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ExternalContractAllowEntry": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ExternalContractPolicy": {
+        "kind": "type",
+        "class": "type"
+      },
+      "VIRTUAL_CONTRACT_ID": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "agentSurface": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "compiler",
+        "conformance": [
+          "AS-COMPILER-001",
+          "AS-CONTRACT-002"
+        ]
+      },
+      "canonicalJson": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "canonicalManifestJson": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "compileCapabilityContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "compiler",
+        "conformance": [
+          "AS-COMPILER-001"
+        ]
+      },
+      "computeManifestHash": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "manifestPayload": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "sha256": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "verifyManifest": {
+        "kind": "value",
+        "class": "introspection-only"
+      }
+    },
+    "@agent-surface/core": {
+      "AGENT_CAPABILITY_ERROR_CODES": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "AgentActionContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentActionContract": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentActionDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentActionDescriptor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentAuthorizationContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentCapabilityDescriptorUnion": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentCapabilityErrorCode": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentCapabilityErrorPayload": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentComponentContract": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentComponentContractDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentComponentDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentComponentDescriptor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentComponentRuntimeBindings": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentConcurrency": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentConsumer": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentEffect": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentEnvironment": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentErrorRetry": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentExposureGateway": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentInvocation": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentInvocationPolicyContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentInvocationResult": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentObservationContract": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentObservationDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentObservationDescriptor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentPlane": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentPolicy": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentPolicyContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureBinding": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureBindingRuntimeConfig": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureContract": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureContractDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureDescriptor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureEffect": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureExecutor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureRefDescriptor": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentReadContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentRegistrationHandle": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentRouteInfo": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSchema": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSchemaError": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "AgentSchemaIssue": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceDefinitionError": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "AgentSurfaceDefinitionErrorCode": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceError": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "AgentSurfaceEvent": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceLimits": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceRegistry": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceSnapshot": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentTool": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentToolset": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentToolsetOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AuditEvent": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AuditSink": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CAPABILITY_CONTRACT_FORMAT_VERSION": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "CONFIRMATION_ESCALATION": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "CapabilityAuthority": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CapabilityContractEntry": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CapabilityContractKind": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CapabilityContractManifest": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CapabilityPolicyAttachment": {
+        "kind": "type",
+        "class": "type"
+      },
+      "CompiledExternalAgentTool": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ConfirmationController": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ConfirmationEscalation": {
+        "kind": "type",
+        "class": "type"
+      },
+      "DEFAULT_LIMITS": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "DiscoveryDecision": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ExternalAgentToolContract": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ExternalAgentToolContractDefinition": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ExternalContractAttribution": {
+        "kind": "type",
+        "class": "type"
+      },
+      "InvokeOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "JsonSchema": {
+        "kind": "type",
+        "class": "type"
+      },
+      "JsonValue": {
+        "kind": "type",
+        "class": "type"
+      },
+      "MAX_ID_LENGTH": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "MAX_WIRE_NAME_LENGTH": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "ParsedCapabilityId": {
+        "kind": "type",
+        "class": "type"
+      },
+      "PendingConfirmation": {
+        "kind": "type",
+        "class": "type"
+      },
+      "PreconditionFailure": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ProcedureCallInfo": {
+        "kind": "type",
+        "class": "type"
+      },
+      "RegistrationCandidate": {
+        "kind": "type",
+        "class": "type"
+      },
+      "RegistryOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "SnapshotContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "StandardSchemaV1": {
+        "kind": "type",
+        "class": "type"
+      },
+      "Unsubscribe": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WireNameAssignment": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WireNameEntry": {
+        "kind": "type",
+        "class": "type"
+      },
+      "action": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "inert",
+        "conformance": [
+          "AS-CONTRACT-003",
+          "AS-CLOSURE-004"
+        ]
+      },
+      "actionContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "inert",
+        "conformance": [
+          "AS-CONTRACT-003"
+        ]
+      },
+      "assertDefinitionAuthorized": {
+        "kind": "value",
+        "class": "authority-boundary",
+        "requires": "verifies",
+        "conformance": [
+          "AS-CONTRACT-001",
+          "AS-AUTHORITY-003"
+        ]
+      },
+      "assignWireNames": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "audit": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "authenticated": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "authorizeAgentProcedureBinding": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      },
+      "composeInvokeChain": {
+        "kind": "value",
+        "class": "execution-boundary",
+        "requires": "inert",
+        "conformance": [
+          "AS-CLOSURE-004"
+        ]
+      },
+      "consoleAuditSink": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "createAgentExposureGateway": {
+        "kind": "value",
+        "class": "exposure-boundary",
+        "requires": "authority",
+        "conformance": [
+          "AS-AUTHORITY-004",
+          "AS-CONTRACT-003"
+        ]
+      },
+      "createAgentSurfaceRegistry": {
+        "kind": "value",
+        "class": "execution-boundary",
+        "requires": "authority",
+        "conformance": [
+          "AS-AUTHORITY-001",
+          "AS-CONTRACT-001"
+        ]
+      },
+      "createAgentToolset": {
+        "kind": "value",
+        "class": "exposure-boundary",
+        "requires": "registry",
+        "conformance": [
+          "AS-AUTHORITY-004"
+        ]
+      },
+      "createCapabilityAuthority": {
+        "kind": "value",
+        "class": "authority-boundary",
+        "requires": "mints",
+        "conformance": [
+          "AS-AUTHORITY-003",
+          "AS-CONTRACT-002"
+        ]
+      },
+      "decodeWireName": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "defineAgentComponent": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "inert",
+        "conformance": [
+          "AS-CONTRACT-003",
+          "AS-CLOSURE-004"
+        ]
+      },
+      "defineAgentComponentContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001",
+          "AS-CONTRACT-002"
+        ]
+      },
+      "defineAgentProcedureContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      },
+      "defineExternalAgentToolContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-003"
+        ]
+      },
+      "deriveAgentComponentBinding": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      },
+      "emptyObjectSchema": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "encodeWireName": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "encodeWireNameForInstance": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "environment": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "evaluateDiscovery": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "formatDomainCapabilityId": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "formatViewCapabilityId": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "fromJsonSchema": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "fromStandardSchema": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "hasPermission": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "isAgentSurfaceError": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "isValidCapabilityName": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "isValidComponentType": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "isValidInstanceId": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "jsonDeepEqual": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "memoryAuditSink": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "observation": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "inert",
+        "conformance": [
+          "AS-CONTRACT-003",
+          "AS-CLOSURE-004"
+        ]
+      },
+      "observationContract": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "inert",
+        "conformance": [
+          "AS-CONTRACT-003"
+        ]
+      },
+      "parseCapabilityId": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "rateLimit": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "requireConfirmation": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "tenantBoundary": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "validateComponentDefinition": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "validateJsonSchemaDocument": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "validateValueAgainstSchema": {
+        "kind": "value",
+        "class": "utility"
+      }
+    },
+    "@agent-surface/core/explain": {
+      "CapabilityExplanation": {
+        "kind": "type",
+        "class": "type"
+      },
+      "explainSurface": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "matchesScope": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "PolicyAttribution": {
+        "kind": "type",
+        "class": "type"
+      },
+      "PolicyScope": {
+        "kind": "type",
+        "class": "type"
+      },
+      "SurfaceExplanation": {
+        "kind": "type",
+        "class": "type"
+      }
+    },
+    "@agent-surface/orpc": {
+      "AgentProcedureBindingConfig": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentProcedureRef": {
+        "kind": "type",
+        "class": "type"
+      },
+      "ClientTree": {
+        "kind": "type",
+        "class": "type"
+      },
+      "createOrpcAgentBridge": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      },
+      "isBridgeRef": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "OrpcAgentBridge": {
+        "kind": "type",
+        "class": "type"
+      },
+      "OrpcAgentBridgeOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "OrpcAgentManifest": {
+        "kind": "type",
+        "class": "type"
+      },
+      "RefsFor": {
+        "kind": "type",
+        "class": "type"
+      }
+    },
+    "@agent-surface/orpc/react": {
+      "useAgentProcedure": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      }
+    },
+    "@agent-surface/react": {
+      "AgentComponentHandle": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceProvider": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "AgentSurfaceProviderProps": {
+        "kind": "type",
+        "class": "type"
+      },
+      "PendingConfirmationView": {
+        "kind": "type",
+        "class": "type"
+      },
+      "unstable_readRenderScopeContext": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "unstable_setRenderScopeContext": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "UnstableRenderScopeContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "useAgentComponent": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001"
+        ]
+      },
+      "UseAgentComponentConfig": {
+        "kind": "type",
+        "class": "type"
+      },
+      "useAgentSurface": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "usePendingConfirmations": {
+        "kind": "value",
+        "class": "introspection-only"
+      }
+    },
+    "@agent-surface/testing": {
+      "AgentSurfaceMatchers": {
+        "kind": "type",
+        "class": "type"
+      },
+      "createTestSurface": {
+        "kind": "value",
+        "class": "execution-boundary",
+        "requires": "authority",
+        "conformance": [
+          "AS-AUTHORITY-001"
+        ]
+      },
+      "matchers": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "SerializeSurfaceOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "serializeSurfaceSnapshot": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "TestSurface": {
+        "kind": "type",
+        "class": "type"
+      },
+      "TestSurfaceOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "toBeOk": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toExpose": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toExposeUnavailable": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toFailWith": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toMatchSurfaceSnapshot": {
+        "kind": "value",
+        "class": "introspection-only"
+      }
+    },
+    "@agent-surface/testing/react": {
+      "renderAgentSurface": {
+        "kind": "value",
+        "class": "execution-boundary",
+        "requires": "authority",
+        "conformance": [
+          "AS-AUTHORITY-001"
+        ]
+      },
+      "RenderAgentSurfaceOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "RenderedAgentSurface": {
+        "kind": "type",
+        "class": "type"
+      }
+    },
+    "@agent-surface/testing/matchers": {
+      "AgentSurfaceMatchers": {
+        "kind": "type",
+        "class": "type"
+      },
+      "matchers": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toBeOk": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toExpose": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toExposeUnavailable": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toFailWith": {
+        "kind": "value",
+        "class": "introspection-only"
+      },
+      "toMatchSurfaceSnapshot": {
+        "kind": "value",
+        "class": "introspection-only"
+      }
+    },
+    "@agent-surface/webmcp": {
+      "AdapterHost": {
+        "kind": "type",
+        "class": "type"
+      },
+      "AgentSurfaceAdapter": {
+        "kind": "type",
+        "class": "type"
+      },
+      "createWebMcpAdapter": {
+        "kind": "value",
+        "class": "exposure-boundary",
+        "requires": "registry",
+        "conformance": [
+          "AS-AUTHORITY-004"
+        ]
+      },
+      "CreateWebMcpAdapterOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WebMcpModelContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WebMcpToolInit": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WebMcpToolResult": {
+        "kind": "type",
+        "class": "type"
+      }
+    }
+  }
+}

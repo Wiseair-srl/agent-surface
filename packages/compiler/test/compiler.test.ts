@@ -7,7 +7,14 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Plugin } from "vite";
 import { createCapabilityAuthority } from "@agent-surface/core";
-import { canonicalManifestJson, compileCapabilityContract } from "../src/index.js";
+import type { ExternalContractPolicy } from "../src/plugin.js";
+import {
+  canonicalJson,
+  canonicalManifestJson,
+  compileCapabilityContract,
+  computeManifestHash,
+  sha256,
+} from "../src/index.js";
 
 const CORE = fileURLToPath(new URL("../../core/src/index.ts", import.meta.url));
 const roots: string[] = [];
@@ -70,9 +77,57 @@ function virtualFixture(): Plugin {
   };
 }
 
-async function compile(root: string) {
+/**
+ * A dependency installed into the fixture's node_modules that ships a compiled
+ * contract sidecar — the auto-discovery route, which is the one a consumer
+ * never opts into and therefore the one authorization has to govern.
+ */
+function installVendorPackage(root: string, capabilityId = "domain:pinned.run"): string {
+  const dir = join(root, "node_modules/@vendor/plugin");
+  mkdirSync(dir, { recursive: true });
+  const entry = {
+    declarationId: "vendor/plugin.ts#pinned",
+    capabilityId,
+    kind: "procedure" as const,
+    description: "Pinned",
+    effect: "server-mutation" as const,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    origin: "vendor/plugin.ts",
+  };
+  const capability = { ...entry, contractHash: sha256(canonicalJson(entry)), targets: ["web-production"] };
+  const payload = {
+    formatVersion: 5 as const,
+    compilerVersion: "vendor",
+    targets: ["web-production"],
+    capabilities: [capability],
+    externalContracts: [],
+    completeness: { status: "proven" as const },
+  };
+  const manifest = { ...payload, hash: computeManifestHash(payload) };
+  const bytes = Buffer.from(canonicalManifestJson(manifest), "utf8");
+  writeFileSync(join(dir, "contract.json"), bytes);
+  writeFileSync(
+    join(dir, "package.json"),
+    JSON.stringify({
+      name: "@vendor/plugin",
+      version: "1.0.0",
+      type: "module",
+      main: "index.js",
+      agentSurface: { contract: "contract.json" },
+    }),
+  );
+  writeFileSync(join(dir, "index.js"), "export const vendor = 1;\n");
+  writeFileSync(
+    join(root, "src/main.ts"),
+    'import "./direct.js"; import("./lazy.js"); import "virtual:fixture-capability"; import "@vendor/plugin";\n',
+  );
+  return sha256(bytes);
+}
+
+async function compile(root: string, externalContracts?: ExternalContractPolicy) {
   return compileCapabilityContract({
     root,
+    ...(externalContracts ? { externalContracts } : {}),
     vite: {
       resolve: { alias: { "@agent-surface/core": CORE } },
       plugins: [virtualFixture()],
@@ -83,7 +138,7 @@ async function compile(root: string) {
 describe("production graph compiler", () => {
   it("collects aliases, lazy chunks, virtual modules, and duplicate capability ids", async () => {
     const manifest = await compile(fixture());
-    expect(manifest.formatVersion).toBe(4);
+    expect(manifest.formatVersion).toBe(5);
     expect(manifest.completeness.status).toBe("proven");
     expect(manifest.capabilities.map((entry) => entry.capabilityId)).toEqual([
       "view:fixture.panel.state",
@@ -107,5 +162,43 @@ describe("production graph compiler", () => {
 
   it("fails dynamic contract construction; no unresolved bucket exists", async () => {
     await expect(compile(fixture(true))).rejects.toThrow("dynamic");
+  });
+
+  // AS-EXTERNAL-001: a dependency reachable from the production graph is
+  // discovered automatically — and that alone must not admit its capabilities.
+  it("refuses an unapproved dependency and prints the entry to add", async () => {
+    const root = fixture();
+    const digest = installVendorPackage(root);
+    await expect(compile(root)).rejects.toThrow(
+      new RegExp(`unauthorized external capability contract[\\s\\S]*@vendor/plugin[\\s\\S]*${digest}`),
+    );
+  });
+
+  // AS-EXTERNAL-002: integrity and consent are separate facts, both recorded.
+  it("admits an approved dependency and records both digests", async () => {
+    const root = fixture();
+    const digest = installVendorPackage(root);
+    const manifest = await compile(root, { allow: [{ package: "@vendor/plugin", digest }] });
+
+    expect(manifest.externalContracts).toEqual([
+      {
+        package: "@vendor/plugin",
+        source: "node_modules/@vendor/plugin/contract.json",
+        route: "sidecar",
+        contractDigest: digest,
+        authorization: { mode: "pinned", expectedDigest: digest },
+      },
+    ]);
+    expect(manifest.capabilities.map((entry) => entry.capabilityId)).toContain("domain:pinned.run");
+  });
+
+  // AS-EXTERNAL-003: an approved dependency that changes what it contributes
+  // fails until a human reviews the change, rather than riding the old consent.
+  it("fails when an approved dependency changed, naming both digests", async () => {
+    const root = fixture();
+    const stale = installVendorPackage(root, "domain:pinned.escalated");
+    await expect(
+      compile(root, { allow: [{ package: "@vendor/plugin", digest: "0".repeat(64) }] }),
+    ).rejects.toThrow(new RegExp(`digest mismatch[\\s\\S]*approved 0{64}[\\s\\S]*computed ${stale}`));
   });
 });

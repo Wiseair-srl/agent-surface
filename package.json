@@ -11,6 +11,8 @@
     "test": "vitest run",
     "bench": "vitest bench --run packages/core/bench",
     "check:conformance": "node scripts/check-conformance.mjs",
+    "check:api-closure": "node scripts/check-api-closure.mjs",
+    "check:artifact": "node scripts/check-published-artifact.mjs",
     "typecheck": "pnpm -r typecheck",
     "size": "pnpm -r --filter \"./packages/*\" --no-bail size",
     "publint": "pnpm -r --filter \"./packages/*\" exec publint",

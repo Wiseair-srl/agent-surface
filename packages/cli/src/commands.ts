@@ -3,6 +3,7 @@ import type { CapabilityContractEntry, CapabilityContractManifest } from "@agent
 import {
   compileCapabilityContract,
   computeManifestHash,
+  type ExternalContractPolicy,
 } from "@agent-surface/compiler";
 import { diffContracts, type ChangeClassification } from "./diff.js";
 import { DEFAULT_SNAPSHOT, readBaseManifest, readManifest, writeManifest } from "./files.js";
@@ -17,6 +18,8 @@ export interface CommandOptions {
   base?: string;
   format: OutputFormat;
   policy: "all" | ChangeClassification | "none";
+  /** Dependencies approved to contribute, as `--allow <package>=<sha256>`. */
+  externalContracts?: ExternalContractPolicy;
   plain?: boolean;
 }
 
@@ -36,16 +39,18 @@ function mergeManifests(manifests: CapabilityContractManifest[]): CapabilityCont
     }
   }
   const payload = {
-    formatVersion: 4 as const,
+    formatVersion: 5 as const,
     compilerVersion: manifests[0]?.compilerVersion ?? "unknown",
     targets: [...new Set(manifests.flatMap((manifest) => manifest.targets))].sort(),
     capabilities: [...entries.values()].sort((a, b) =>
       `${a.declarationId}\0${a.capabilityId}`.localeCompare(`${b.declarationId}\0${b.capabilityId}`),
     ),
+    // One attribution per package: the same dependency contributes identically
+    // to every target, and a divergence would already have failed the compile.
     externalContracts: manifests
       .flatMap((manifest) => manifest.externalContracts)
-      .filter((entry, index, all) => all.findIndex((candidate) => candidate.digest === entry.digest) === index)
-      .sort((a, b) => a.source.localeCompare(b.source)),
+      .filter((entry, index, all) => all.findIndex((candidate) => candidate.package === entry.package) === index)
+      .sort((a, b) => a.package.localeCompare(b.package)),
     completeness: { status: "proven" as const },
   };
   return { ...payload, hash: computeManifestHash(payload) };
@@ -58,6 +63,7 @@ async function compile(options: CommandOptions): Promise<CapabilityContractManif
       compileCapabilityContract({
         root: options.root,
         ...(options.configFile ? { configFile: options.configFile } : {}),
+        ...(options.externalContracts ? { externalContracts: options.externalContracts } : {}),
         target,
       }),
     ),

@@ -410,8 +410,8 @@
     "status": "proven"
   },
   "externalContracts": [],
-  "formatVersion": 4,
-  "hash": "7e826283698d87730a40c17b808fad27c244d383d0de25dbd94a3f61b76d5824",
+  "formatVersion": 5,
+  "hash": "ff98ea478d5cde9c67da7b5cc1a8b7490291293f0dd3b4a2e2e12dc1ab556d06",
   "targets": [
     "web-production"
   ]

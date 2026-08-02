@@ -1,12 +1,18 @@
 import { resolve } from "node:path";
 import type { CapabilityContractManifest } from "@agent-surface/core";
 import { build, type InlineConfig } from "vite";
-import { agentSurface } from "./plugin.js";
+import { agentSurface, type ExternalContractPolicy } from "./plugin.js";
 
 export interface CompileCapabilityContractOptions {
   root?: string;
   configFile?: string;
   target?: string;
+  /**
+   * Which dependencies may contribute capabilities. Forwarded to the compiler
+   * plugin: without it, every discovered external contract is unauthorized and
+   * the build fails.
+   */
+  externalContracts?: ExternalContractPolicy;
   vite?: InlineConfig;
 }
 
@@ -29,6 +35,7 @@ export async function compileCapabilityContract(
       agentSurface({
         target: options.target,
         emit: false,
+        ...(options.externalContracts ? { externalContracts: options.externalContracts } : {}),
         onManifest: (value) => {
           manifest = value;
         },

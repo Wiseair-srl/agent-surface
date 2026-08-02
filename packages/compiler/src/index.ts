@@ -14,7 +14,8 @@ export {
 } from "./plugin.js";
 export type {
   AgentSurfaceCompilerOptions,
-  PinnedContractInput,
+  ExternalContractAllowEntry,
+  ExternalContractPolicy,
 } from "./plugin.js";
 export { compileCapabilityContract } from "./compile.js";
 export type { CompileCapabilityContractOptions } from "./compile.js";

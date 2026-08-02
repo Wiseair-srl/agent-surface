@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "agent-surface public API closure manifest",
+  "type": "object",
+  "required": ["classes", "requires", "modules"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "description": { "type": "string" },
+    "classes": {
+      "type": "object",
+      "description": "Classification vocabulary. A class not listed here fails the gate.",
+      "additionalProperties": { "type": "string", "minLength": 8 }
+    },
+    "requires": {
+      "type": "object",
+      "description": "How a create/expose/invoke boundary requires an authority.",
+      "additionalProperties": { "type": "string", "minLength": 8 }
+    },
+    "modules": {
+      "type": "object",
+      "description": "Keyed by published entry point: \"<package>\" or \"<package>/<subpath>\".",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "required": ["kind", "class"],
+          "properties": {
+            "kind": { "enum": ["value", "type"] },
+            "class": { "type": "string" },
+            "requires": { "type": "string" },
+            "conformance": {
+              "type": "array",
+              "items": { "type": "string", "pattern": "^AS-[A-Z]+-[0-9]{3}$" }
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

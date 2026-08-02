@@ -1,7 +1,7 @@
-# 07 — Error Model
+# Error model
 
 > [!NOTE]
-> **Status: Draft** (normative). Errors are part of the protocol: agents plan around them, adapters translate them, tests assert them. Vague errors are spec bugs.
+> Errors are part of the protocol: agents plan around them, adapters preserve them, and tests assert them.
 
 > [!TIP]
 > Errors here are not failures to apologize for — they are how the runtime *talks back* to the agent. `CAPABILITY_NOT_AVAILABLE` with a reason teaches the model the enabling step; `CONFIRMATION_REQUIRED` is a normal protocol turn; every code carries a machine-actionable `retry` hint. Implementers: the [per-code table](#code-by-code-specification) is the contract. Adapter authors: read [Principles](#principles) and the [mapping table](#adapter-mapping-guidance).
@@ -9,7 +9,7 @@
 ## Principles
 
 1. **Results, not exceptions, at the boundary.** `invoke` returns a discriminated union ([Core API §invocation](03-core-api.md#invocation)); `status: "error"` carries a serializable payload. JS exceptions are reserved for programmer misuse (structural definition defects, use-after-dispose).
-2. **Typed and closed.** Agent-facing codes come from one closed enum. Adding a code is a spec change (`INVOCATION_CONFLICT` was added by [Spec Corrections RFC](project/18-spec-corrections-rfc.md)). The enum, per-code production phase, retry category, and cacheability are cross-validated against the implementation from one machine-readable source: `spec/error-matrix.json` (directive §4.4).
+2. **Typed and closed.** Agent-facing codes come from one closed enum. The enum, production phase, retry category, and cacheability are cross-validated against the implementation from `spec/error-matrix.json`.
 3. **Two audiences, two channels.** Every error has an *agent-safe* projection (code, message, retry, details) and an *operator* channel (cause, stack, internal context → audit/logs). The two never mix.
 4. **Actionable.** Each code defines retry semantics an agent loop can act on mechanically.
 
@@ -89,16 +89,16 @@ For each: meaning · produced when · `retry` · agent-visible `details` · log-
 - **Retry:** `after-refresh`. **Details:** `{ phase: "resolve" | "mid-flight" }`. **Log-only:** tombstone timestamps, late-settlement info. **Adapter:** refresh; if `mid-flight` on a non-idempotent action, surface uncertainty to the model ("the view changed while acting; verify state before repeating").
 
 ### `STALE_CAPABILITY`
-- **Meaning:** the invocation references a superseded snapshot: `registrationId` mismatch with a live replacement, `surfaceId` from another page load, or version mismatch on a `destructive`/`external-side-effect` call.
+- **Meaning:** the invocation uses stale resolution state: `registrationId` mismatch with a live replacement, `surfaceId` from another registry instance, or version mismatch on a `destructive` or `external-side-effect` call.
 - **Retry:** `after-refresh`. **Details:** `{ reason: "registration-replaced" | "surface-reloaded" | "surface-version-mismatch", liveRegistrationId? }`. **Adapter:** MUST refresh and re-resolve; MUST NOT strip the staleness tokens to force the call through.
 
 ### `INVOCATION_CONFLICT`
-- **Meaning:** the `invocationId` was already used by this consumer for a *different* request (different capability, target, input, or evidence) within the idempotency window. Reuse never silently returns another request's result (D22).
+- **Meaning:** the `invocationId` was already used by this consumer for a *different* request—capability, target, input, or evidence—within the idempotency window. Reuse never returns another request's result.
 - **When:** phase 1, comparing the request fingerprint against the stored in-flight/terminal record for `(consumerKey, invocationId)`.
 - **Retry:** `with-changes` (use a fresh `invocationId` if the new request is intentional). **Details:** `{ reason: "id-reused-with-different-request" }` — never the prior request's capability, input, or fingerprint material. **Log-only:** both fingerprints. **Adapter:** treat as an adapter/provider id-collision bug signal; mint a namespaced id and retry the *new* request. Never cached as terminal.
 
 ### `INVALID_INPUT`
-- **Meaning:** schema parse failed, or a locked bound field was supplied ([oRPC integration §binding](05-orpc-integration.md#binding-semantics-d7-d8--draft)).
+- **Meaning:** schema parse failed, or a locked bound field was supplied ([oRPC integration §binding](05-orpc-integration.md#binding-semantics)).
 - **Retry:** `with-changes`. **Details:** `{ issues: [{ path, message }], lockedFields? }` — issue messages come from the schema layer and MUST be safe (field-level, no values echoed for fields marked sensitive via schema `format`/meta). **Log-only:** offending raw input (dev only). **Adapter:** give issues to the model verbatim.
 
 ### `NOT_AUTHENTICATED`
@@ -155,7 +155,7 @@ Adapters MUST preserve `code`, `retry`, and `details` losslessly; they MAY prepe
 |---|---|
 | `INVALID_ID` | grammar violation in `type`/capability name/instanceId |
 | `INVALID_DEFINITION` | missing/empty description, unknown fields, non-JsonValue meta |
-| `UNSUPPORTED_SCHEMA` | JSON Schema outside the [D19 subset](03-core-api.md#supported-json-schema-subset-d19-draft), too deep, too large |
+| `UNSUPPORTED_SCHEMA` | JSON Schema outside the [supported subset](03-core-api.md#supported-json-schema-subset), too deep, or too large |
 | `PLANE_VIOLATION` | view action declaring a server effect; procedure binding without executor path |
 | `DUPLICATE_CAPABILITY` | two capabilities with the same name in one definition |
 | `LIMIT_EXCEEDED` | description/meta size caps |
