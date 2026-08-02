@@ -91,17 +91,53 @@ export function groupByDeclaration(capabilities: readonly CapabilityContractEntr
   return [...groups].map(([declarationId, entries]) => ({ declarationId, entries }));
 }
 
+export type Reach = "low" | "medium" | "high";
+
 /**
- * The obligations attached to a capability, which are the reason to read a
- * contract at all. A `never` confirmation is a deliberate lowering, so it is
- * only worth a marker under --detail alongside everything else that is set.
+ * The effect ladder, graded. The effect is the fact; the grade is how it reads
+ * to someone who has not memorised the ladder. It is printed as a word rather
+ * than left to colour alone, because the streams that matter most — a pipe, a
+ * CI log, `--plain` — have no colour to read.
  */
-export function markers(entry: CapabilityContractEntry, detail = false): string[] {
-  const marks: string[] = [];
-  if (entry.confirmation && (detail || entry.confirmation !== "never")) marks.push(`confirm:${entry.confirmation}`);
-  for (const policy of entry.policies ?? []) marks.push(`policy:${policy.name}${policy.phase ? `@${policy.phase}` : ""}`);
-  if (detail) for (const tag of entry.tags ?? []) marks.push(`#${tag}`);
-  return marks;
+export function reachOf(effect: string): Reach {
+  const rank = effectRank(effect);
+  if (rank <= 1) return "low";
+  if (rank <= 3) return "medium";
+  return "high";
+}
+
+/** Nothing declared. A column still has to read as a column. */
+const NONE = "—";
+
+export const CONTRACT_HEADERS = ["CAPABILITY", "KIND", "EFFECT", "REACH", "CONFIRM", "POLICIES"] as const;
+
+export interface ContractRow {
+  capabilityId: string;
+  kind: string;
+  effect: string;
+  reach: Reach;
+  confirm: string;
+  policies: string;
+  /** Description and tags, shown under --detail. */
+  note: string;
+}
+
+export function contractRow(entry: CapabilityContractEntry): ContractRow {
+  const policies = (entry.policies ?? []).map((policy) => `${policy.name}${policy.phase ? `@${policy.phase}` : ""}`);
+  const tags = (entry.tags ?? []).map((tag) => `#${tag}`).join(" ");
+  return {
+    capabilityId: entry.capabilityId,
+    kind: entry.kind,
+    effect: entry.effect,
+    reach: reachOf(entry.effect),
+    confirm: entry.confirmation ?? NONE,
+    policies: policies.length > 0 ? policies.join(", ") : NONE,
+    note: [entry.description, tags].filter(Boolean).join("  "),
+  };
+}
+
+export function contractCells(row: ContractRow): string[] {
+  return [row.capabilityId, row.kind, row.effect, row.reach, row.confirm, row.policies];
 }
 
 function tally(values: readonly string[]): string {
@@ -123,17 +159,57 @@ export function contractHeading(manifest: CapabilityContractManifest): string {
   return `REPOSITORY CONTRACT · ${count} ${count === 1 ? "capability" : "capabilities"} · ${plural(groups, "declaration")}`;
 }
 
+/**
+ * The answer, before the evidence for it. A reader who stops after this line
+ * should still know how large the surface is and how much of it is gated.
+ */
+export function headline(manifest: CapabilityContractManifest): string[] {
+  const capabilities = manifest.capabilities;
+  const count = capabilities.length;
+  const gated = capabilities.filter((entry) => entry.confirmation && entry.confirmation !== "never").length;
+  const policed = capabilities.filter((entry) => (entry.policies ?? []).length > 0).length;
+  // Along the ladder, not by frequency: "34 low · 1 high · 1 medium" reads as
+  // a miscount rather than a distribution.
+  const reach = (["low", "medium", "high"] as const)
+    .map((grade) => [grade, capabilities.filter((entry) => reachOf(entry.effect) === grade).length] as const)
+    .filter(([, count]) => count > 0)
+    .map(([grade, count]) => `${count} ${grade}`)
+    .join(" · ");
+  return [
+    `${count} ${count === 1 ? "capability" : "capabilities"} · ${plural(
+      groupByDeclaration(capabilities).length,
+      "declaration",
+    )}${count > 0 ? ` · ${tally(capabilities.map((entry) => entry.kind))}` : ""}`,
+    `reach ${reach || NONE} · declared gates: ${gated} confirmation · ${policed} policy`,
+  ];
+}
+
+/**
+ * What a compiled contract cannot tell you. The columns above are declarations
+ * the graph proves are reachable — not a transcript of a run, and a policy's
+ * verdict is not knowable until there is an actor and an input to judge.
+ */
+export const CONTRACT_CAVEAT = [
+  "Declarations, compiled from the production graph — what this code can expose,",
+  "not what a mount exposed at runtime. CONFIRM and POLICIES are declared per",
+  "capability; whether a policy admits, denies or hides one depends on the actor,",
+  "input and context of a real invocation, which this command never performs.",
+];
+
 /** Column widths shared by the plain and drawn renderers, so both align alike. */
-export function contractColumns(capabilities: readonly CapabilityContractEntry[]): {
-  id: number;
-  kind: number;
-  effect: number;
-} {
-  return {
-    id: Math.max(0, ...capabilities.map((entry) => entry.capabilityId.length)),
-    kind: Math.max(0, ...capabilities.map((entry) => entry.kind.length)),
-    effect: Math.max(0, ...capabilities.map((entry) => entry.effect.length)),
-  };
+export function contractColumns(capabilities: readonly CapabilityContractEntry[]): number[] {
+  const rows = capabilities.map((entry) => contractCells(contractRow(entry)));
+  return CONTRACT_HEADERS.map((header, index) =>
+    Math.max(header.length, ...rows.map((cells) => cells[index]?.length ?? 0)),
+  );
+}
+
+/** One table line, padded to the shared widths. The last cell is never padded. */
+export function contractLine(cells: readonly string[], widths: readonly number[]): string {
+  return cells
+    .map((cell, index) => (index === cells.length - 1 ? cell : cell.padEnd(widths[index] ?? 0)))
+    .join("  ")
+    .trimEnd();
 }
 
 /** Show the snapshot where the user would type it, not as an absolute path. */
@@ -152,17 +228,14 @@ export function showsContract(report: ContractReport, options: RenderOptions = {
   return report.command === "inspect" || options.detail === true;
 }
 
+/** Provenance. True, needed, and not what the reader came for — so it sits below. */
 export function summaryFields(report: ContractReport, options: RenderOptions = {}): [string, string][] {
   const { manifest } = report;
-  const kinds = tally(manifest.capabilities.map((entry) => entry.kind));
-  const effects = tally(manifest.capabilities.map((entry) => entry.effect));
   const fields: [string, string][] = [
     ["Contract", manifest.hash],
     ["Compiler", manifest.compilerVersion],
     ["Completeness", manifest.completeness.status],
-    ["Targets", manifest.targets.join(", ") || "—"],
-    ["Capabilities", `${manifest.capabilities.length}${kinds ? ` · ${kinds}` : ""}`],
-    ...(effects ? ([["Effects", effects]] as [string, string][]) : []),
+    ["Targets", manifest.targets.join(", ") || NONE],
     ["Snapshot", displayPath(report.snapshotPath, options.root)],
   ];
   if (report.integrity) fields.push(["Integrity", report.integrity.status]);
@@ -170,30 +243,31 @@ export function summaryFields(report: ContractReport, options: RenderOptions = {
 }
 
 export function humanReport(report: ContractReport, options: RenderOptions = {}): string {
-  const label = Math.max(...summaryFields(report, options).map(([name]) => name.length));
+  const fields = summaryFields(report, options);
+  const label = Math.max(...fields.map(([name]) => name.length));
   const lines = [
     `AGENT SURFACE ${report.command.toUpperCase()} · ${report.status.toUpperCase()}`,
-    ...summaryFields(report, options).map(([name, value]) => `${name.padEnd(label)}  ${value}`),
+    "",
+    ...headline(report.manifest),
+    "",
+    ...fields.map(([name, value]) => `${name.padEnd(label)}  ${value}`),
   ];
   if (report.integrity) lines.push("", ...section("SOURCE ↔ SNAPSHOT", report.integrity.changes));
   if (report.pullRequest) {
     lines.push("", ...section(`PR DRIFT vs ${report.pullRequest.base}`, report.pullRequest.changes));
   }
   if (showsContract(report, options)) {
-    const column = contractColumns(report.manifest.capabilities);
-    lines.push("", contractHeading(report.manifest));
+    const widths = contractColumns(report.manifest.capabilities);
+    lines.push("", contractHeading(report.manifest), "", `  ${contractLine(CONTRACT_HEADERS, widths)}`);
     for (const group of groupByDeclaration(report.manifest.capabilities)) {
       lines.push("", `${group.declarationId} (${group.entries.length})`);
       for (const entry of group.entries) {
-        const marks = markers(entry, options.detail);
-        lines.push(
-          `  ${entry.capabilityId.padEnd(column.id)}  ${entry.kind.padEnd(column.kind)}  ${
-            marks.length > 0 ? entry.effect.padEnd(column.effect) : entry.effect
-          }${marks.length > 0 ? `  ${marks.join(" ")}` : ""}`.trimEnd(),
-        );
-        if (options.detail && entry.description) lines.push(`      ${entry.description}`);
+        const row = contractRow(entry);
+        lines.push(`  ${contractLine(contractCells(row), widths)}`);
+        if (options.detail && row.note) lines.push(`      ${row.note}`);
       }
     }
+    lines.push("", ...CONTRACT_CAVEAT);
   }
   return `${lines.join("\n")}\n`;
 }
