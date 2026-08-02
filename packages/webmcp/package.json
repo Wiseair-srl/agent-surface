@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/webmcp",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "[Experimental] WebMCP (navigator.modelContext) transport adapter for agent-surface",
   "license": "MIT",
   "type": "module",

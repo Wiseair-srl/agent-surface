@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/compiler",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Vite compiler for deterministic agent capability contracts",
   "license": "MIT",
   "type": "module",
@@ -13,7 +13,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist", "LICENSE"],
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -28,14 +31,26 @@
     "@types/node": "^20.19.0"
   },
   "author": "Paolo Barbato",
-  "engines": { "node": ">=20.19.0" },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Wiseair-srl/agent-surface.git",
     "directory": "packages/compiler"
   },
   "homepage": "https://agent-surface-docs.vercel.app",
-  "bugs": { "url": "https://github.com/Wiseair-srl/agent-surface/issues" },
-  "publishConfig": { "access": "public" },
-  "keywords": ["agent-surface", "vite", "compiler", "capabilities", "manifest"]
+  "bugs": {
+    "url": "https://github.com/Wiseair-srl/agent-surface/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agent-surface",
+    "vite",
+    "compiler",
+    "capabilities",
+    "manifest"
+  ]
 }
