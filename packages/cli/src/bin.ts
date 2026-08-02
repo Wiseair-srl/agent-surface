@@ -8,23 +8,32 @@ import type { OutputFormat } from "./report.js";
 const USAGE = `agent-surface — compiled production capability contract
 
 Usage
-  agent-surface inspect
-  agent-surface snapshot
-  agent-surface check --base origin/main --format github
+  agent-surface inspect [options]     view the contract and any drift
+  agent-surface snapshot [options]    write the committed contract
+  agent-surface check [options]       fail on drift, for CI
 
-Options
+Compilation
   --root <path>       application root (default: cwd)
   --config <path>     Vite config, relative to root
-  --snapshot <path>   committed contract (default: .agent-surface/contract.json)
   --target <name>     production build target; repeatable
-  --base <git-ref>    render committed PR drift against Git base
   --allow <pkg>=<d>   approve a dependency to contribute capabilities; repeatable
+
+Contract
+  --snapshot <path>   committed contract (default: .agent-surface/contract.json)
+  --base <git-ref>    render committed PR drift against Git base
   --policy <mode>     all | widening | narrowing | neutral | none (default: all)
+
+Output
+  --detail            add descriptions, confirmation, policies, and tags
   --format <format>   human | json | github | markdown (default: human)
   --json              alias for --format json
-  --plain             disable Ink terminal rendering
+  --plain             plain text instead of the drawn terminal view
   -h, --help
   -v, --version
+
+Examples
+  agent-surface inspect --detail
+  agent-surface check --base origin/main --format github
 
 Exit: 0 clean/viewed, 1 deterministic drift/policy finding, 2 completeness failure.
 `;
@@ -37,11 +46,23 @@ function write(text: string, error = false): void {
   (error ? process.stderr : process.stdout).write(text.endsWith("\n") ? text : `${text}\n`);
 }
 
+/**
+ * `pnpm run <script> -- --plain` forwards the separator itself, and `parseArgs`
+ * turns everything after it into positionals — so the flag arrived as a second
+ * command and the run failed as `invalid command inspect`. This CLI takes no
+ * literal operands, so the first separator is dropped and the pass-through
+ * idiom every package manager documents works.
+ */
+function stripSeparator(argv: string[]): string[] {
+  const index = argv.indexOf("--");
+  return index === -1 ? argv : [...argv.slice(0, index), ...argv.slice(index + 1)];
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let parsed;
   try {
     parsed = parseArgs({
-      args: argv,
+      args: stripSeparator(argv),
       allowPositionals: true,
       options: {
         root: { type: "string", default: process.cwd() },
@@ -54,6 +75,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         format: { type: "string", default: "human" },
         json: { type: "boolean", default: false },
         plain: { type: "boolean", default: false },
+        detail: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
       },
@@ -108,6 +130,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     policy: values.policy as CommandOptions["policy"],
     ...(allow.length > 0 ? { externalContracts: { allow } } : {}),
     ...(values.plain ? { plain: true } : {}),
+    ...(values.detail ? { detail: true } : {}),
   };
   try {
     if (command === "inspect") return await runInspect(options);

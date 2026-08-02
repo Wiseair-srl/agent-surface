@@ -7,7 +7,7 @@ import {
 } from "@agent-surface/compiler";
 import { diffContracts, type ChangeClassification } from "./diff.js";
 import { DEFAULT_SNAPSHOT, readBaseManifest, readManifest, writeManifest } from "./files.js";
-import type { ContractReport, OutputFormat } from "./report.js";
+import type { ContractReport, OutputFormat, RenderOptions } from "./report.js";
 import { renderReport } from "./report.js";
 
 export interface CommandOptions {
@@ -21,6 +21,7 @@ export interface CommandOptions {
   /** Dependencies approved to contribute, as `--allow <package>=<sha256>`. */
   externalContracts?: ExternalContractPolicy;
   plain?: boolean;
+  detail?: boolean;
 }
 
 function mergeManifests(manifests: CapabilityContractManifest[]): CapabilityContractManifest {
@@ -87,12 +88,13 @@ async function present(report: ContractReport, options: CommandOptions): Promise
     process.stdout.isTTY === true &&
     !process.env["CI"] &&
     !process.env["NO_COLOR"];
+  const render: RenderOptions = { root: options.root, ...(options.detail ? { detail: true } : {}) };
   if (interactive) {
     const { renderInk } = await import("./ink.js");
-    await renderInk(report);
+    await renderInk(report, render);
     return;
   }
-  process.stdout.write(renderReport(report, options.format));
+  process.stdout.write(renderReport(report, options.format, render));
 }
 
 export async function runInspect(options: CommandOptions): Promise<number> {

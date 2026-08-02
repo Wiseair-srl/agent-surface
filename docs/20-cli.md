@@ -42,10 +42,12 @@ For anything beyond a couple of dependencies, keep the list in the Vite config a
 ## `inspect`
 
 ```bash
-pnpm exec agent-surface inspect [--base <ref>] [--format <format>]
+pnpm exec agent-surface inspect [--base <ref>] [--detail] [--format <format>]
 ```
 
 Compiles the current graph and displays the capability inventory plus source-to-snapshot drift. With `--base`, it also displays contract drift from the selected Git ref. Findings do not change exit `0`; compilation and completeness failures exit `2`.
+
+The inventory is grouped by the declaration that owns each capability, so the declaration is written once as a heading rather than repeated on every row. Each row carries the capability id, its kind, its effect, and any obligation attached to it — a confirmation it requires, a policy it runs under. `--detail` adds each capability's description, its tags, and a confirmation that was deliberately lowered to `never`.
 
 Use `inspect` for local review and diagnosis.
 
@@ -83,6 +85,8 @@ Contract changes are classified as:
 
 `--policy all|widening|narrowing|neutral|none` selects which findings fail the command. It never removes rows from output.
 
+`check` leads with the verdict and the drift behind it. Add `--detail` to print the full inventory underneath, in the same grouped form `inspect` uses — the reason to ask a gate for detail is to read what it gated.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -95,10 +99,18 @@ Contract changes are classified as:
 
 Use `--format human|json|github|markdown`.
 
-- `json` is canonical machine output.
+- `json` is canonical machine output. It carries no checkout path, so two machines that compiled the same source produce the same bytes.
 - `github` and `markdown` are CI-friendly renderings of the same report model.
-- interactive `human` output uses Ink.
+- interactive `human` output is drawn with Ink, which grades each effect by reach with colour. It shows the same blocks as the plain renderer.
 - pipes, CI, `NO_COLOR`, `--plain`, and machine formats produce deterministic plain text.
+- `--detail` widens the `human` renderings only. `json` already carries every field it adds.
+
+A package manager forwards the `--` that separates its own flags from the script's, so both spellings reach the CLI intact:
+
+```bash
+pnpm surface:inspect --detail
+pnpm surface:inspect -- --detail
+```
 
 ## Recommended CI command
 

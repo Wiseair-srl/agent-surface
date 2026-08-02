@@ -894,7 +894,8 @@
       "title": "The rendered inspect view contains every capability the snapshot contains",
       "source": "20-cli.md#inspect",
       "decision": "D33",
-      "status": "deprecated"
+      "tests": ["packages/cli/test/contract.test.ts"],
+      "status": "implemented"
     },
     "AS-CLI-002": {
       "title": "Exit codes are 0 clean, 1 a finding, 2 the command could not run — and check is the only command that fails on a finding",
