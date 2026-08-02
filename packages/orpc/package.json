@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/orpc",
-  "version": "0.19.0",
+  "version": "0.19.1",
   "description": "Contextual references to oRPC domain procedures exposed via orpc-agent — binding, gating, executor bridge",
   "license": "MIT",
   "type": "module",
