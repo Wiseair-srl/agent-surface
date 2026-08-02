@@ -1,5 +1,15 @@
 # @agent-surface/core
 
+## 0.17.0
+
+### Minor Changes
+
+- 1c4bf21: Make compiler authority mandatory across registration and exposure boundaries.
+
+  - Verify and freeze format-v4 manifests at runtime.
+  - Keep compiler proof private and compare runtime semantics to source truth.
+  - Remove raw React/oRPC execution paths and unsafe adapter execute overrides.
+
 ## 0.16.0
 
 ### Minor Changes
