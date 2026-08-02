@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/cli",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Inspect and check the agent surface your app exposes — in the terminal and in CI",
   "license": "MIT",
   "type": "module",
