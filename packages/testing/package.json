@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/testing",
-  "version": "0.19.1",
+  "version": "0.20.0",
   "description": "Deterministic test harness, matchers and semantic snapshots for agent surfaces — no LLM required",
   "license": "MIT",
   "type": "module",
