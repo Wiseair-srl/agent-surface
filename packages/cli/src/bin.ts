@@ -3,7 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { runCheck, runInspect, runSnapshot, type CommandOptions } from "./commands.js";
-import type { OutputFormat } from "./report.js";
+import type { OutputFormat, Verbosity } from "./report.js";
 
 const USAGE = `agent-surface — compiled production capability contract
 
@@ -24,15 +24,18 @@ Contract
   --policy <mode>     all | widening | narrowing | neutral | none (default: all)
 
 Output
-  --detail            add descriptions, confirmation, policies, and tags
-  --format <format>   human | json | github | markdown (default: human)
+  --verbosity <level> min | normal | detail (default: normal)
+                      min: headline and counts only
+                      detail: descriptions, provenance, grouped inventory
+  --detail            alias for --verbosity detail
+  --format <format>   human | json | md | github (default: human)
   --json              alias for --format json
   --plain             plain text instead of the drawn terminal view
   -h, --help
   -v, --version
 
 Examples
-  agent-surface inspect --detail
+  agent-surface inspect --verbosity detail
   agent-surface check --base origin/main --format github
 
 Exit: 0 clean/viewed, 1 deterministic drift/policy finding, 2 completeness failure.
@@ -41,6 +44,7 @@ Exit: 0 clean/viewed, 1 deterministic drift/policy finding, 2 completeness failu
 const COMMANDS = new Set(["inspect", "snapshot", "check"]);
 const FORMATS = new Set<OutputFormat>(["human", "json", "github", "markdown"]);
 const POLICIES = new Set(["all", "widening", "narrowing", "neutral", "none"]);
+const VERBOSITIES = new Set<Verbosity>(["min", "normal", "detail"]);
 
 function write(text: string, error = false): void {
   (error ? process.stderr : process.stdout).write(text.endsWith("\n") ? text : `${text}\n`);
@@ -75,6 +79,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
         format: { type: "string", default: "human" },
         json: { type: "boolean", default: false },
         plain: { type: "boolean", default: false },
+        verbosity: { type: "string", default: "normal" },
         detail: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
         version: { type: "boolean", short: "v", default: false },
@@ -100,9 +105,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     write(USAGE, true);
     return 2;
   }
-  const format = (values.json ? "json" : values.format) as OutputFormat;
+  // `md` is what the sibling orpc-agent CLI calls it; both spellings work here.
+  const format = (values.json ? "json" : values.format === "md" ? "markdown" : values.format) as OutputFormat;
   if (!FORMATS.has(format)) {
-    write(`--format must be human, json, github, or markdown`, true);
+    write(`--format must be human, json, md, markdown, or github`, true);
+    return 2;
+  }
+  const verbosity = (values.detail ? "detail" : values.verbosity) as Verbosity;
+  if (!VERBOSITIES.has(verbosity)) {
+    write(`--verbosity must be min, normal, or detail`, true);
     return 2;
   }
   if (!POLICIES.has(values.policy)) {
@@ -130,7 +141,7 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     policy: values.policy as CommandOptions["policy"],
     ...(allow.length > 0 ? { externalContracts: { allow } } : {}),
     ...(values.plain ? { plain: true } : {}),
-    ...(values.detail ? { detail: true } : {}),
+    verbosity,
   };
   try {
     if (command === "inspect") return await runInspect(options);

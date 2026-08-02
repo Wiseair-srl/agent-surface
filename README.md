@@ -246,23 +246,20 @@ SOURCE ↔ SNAPSHOT (2) · widening 2 · narrowing 0 · neutral 0
 ~ widening  domain:devices.disable · src/agent/contracts.ts#devicesDisableContract · effect: destructive → server-mutation
 ```
 
-Both rows are deliberately counter-intuitive. Weakening a gate is widening, and so is *lowering* a declared effect: `destructive → server-mutation` describes less reach than the code has, and every review habit and policy keyed on the higher effect quietly stops applying. `inspect` shows the same inventory the gate reads, grouped by declaration:
+Both rows are deliberately counter-intuitive. Weakening a gate is widening, and so is *lowering* a declared effect: `destructive → server-mutation` describes less reach than the code has, and every review habit and policy keyed on the higher effect quietly stops applying. `inspect` shows the same inventory the gate reads:
 
 ```
-REPOSITORY CONTRACT · 11 capabilities · 5 declarations
+11 capabilities · 5 declarations · 6 action · 4 observation · 1 procedure
+reach 9 low · 1 medium · 1 high · declared gates: 1 confirmation · 0 policy · snapshot current
 
-  CAPABILITY                     KIND         EFFECT       REACH   CONFIRM   POLICIES
-
-src/agent/contracts.ts#devicesDisableContract (1)
-  domain:devices.disable         procedure    destructive  high    required  —
-
-src/agent/contracts.ts#devicesTableContract (3)
-  view:devices.table.readState   observation  read         low     —         —
-  view:devices.table.selectRows  action       local-state  low     —         —
-  view:devices.table.sort        action       local-state  low     —         —
+CAPABILITY                     KIND         EFFECT       REACH   CONFIRM   POLICIES
+domain:devices.disable         procedure    destructive  high    required  —
+view:devices.table.readState   observation  read         low     —         —
+view:devices.table.selectRows  action       local-state  low     —         —
+view:devices.table.sort        action       local-state  low     —         —
 ```
 
-`REACH` grades the effect as a word rather than a colour, so a pipe and a CI log carry what the terminal does. And the view closes by saying what it cannot know: these are declarations compiled from the production graph — what the code can expose, not what a mount exposed at runtime. Whether a policy admits, denies, or hides a capability depends on the actor, input, and context of a real invocation, which no CLI command performs. Full rules, formats, and exit codes: [CLI](https://agent-surface.dev/20-cli).
+`REACH` grades the effect as a word rather than a colour, so a pipe and a CI log carry what the terminal does; at a terminal, colour repeats the words. `--verbosity detail` groups the inventory under the declaration that owns each capability and adds descriptions, tags and provenance. And the view closes by saying what it cannot know: these are declarations compiled from the production graph — what the code can expose, not what a mount exposed at runtime. Whether a policy admits, denies, or hides a capability depends on the actor, input, and context of a real invocation, which no CLI command performs. Full rules, formats, and exit codes: [CLI](https://agent-surface.dev/20-cli).
 
 ## Example
 

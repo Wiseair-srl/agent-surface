@@ -4,6 +4,7 @@ Compiles, snapshots and diffs the production capability contract.
 
 ```bash
 agent-surface inspect
+agent-surface inspect --verbosity detail
 agent-surface snapshot
 agent-surface check --base origin/main --format github
 ```
