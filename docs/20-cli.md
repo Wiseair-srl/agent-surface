@@ -113,22 +113,33 @@ agent-surface init [--yes]
 Reads the codebase, tells you what it found, and only then offers to write `agent-surface.config.tsx`. It mounts nothing and needs no config to exist — it is `--depth static` with a file write on the end.
 
 ```text
-Read 34 files from tsconfig.json
+SURFACE INIT
+Tsconfig      tsconfig.json
+Config        agent-surface.config.tsx — to be written
 
-  authored capabilities   10
-  components              4
-  unread call sites       0
+STATIC CATALOG
+STATUS        COMPLETE — every capability identity resolved
+Capabilities  10 authored (upper bound) · 10 resolved call sites
+Program       34 files analyzed
+Metadata      0 call sites partially read
+Domain        not analyzed at static depth; full depth reads the oRPC manifest
 
-  app.navigation
-  devices.drawer
-  devices.filters
-  devices.table
+COMPONENTS  (4)
+COMPONENT             CAPABILITIES  CALL SITES  DYNAMIC META
+view:app.navigation   2             2           —
+    ⤷ view:app.navigation.current · view:app.navigation.goTo
+…
 
-Write agent-surface.config.tsx?
-  it will import from ./src/main.tsx, which you will still have to wire into a mount()
+SCAFFOLD
+  agent-surface.config.tsx
+  imports ./src/main.tsx, which you will still have to wire into a mount()
+
+Write agent-surface.config.tsx?  (Y/n)
 ```
 
 The order is the point: the number it prints is the one every later command is relative to, and a scaffold offered before the summary asks you to accept a config for a codebase neither of you has looked at yet. It writes nothing before the summary, and nothing at all without a `y` (or `--yes`, which is how a non-interactive shell has to answer — there is nobody there to ask).
+
+The blocks are [`inspect --depth static`](#the-catalog---depth-static)'s own, deliberately: the first report you ever see is the one you will go on seeing (`AS-CLI-014`).
 
 Unlike `orpc-agent init`, it does not probe an entry module: a surface config needs a `mount()` that builds the app, and there is no export a tool can import to get one. It names the likeliest file and leaves the wiring to you.
 
@@ -142,19 +153,19 @@ The whole surface: what this codebase authors, what a mount surfaces, and the di
 
 ```text
 SURFACE INSPECT
-Config      agent-surface.config.tsx
-Depth       full — the source is read and every scenario is mounted
-Scope       whole surface — no component-type prefix filter
-Scenarios   2 — admin, anonymous
+Config        agent-surface.config.tsx
+Depth         full — the source is read and every scenario is mounted
+Scope         whole surface — no component-type prefix filter
+Scenarios     2 — admin, anonymous
 
 SURFACE SUMMARY
-Reach       11/11 authored capabilities reached
-Callable    9/11 mounted capabilities are callable in at least one scenario · 2 never callable (2 disabled)
-Risk        1 destructive · 1 confirmation-gated · 1 with bound input
-Domain      1 capability reached against the authoritative oRPC manifest
-Catalog     every call site read
-Scenarios   2 mounted
-Verdict     every authored capability is reached by a scenario
+Reach         11/11 authored capabilities reached
+Callable      9/11 mounted capabilities are callable in at least one scenario · 2 never callable (2 disabled)
+Risk          1 destructive · 1 confirmation-gated · 1 with bound input
+Domain        1 capability reached against the authoritative oRPC manifest
+Catalog       every call site read
+Scenarios     2 mounted
+Verdict       every authored capability is reached by a scenario
 
 SCENARIOS  (2)
 SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED
@@ -286,6 +297,25 @@ agent-surface snapshot [scenario]
 
 Writes `.agent-surface/<scenario>.json` plus `.agent-surface/scenarios.json`. The scenario document is normalized and includes visible and hidden capabilities plus registration rejections. The manifest lets `check` detect removed scenarios and stale baseline files. Commit both.
 
+```text
+SURFACE SNAPSHOT
+Config        agent-surface.config.tsx
+Depth         full — the source is read and every scenario is mounted
+Scope         whole surface — no component-type prefix filter
+Scenarios     2 — admin, anonymous
+
+WROTE  (2)
+SCENARIO   FILE
+admin      .agent-surface/admin.json
+anonymous  .agent-surface/anonymous.json
+
+SURFACE SUMMARY
+Reach         11/11 authored capabilities reached
+…
+```
+
+It opens with the run it describes, like every other report (`AS-CLI-013`) — this is the one command that *changes committed files*, and it used to be the only one that never said what it had been pointed at while doing so.
+
 It prints [the verdict](#the-verdict) too. This is the command you run to *accept* a change to the surface, which makes it the last moment before a reviewer sees the diff — and accepting a projection while a capability sits behind a route no scenario visits is exactly the state worth hearing about. It reports; `check` is still the only thing that fails.
 
 ### `check`
@@ -309,15 +339,15 @@ A baseline file that exists but cannot be read or parsed is *could not run* (`2`
 
 ```text
 SURFACE CHECK  FAIL
-Config             agent-surface.config.tsx
-Depth              full — the source is read and every scenario is mounted
-Scope              whole surface — no component-type prefix filter
+Config               agent-surface.config.tsx
+Depth                full — the source is read and every scenario is mounted
+Scope                whole surface — no component-type prefix filter
 
-Coverage    FAIL   2/3 authored capabilities reached · 1 unreached
-Catalog     PASS   all static sites resolved
-Domain      PASS   1 manifest capability reached
-Baselines   FAIL   1/2 scenario baselines current
-Runtime     PASS   2 scenarios mounted
+Coverage      FAIL   2/3 authored capabilities reached · 1 unreached
+Catalog       PASS   all static sites resolved
+Domain        PASS   1 manifest capability reached
+Baselines     FAIL   1/2 scenario baselines current
+Runtime       PASS   2 scenarios mounted
 
 SCENARIOS  (2)
 SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED  BASELINE
@@ -354,21 +384,21 @@ The report is read top-down, and each band answers the next question the one abo
 
 Any difference counts as drift, including a description edit. Descriptions are the provider's cached prompt prefix (D28) — a silent edit re-bills every conversation, which is precisely a change a reviewer should see.
 
-`check` is **always plain**, with no rendering framework in its path at all. Its output is a report pasted into a pull request and read out of a CI log, and neither of those is a terminal.
+Its output is a report pasted into a pull request and read out of a CI log, and neither of those is a terminal — so in both it is **plain**, byte-stable, and free of escape sequences (`AS-CLI-003`). In a terminal it is drawn like every other report, from the same blocks, in the same grid, with a spinner naming the scenario being mounted rather than seventeen silent seconds ([§one report, one look](#one-report-one-look)). Neither of those is a decision this command makes: the presenter makes it once, per stream, for the run.
 
 A green `check` says the same things in the same order, and has nothing to put under `NEXT STEPS`:
 
 ```text
 SURFACE CHECK  PASS
-Config             agent-surface.config.tsx
-Depth              full — the source is read and every scenario is mounted
-Scope              devices — every count below is relative to it
+Config               agent-surface.config.tsx
+Depth                full — the source is read and every scenario is mounted
+Scope                devices — every count below is relative to it
 
-Coverage    PASS   9/9 authored capabilities reached
-Catalog     WARN   11 unread static sites allowlisted
-Domain      PASS   1 manifest capability reached
-Baselines   PASS   2/2 scenario baselines current
-Runtime     PASS   2 scenarios mounted
+Coverage      PASS   9/9 authored capabilities reached
+Catalog       WARN   11 unread static sites allowlisted
+Domain        PASS   1 manifest capability reached
+Baselines     PASS   2/2 scenario baselines current
+Runtime       PASS   2 scenarios mounted
 
 SCENARIOS  (2)
 SCENARIO   ROUTE     CALLABLE  DISABLED  HIDDEN  REJECTED  BASELINE
@@ -527,12 +557,12 @@ view:cov.unmounted.toCsv  Unmounted.tsx:26
     .agent-surface/coverage-allow.json
 
 SURFACE SUMMARY
-Reach       2/3 authored capabilities reached · 1 unreached
-Callable    2/2 mounted capabilities are callable in at least one scenario
-Risk        nothing mutating or destructive is on the surface · 2 read-only or local-state capabilities
-Catalog     every call site read
-Scenarios   1 mounted
-Verdict     1 authored capability is reached by no scenario
+Reach         2/3 authored capabilities reached · 1 unreached
+Callable      2/2 mounted capabilities are callable in at least one scenario
+Risk          nothing mutating or destructive is on the surface · 2 read-only or local-state capabilities
+Catalog       every call site read
+Scenarios     1 mounted
+Verdict       1 authored capability is reached by no scenario
 ```
 
 Three buckets:
@@ -606,7 +636,7 @@ A UI affordance that was **never registered** — a button with no `action` behi
 
 ## Output modes
 
-Terminal-aware only when there is a terminal. Piped output, `--plain`, `CI` and `NO_COLOR` all render plain text; `--json` emits data. Plain output is byte-stable across runs (`AS-CLI-003`) — a CLI whose shape changes when redirected is unusable in a build log.
+Terminal-aware only when there is a terminal, and asked per stream — the two are redirected independently. Piped output, `--plain`, `CI` and `NO_COLOR` all render plain text; `--json` emits data. Plain output is byte-stable across runs (`AS-CLI-003`) — a CLI whose shape changes when redirected is unusable in a build log. Every command answers to the same rule, in [one report model](#one-report-one-look).
 
 | Flag | Effect |
 |---|---|
@@ -644,6 +674,21 @@ The same normalized scenario model feeds JSON, committed baselines, drift checks
 
 *Why:* a registry built with `environment: "development"` logs an audit trail, and under Node `console.debug` is `console.log`. An unqualified console sink lands on stdout and `--json` stops parsing. An app that writes to stdout itself will still corrupt `--json`, and only the app can fix that.
 
+### One report, one look
+
+Every command builds the **same report model** — labelled blocks, tables, findings, notes, next steps — and hands it to one presenter, which draws it (`AS-CLI-014`). Nothing else in the package chooses a renderer, waits on a spinner, or writes a blank line.
+
+| | |
+|---|---|
+| **One renderer per stream, decided once** | Ink when *that* stream is a terminal, plain text otherwise. `agent-surface check 2> report.txt` from a terminal draws the verdict and writes the findings as text, because a file full of cursor escapes is a file nobody can read. |
+| **One blank line between parts** | Ink ends each painted frame with a newline; plain text is asked for one. The commands do neither. |
+| **One label grid** | The text column belongs to the report, not to the block, and can only ever widen — so `Config`, `Capabilities` and `Coverage` line up whether they were printed a second or a minute apart. |
+| **One vocabulary** | A finding looks like a finding in all four commands: heading, gloss, count, entries, and what to do about it. |
+
+*Why:* the choice used to be made at each of thirty call sites, and three of them were forgotten. `check` and `snapshot` had no terminal UI at all — a `check` on a real repository was seventeen silent seconds and then a wall of plain text — `inspect` printed its static catalog and its mount failures as raw text in the middle of a drawn report, and one report carried two different text columns depending on which block you were reading. None of those was a decision; each was a call site nobody revisited.
+
+A command that grows a new kind of block adds it to the model, where both renderers pick it up, or it does not render at all. That is the point of the switch being exhaustive in both.
+
 ## Exiting
 
 **A finished command exits, rather than waiting for Node's event loop to drain** (`AS-CLI-005`). It gets a moment to end on its own; if it does not, the CLI names what is still running and exits anyway, on the exit code the command earned — `check` still exits `1` on drift.
@@ -651,11 +696,14 @@ The same normalized scenario model feeds JSON, committed baselines, drift checks
 *Why:* the CLI hosts your application, and applications are not written for one-shot processes. A polling interval, a websocket, or a data layer whose cache timer outlives the render keeps the loop busy after the last scenario is printed. Left alone the command emits full, correct output, sets a successful exit code, and then sits there — the worst kind of failure to diagnose, because nothing on screen is wrong.
 
 ```text
-agent-surface: the output above is complete, but 5 handle(s) are still open (Timeout) —
-something started during the mount is still running, so this command would have waited
-instead of exiting. Common causes: a polling interval, a websocket, or a data layer whose
-cache timer outlives the render. Exiting 0.
+PROCESS CLEANUP  WARN
+Open handles  5 (Timeout)
+Impact        report complete; exit code unchanged; process exit forced
+Likely cause  polling, websocket, or a cache timer created during mount
+Exit          0
 ```
+
+A block of the report, in the report's own grid — but rendered plain whatever the stream is, because it is written during a forced teardown, after the presenter has drawn its last frame and unmounted, and opening a live frame there is how a command that was about to be killed hangs instead.
 
 A tidy app never sees this. The message goes to stderr and is written only when the run genuinely would have waited, so it is a statement about your app, not about the CLI's teardown — a courtesy, not a failure. The fix, if you want one, is in the app: TanStack Query's `gcTime`, an interval cleared on unmount. Not in the config.
 

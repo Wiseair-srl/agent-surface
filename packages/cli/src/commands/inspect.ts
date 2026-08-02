@@ -10,11 +10,17 @@ import {
   type RuntimePlan,
 } from "../analysis.js";
 import { buildView, flatRows, type SurfaceView } from "../render/model.js";
+import { createPresenter } from "../render/present.js";
 import {
+  catalogDetailParts,
   catalogRows,
   coverageSections,
+  failureSection,
+  mountingLabel,
   neverCallable,
   neverCallableSection,
+  noVerdictSection,
+  READING_SOURCE,
   runHeaderBlocks,
   scenarioStats,
   scenarioTable,
@@ -22,19 +28,10 @@ import {
   trackReach,
   type CapabilityReach,
   type FindingSection,
-  type ReportBlock,
+  type ReportPart,
   type ScenarioStats,
 } from "../render/summary.js";
-import {
-  renderCatalogDetailPlain,
-  renderFailuresPlain,
-  renderNoVerdictPlain,
-  renderReportPlain,
-  renderSectionsPlain,
-  renderSurfacePlain,
-  renderTablePlain,
-} from "../render/plain.js";
-import { isPlain, loadInk, paint, transient, write, writeError } from "../output.js";
+import { write } from "../output.js";
 import {
   coverageReport,
   inventoryReport,
@@ -98,32 +95,12 @@ export async function runInspect(options: InspectOptions): Promise<number> {
   // Policy chains and JSON Schemas are multi-line by nature, so asking for
   // either is asking for the view that can hold them.
   const detail = options.detail === true || options.explain === true || options.schemas === true;
-
-  // `null` when Ink cannot run here (React 18 host), which is a fallback to
-  // plain text rather than a failed command — see loadInk().
-  const ink = isPlain(options) ? null : await loadInk();
-  // Ink separates blocks with its own margin; plain text has to be asked.
-  const say = async (blocks: ReportBlock[], lead = true): Promise<void> => {
-    if (ink) await paint(<ink.Report blocks={blocks} />);
-    else write(`${lead ? "\n" : ""}${renderReportPlain(blocks)}`);
-  };
+  const present = await createPresenter(options);
 
   // The TypeScript program is read synchronously and the app loads after it;
   // together that is seconds on a real repository, and a terminal that shows
-  // nothing for them looks wedged. Nothing transient is ever written in plain
-  // mode: `AS-CLI-003` wants byte-stable output, and a spinner is neither.
-  let stopWaiting = ink ? await transient(<ink.Loading label="reading the source" />) : undefined;
-  const settle = (): void => {
-    stopWaiting?.();
-    stopWaiting = undefined;
-  };
-  const waitFor = async (label: string): Promise<void> => {
-    settle();
-    if (ink) stopWaiting = await transient(<ink.Loading label={label} />);
-  };
-  /** `mounting anonymous (2 of 2)` — which one, and how much is left. */
-  const mounting = (list: string[], index: number): string =>
-    `mounting ${list[index]}${list.length > 1 ? ` (${index + 1} of ${list.length})` : ""}`;
+  // nothing for them looks wedged.
+  if (!options.json) await present.wait(READING_SOURCE);
 
   const inventory = readInventory(analysis);
   const scenarios: ScenarioReport[] = [];
@@ -141,39 +118,41 @@ export async function runInspect(options: InspectOptions): Promise<number> {
       : undefined;
 
   const header = async (): Promise<void> => {
-    settle();
+    present.settle();
     if (options.json) return;
     const active = scope();
-    await say(
+    const catalog = scopedInventory();
+    await present.emit(
       // At `--depth static` the catalog *is* the answer, so it opens the report
       // beside the run it came from. At every other depth it is a detail behind
       // the summary, and prints down there instead.
-      runHeaderBlocks(
-        "SURFACE INSPECT",
-        {
-          configPath: options.configPath,
-          depth: options.depth,
-          ...(active ? { scope: active } : {}),
-          ...(plan ? { scenarios: plan.scenarios, declaredScenarios: plan.declaredScenarios } : {}),
-        },
-        plan ? undefined : scopedInventory(),
-        domainCount(),
-      ),
-      false,
+      {
+        kind: "blocks",
+        blocks: runHeaderBlocks(
+          "SURFACE INSPECT",
+          {
+            configPath: options.configPath,
+            depth: options.depth,
+            ...(active ? { scope: active } : {}),
+            ...(plan
+              ? { scenarios: plan.scenarios, declaredScenarios: plan.declaredScenarios }
+              : {}),
+          },
+          plan ? undefined : catalog,
+          domainCount(),
+        ),
+      },
+      ...(!plan && catalog
+        ? catalogDetailParts(catalog, { ...(detail ? { detail: true } : {}) })
+        : []),
     );
-    if (!plan && inventory) {
-      const catalog = renderCatalogDetailPlain(scopedInventory() ?? inventory, {
-        ...(detail ? { detail: true } : {}),
-      });
-      if (catalog) write(`\n${catalog}`);
-    }
   };
 
   const runtime = await mountScenarios(analysis, {
     onPlan: async (current) => {
       plan = current;
       await header();
-      if (current.scenarios.length > 0) await waitFor(mounting(current.scenarios, 0));
+      if (current.scenarios.length > 0) await present.wait(mountingLabel(current.scenarios, 0));
     },
     onEach: async (result) => {
       const view = buildView(result, {
@@ -195,11 +174,11 @@ export async function runInspect(options: InspectOptions): Promise<number> {
       // Named, and only while there is one left: a spinner announcing work
       // nobody is doing has to be read twice before it can be dismissed.
       if (plan && stats.length < plan.scenarios.length) {
-        await waitFor(mounting(plan.scenarios, stats.length));
+        await present.wait(mountingLabel(plan.scenarios, stats.length));
       }
     },
   });
-  settle();
+  present.settle();
   if (!runtime) await header();
 
   const effectiveScope = options.scope ?? runtime?.scope ?? staticConfigScope(analysis);
@@ -257,31 +236,45 @@ export async function runInspect(options: InspectOptions): Promise<number> {
   stats.sort((a, b) => runtime.scenarios.indexOf(a.scenario) - runtime.scenarios.indexOf(b.scenario));
   const mounted = stats.filter((entry) => !entry.failed).length;
 
-  await say([
+  const parts: ReportPart[] = [
     {
-      title: "SURFACE SUMMARY",
-      rows: surfaceSummaryRows({
-        depth: options.depth,
-        ...(coverage ? { coverage } : {}),
-        scenarios: stats,
-        failures: runtime.failures.length,
-        reach,
-      }),
+      kind: "blocks",
+      blocks: [
+        {
+          title: "SURFACE SUMMARY",
+          rows: surfaceSummaryRows({
+            depth: options.depth,
+            ...(coverage ? { coverage } : {}),
+            scenarios: stats,
+            failures: runtime.failures.length,
+            reach,
+          }),
+        },
+      ],
     },
-  ]);
+  ];
 
   // One row per scenario, so a config with more than one can be compared in a
   // single place rather than by scrolling through its tables.
   if (stats.length > 1) {
     const table = scenarioTable(stats);
-    const title = `SCENARIOS  (${stats.length})`;
-    if (ink) await paint(<ink.Table title={title} headers={table.headers} rows={table.rows} />);
-    else write(`\n${title}\n${renderTablePlain(table.headers, table.rows)}`);
+    parts.push({
+      kind: "table",
+      title: `SCENARIOS  (${stats.length})`,
+      headers: table.headers,
+      rows: table.rows,
+    });
   }
 
   if (runtime.failures.length > 0) {
-    writeError(`\n${renderFailuresPlain(runtime.failures)}`);
-    if (inventory) writeError(`\n${renderNoVerdictPlain(runtime.failures)}`);
+    parts.push({
+      kind: "findings",
+      stream: "err",
+      sections: [
+        failureSection(runtime.failures),
+        ...(inventory ? [noVerdictSection(runtime.failures)] : []),
+      ],
+    });
   }
 
   // Over one scenario, "never callable" repeats that scenario's own table row
@@ -291,30 +284,31 @@ export async function runInspect(options: InspectOptions): Promise<number> {
     ...(coverage ? coverageSections(coverage) : []),
     ...(dark.length > 0 && mounted > 1 ? [neverCallableSection(dark)] : []),
   ];
-  if (sections.length > 0) {
-    if (ink) await paint(<ink.Findings sections={sections} />);
-    else write(`\n${renderSectionsPlain(sections)}`);
-  }
+  if (sections.length > 0) parts.push({ kind: "findings", sections });
 
   // Details. The catalog first, because the scenario tables below are what it
   // is the denominator of.
   const catalog = scopeInventory(inventory, effectiveScope);
   if (catalog) {
-    await say([
-      {
-        title: "STATIC CATALOG",
-        rows: catalogRows(catalog, {
-          ...(domainCount() === undefined ? {} : { domainCapabilities: domainCount()! }),
-          mounted: true,
-        }),
-      },
-    ]);
+    parts.push({
+      kind: "blocks",
+      blocks: [
+        {
+          title: "STATIC CATALOG",
+          rows: catalogRows(catalog, {
+            ...(domainCount() === undefined ? {} : { domainCapabilities: domainCount()! }),
+            mounted: true,
+          }),
+        },
+      ],
+    });
   }
 
   for (const view of views) {
-    if (ink) await paint(<ink.Surface view={view} detail={detail} />);
-    else write(`\n${renderSurfacePlain(view, { detail })}`);
+    parts.push({ kind: "surface", view, ...(detail ? { detail: true } : {}) });
   }
+
+  await present.emit(...parts);
 
   // A scenario that would not mount is not a finding about the surface, it is
   // the command failing to observe one. `2` — the same code a usage error gets,

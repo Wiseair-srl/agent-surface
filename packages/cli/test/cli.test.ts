@@ -4,8 +4,9 @@
 // AS-CLI-008 (--depth selects which halves are computed), AS-CLI-009 (stable
 // complete report), AS-CLI-010 (baseline/scenario integrity), AS-CLI-012
 // (verdict-first, hierarchical human output), AS-CLI-013 (every report opens
-// with what its counts are relative to), AS-COVER-011 (mounted, and callable in
-// no scenario).
+// with what its counts are relative to), AS-CLI-014 (one report model, one
+// presenter, one grid — whichever command drew it), AS-COVER-011 (mounted, and
+// callable in no scenario).
 //
 // These drive the real `main()` against the real example app — vite-node, a
 // real mount, a real snapshot. Anything less would not prove the exit code.
@@ -22,6 +23,54 @@ const CONFIG = fileURLToPath(
 );
 
 const TIMEOUT = 120_000;
+
+/** Every module that produces a report a human reads. */
+const COMMAND_MODULES = ["inspect.ts", "check.ts", "snapshot.ts", "init.tsx"];
+
+/**
+ * The labels a report's blocks are built from. Their padding *is* the grid, so
+ * measuring it is how "one report, one look" is checked rather than asserted.
+ */
+const BLOCK_LABELS = [
+  "Config",
+  "Depth",
+  "Scope",
+  "Scenarios",
+  "Tsconfig",
+  "STATUS",
+  "Capabilities",
+  "Program",
+  "Metadata",
+  "Domain",
+  "Reach",
+  "Callable",
+  "Risk",
+  "Catalog",
+  "Verdict",
+  "Coverage",
+  "Baselines",
+  "Runtime",
+];
+
+/**
+ * The columns a report's labelled rows put their next field at, ascending.
+ *
+ * The first is the label grid itself. A report where the status column is in
+ * use adds a second, `STATUS_WIDTH` further right, for the rows that have no
+ * status word — which is a column of the same grid, not a second one.
+ */
+function labelColumns(report: string): number[] {
+  const columns = new Set<number>();
+  for (const line of report.split("\n")) {
+    const label = BLOCK_LABELS.find((candidate) => line.startsWith(`${candidate} `));
+    if (!label) continue;
+    columns.add(line.length - line.slice(label.length).trimStart().length);
+  }
+  return [...columns].sort((a, b) => a - b);
+}
+
+/** Where the text column starts in every block of every command's report. */
+const LABEL_GRID = 14;
 
 let baselineDir: string;
 let captured: string[];
@@ -216,7 +265,7 @@ describe("plain output (AS-CLI-003)", () => {
     // takes the plain-text path down with it — a path that was never going to
     // draw a terminal UI in the first place. It must stay behind loadInk().
     const { readFileSync } = await import("node:fs");
-    for (const file of ["inspect.tsx", "check.ts", "snapshot.ts", "init.tsx"]) {
+    for (const file of COMMAND_MODULES) {
       const source = readFileSync(
         fileURLToPath(new URL(`../src/commands/${file}`, import.meta.url)),
         "utf8",
@@ -225,18 +274,6 @@ describe("plain output (AS-CLI-003)", () => {
         /^import\s[^;]*from\s+["'][^"']*render\/ink/m,
       );
     }
-  });
-
-  it("check has no rendering framework in its path at all", async () => {
-    // Its output is a report pasted into a pull request and read out of a CI
-    // log, and neither of those is a terminal. It does not even reach for Ink
-    // behind loadInk() — it is plain, always, with no branch to get wrong.
-    const { readFileSync } = await import("node:fs");
-    const source = readFileSync(
-      fileURLToPath(new URL("../src/commands/check.ts", import.meta.url)),
-      "utf8",
-    );
-    expect(source).not.toMatch(/loadInk|\bink\b/);
   });
 
   it(
@@ -523,9 +560,9 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
       captured = [];
       expect(await main(["check", "--config", CONFIG, "--baseline-dir", baselineDir])).toBe(0);
       expect(output()).toMatch(/^SURFACE CHECK  PASS/);
-      expect(output()).toContain("Coverage    PASS");
-      expect(output()).toContain("Baselines   PASS");
-      expect(output()).toContain("Runtime     PASS");
+      expect(output()).toContain("Coverage      PASS");
+      expect(output()).toContain("Baselines     PASS");
+      expect(output()).toContain("Runtime       PASS");
       // Every scenario it compared is named, with what it found in each: a
       // green tick over a list of names cannot say which of them was empty.
       expect(output()).toContain("SCENARIOS  (2)");
@@ -599,7 +636,60 @@ describe("counts are never printed without their qualifier (AS-CLI-007)", () => 
         ]),
       ).toBe(0);
       expect(output()).toContain("devices — every count below is relative to it");
-      expect(output()).toContain("Coverage    PASS   9/9");
+      expect(output()).toContain("Coverage      PASS   9/9");
+    },
+    TIMEOUT,
+  );
+});
+
+describe("one report, whichever command drew it (AS-CLI-014)", () => {
+  it("routes every command's report through the one presenter", async () => {
+    // The renderer choice is made once, for the run, or it is made thirty times
+    // and three of them are forgotten — which is how `check` and `snapshot`
+    // ended up with no terminal UI at all while `inspect` printed its static
+    // catalog as raw text in the middle of a rendered report.
+    const { readFileSync } = await import("node:fs");
+    for (const file of COMMAND_MODULES) {
+      const source = readFileSync(
+        fileURLToPath(new URL(`../src/commands/${file}`, import.meta.url)),
+        "utf8",
+      );
+      expect(source, `${file} must build its report through createPresenter()`).toMatch(
+        /import\s[^;]*createPresenter[^;]*from\s+["'][^"']*render\/present/,
+      );
+      // Rendering it itself is how the two paths drift apart again: a part
+      // flattened to text here is a part the terminal UI never learns about.
+      expect(source, `${file} must not render parts itself`).not.toMatch(
+        /renderPartsPlain|renderPartPlain|\bpaint\(/,
+      );
+    }
+  });
+
+  it(
+    "opens each report with the run it describes, in one shared grid",
+    async () => {
+      const reports: Record<string, string> = {};
+      for (const command of ["inspect", "snapshot", "check"]) {
+        captured = [];
+        await main([command, "--config", CONFIG, "--baseline-dir", baselineDir, "--plain"]);
+        reports[command] = output();
+      }
+
+      expect(reports["inspect"]).toMatch(/^SURFACE INSPECT\n/);
+      expect(reports["snapshot"]).toMatch(/^SURFACE SNAPSHOT\n/);
+      expect(reports["check"]).toMatch(/^SURFACE CHECK  PASS\n/);
+
+      for (const [command, report] of Object.entries(reports)) {
+        // Every command says what it was pointed at before it says anything
+        // about a surface (AS-CLI-007) — including `snapshot`, the one that
+        // changes committed files and used to open with a bare `wrote …`.
+        expect(report, `${command} names its config`).toContain("agent-surface.config.tsx");
+        expect(report, `${command} names its depth`).toMatch(/^Depth {2,}full — /m);
+        expect(report, `${command} names its scope`).toMatch(/^Scope {2,}whole surface/m);
+        // And lays every block of it out on the same grid: a block that indents
+        // itself differently reads as a different kind of thing.
+        expect(labelColumns(report)[0], `${command} shares the label grid`).toBe(LABEL_GRID);
+      }
     },
     TIMEOUT,
   );

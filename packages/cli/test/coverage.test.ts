@@ -326,7 +326,7 @@ describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
       scenarioManifestOk: true,
       rejected: 0,
       mountFailures: 0,
-      scenarios: ["default"],
+      stats: [{ scenario: "default", callable: 1, disabled: 0, hidden: 0, rejected: 0 }],
       unresolvedAllowed: false,
     };
     const unread = report({
@@ -340,16 +340,16 @@ describe("exit codes and the allowlist ratchet (AS-COVER-005)", () => {
       ],
     });
     const unreadOutput = renderCheckOverviewPlain({ ...base, coverage: unread });
-    expect(unreadOutput).toContain("Coverage    PASS");
-    expect(unreadOutput).toContain("Catalog     FAIL");
+    expect(unreadOutput).toContain("Coverage      PASS");
+    expect(unreadOutput).toContain("Catalog       FAIL");
 
     const domain = report({
       reachedIds: new Set(["view:a.b", "domain:devices.disable"]),
       domainAuthoritative: true,
     });
     const domainOutput = renderCheckOverviewPlain({ ...base, coverage: domain });
-    expect(domainOutput).toContain("Coverage    PASS");
-    expect(domainOutput).toContain("Domain      FAIL");
+    expect(domainOutput).toContain("Coverage      PASS");
+    expect(domainOutput).toContain("Domain        FAIL");
     expect(domainOutput).toContain("absent from manifest");
   });
 

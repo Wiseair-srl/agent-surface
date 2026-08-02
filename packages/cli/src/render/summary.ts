@@ -1,22 +1,26 @@
 /**
- * The report model both renderers draw: labelled rows, and findings.
+ * The report model every renderer draws: labelled rows, tables, and findings.
  *
- * `inspect` and `check` answer different questions, but they answer them about
- * the same surface and a reader moves between them. So the *shapes* are shared
- * — a run header, a status matrix, a findings section — and only the content
- * differs. A second copy of "how a finding looks" is how the two commands drift
- * into disagreeing about what they found.
+ * `init`, `inspect`, `snapshot` and `check` answer different questions, but they
+ * answer them about the same surface and a reader moves between them. So the
+ * *shapes* are shared — a run header, a status matrix, a findings section — and
+ * only the content differs. A second copy of "how a finding looks" is how two
+ * commands drift into disagreeing about what they found, and a second copy of
+ * "how a block is laid out" is how one report ends up with two text columns.
  *
- * Everything here is data. Plain text renders it in `plain.ts`, the terminal UI
- * in `ink.tsx`, and neither can invent a row the other does not have.
+ * Everything here is data. A command builds [`ReportPart`s](#ReportPart) and
+ * hands them to the presenter; plain text renders them in `plain.ts`, the
+ * terminal UI in `ink.tsx`, and neither can invent a row the other does not
+ * have.
  */
 import { relative } from "node:path";
+import type { ScenarioFailure } from "../analysis.js";
 import type { CollectResult } from "../collect.js";
 import type { Depth } from "../contract.js";
 import type { CoverageReport } from "../coverage.js";
 import { unreadKey } from "../coverage.js";
 import { authoredIds, unresolved, type CapabilityInventory } from "../extract.js";
-import type { CapabilityRow } from "./model.js";
+import type { CapabilityRow, SurfaceView } from "./model.js";
 
 export type ReportStatus = "PASS" | "WARN" | "FAIL" | "ERROR";
 
@@ -48,9 +52,86 @@ export interface FindingSection {
   /** `notice` is reported but gates nothing — rendered without alarm. */
   tone?: "finding" | "notice";
   headers?: string[];
-  rows?: Array<{ cells: string[]; note?: string }>;
+  rows?: TableRow[];
   lines?: string[];
   hint?: string;
+}
+
+/** A grid row. `note` is prose too long for a cell, printed under the row. */
+export interface TableRow {
+  cells: string[];
+  note?: string;
+}
+
+/**
+ * Which stream a part belongs on (`AS-CLI-004`). `out` is the command's answer;
+ * `err` is everything a reader needs *about* the answer — what failed, what is
+ * missing, what to run next — so a redirected `--json` or a captured report
+ * still carries it.
+ */
+export type ReportStream = "out" | "err";
+
+/**
+ * One piece of a report, as data.
+ *
+ * A command emits a sequence of these and never touches a renderer, which is
+ * the whole point: the choice between the terminal UI and plain text is made
+ * once, for the run, instead of at each of thirty call sites where three of them
+ * will be forgotten. Before this existed, `check` had no terminal UI at all,
+ * `snapshot` had no header, and `inspect` printed its static catalog as raw
+ * text in the middle of a rendered one.
+ */
+export type ReportPart = { stream?: ReportStream } & (
+  | { kind: "blocks"; blocks: ReportBlock[] }
+  | { kind: "table"; title: string; lead?: string; headers: string[]; rows: TableRow[] }
+  | { kind: "findings"; sections: FindingSection[] }
+  | { kind: "surface"; view: SurfaceView; detail?: boolean }
+  /** `muted` is an aside — a closing hint, never something the report turns on. */
+  | { kind: "note"; title?: string; lines: string[]; muted?: boolean }
+  | { kind: "steps"; title: string; steps: string[] }
+);
+
+/**
+ * Where a report's text column starts, for every block in every command.
+ *
+ * Fixed rather than derived per block, so the `Coverage`/`Baselines` matrix in
+ * `check`, the `Config`/`Depth` header above it and the `Capabilities` row of a
+ * catalog all line up as one grid. A block that indents itself differently
+ * reads as a different kind of thing — which is exactly what happened while
+ * each renderer sized its own label column from whatever rows it happened to be
+ * handed.
+ *
+ * Wide enough for every label this package prints; `reportGrid` still widens
+ * for a longer one rather than crushing it, and the presenter keeps that width
+ * for the rest of the report so the grid can only ever grow once.
+ */
+export const LABEL_WIDTH = 14;
+export const STATUS_WIDTH = 7;
+
+/**
+ * What a command is waiting for, in the words every command uses for it.
+ *
+ * The TypeScript program is read synchronously and the app loads after it —
+ * seconds on a real repository, and a terminal showing nothing for them looks
+ * wedged. `mountingLabel` names which scenario and how much is left, because a
+ * spinner that only spins cannot be told apart from one that is stuck.
+ */
+export const READING_SOURCE = "reading the source";
+
+export function mountingLabel(scenarios: string[], index: number): string {
+  const position = scenarios.length > 1 ? ` (${index + 1} of ${scenarios.length})` : "";
+  return `mounting ${scenarios[index]}${position}`;
+}
+
+/** The column widths a set of blocks needs, never narrower than the shared grid. */
+export function reportGrid(
+  blocks: ReportBlock[],
+  minimum = LABEL_WIDTH,
+): { label: number; statuses: boolean } {
+  return {
+    label: Math.max(minimum, ...blocks.flatMap((b) => b.rows.map((row) => row.label.length + 2))),
+    statuses: blocks.some((block) => block.rows.some((row) => row.status)),
+  };
 }
 
 /**
@@ -206,6 +287,124 @@ export function runHeaderBlocks(
   ];
 }
 
+function componentOf(capabilityId: string): string {
+  const path = capabilityId.replace(/^(view|domain):/, "");
+  const dot = path.lastIndexOf(".");
+  return dot === -1 ? path : path.slice(0, dot);
+}
+
+export interface CatalogDetailOptions {
+  /** Show the raw call-site table, origins, notes and diagnostic prose. */
+  detail?: boolean;
+}
+
+/**
+ * The catalog *below* its summary: which component authors what, and every call
+ * site the extractor could not read.
+ *
+ * Only `--depth static` prints this. At `--depth full` the scenario tables name
+ * every capability a scenario reached, the `UNREACHED` section names the ones it
+ * did not, and the verdict carries the unread call sites — so printing it here
+ * would be the same information a second time, above the answer instead of in it.
+ */
+export function catalogDetailParts(
+  inventory: CapabilityInventory,
+  options: CatalogDetailOptions = {},
+): ReportPart[] {
+  const parts: ReportPart[] = [];
+  const resolved = inventory.capabilities.filter((c) => c.resolution !== "unresolved");
+  const unreadEntries = unresolved(inventory);
+
+  const components = new Map<string, { ids: Set<string>; sites: number; partial: number }>();
+  for (const capability of resolved) {
+    const component = componentOf(capability.capabilityId);
+    const current = components.get(component) ?? { ids: new Set<string>(), sites: 0, partial: 0 };
+    current.ids.add(capability.capabilityId);
+    current.sites += 1;
+    if (capability.resolution === "partial") current.partial += 1;
+    components.set(component, current);
+  }
+
+  if (components.size > 0) {
+    parts.push({
+      kind: "table",
+      title: `COMPONENTS  (${components.size})`,
+      headers: ["COMPONENT", "CAPABILITIES", "CALL SITES", "DYNAMIC META"],
+      rows: [...components.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([component, data]) => ({
+          cells: [
+            `view:${component}`,
+            String(data.ids.size),
+            String(data.sites),
+            data.partial > 0 ? String(data.partial) : NONE,
+          ],
+          note: [...data.ids].sort().join(" · "),
+        })),
+    });
+  }
+
+  if (unreadEntries.length > 0) {
+    const groups = new Map<string, number>();
+    for (const entry of unreadEntries) {
+      const key = `${entry.origin.file}\0${entry.reason ?? "unknown"}`;
+      groups.set(key, (groups.get(key) ?? 0) + 1);
+    }
+    parts.push({
+      kind: "table",
+      title: `UNREAD SITES  (${unreadEntries.length})`,
+      lead: "Counts above are a floor until these sites are resolved or explicitly accepted.",
+      headers: ["FILE", "REASON", "SITES"],
+      rows: [...groups.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, count]) => {
+          const [file, reason] = key.split("\0");
+          return { cells: [file ?? "?", reason ?? "unknown", String(count)] };
+        }),
+    });
+    // Spelled out, and never wrapped: the key is `file#reason#site` where the
+    // site is a hash rather than the line the reader is looking at, so it is
+    // copied, not typed.
+    parts.push({
+      kind: "note",
+      title: "ALLOWLIST KEYS",
+      lines: unreadEntries.map((entry) => `  allowlist key: ${unreadKey(entry)}`),
+    });
+  }
+
+  if (options.detail) {
+    const byId = [...resolved].sort((a, b) => a.capabilityId.localeCompare(b.capabilityId));
+    if (byId.length > 0) {
+      parts.push({
+        kind: "table",
+        title: `CAPABILITY DETAILS  (${byId.length} call sites)`,
+        headers: ["CAPABILITY", "KIND", "ORIGIN", "READ"],
+        rows: byId.map((capability) => ({
+          cells: [
+            capability.capabilityId,
+            capability.kind,
+            `${capability.origin.file}:${capability.origin.line}`,
+            capability.resolution,
+          ],
+          ...(capability.note ? { note: capability.note } : {}),
+        })),
+      });
+    }
+    if (unreadEntries.length > 0) {
+      parts.push({ kind: "findings", sections: [unreadSection(unreadEntries)] });
+    }
+  } else if (unreadEntries.length > 0 || resolved.length > 0) {
+    // The keys are above, in full: promising them behind a flag that has
+    // already been satisfied is how a reader learns to distrust the footer.
+    parts.push({
+      kind: "note",
+      muted: true,
+      lines: ["Details: re-run with --detail for origins, per-site notes, and diagnostics."],
+    });
+  }
+  return parts;
+}
+
 /** Per-scenario totals — the row a reader compares scenarios across. */
 export interface ScenarioStats {
   scenario: string;
@@ -241,7 +440,7 @@ const NONE = "—";
 export function scenarioTable(
   stats: ScenarioStats[],
   options: { baselines?: boolean } = {},
-): { headers: string[]; rows: Array<{ cells: string[] }> } {
+): { headers: string[]; rows: TableRow[] } {
   const headers = ["SCENARIO", "ROUTE", "CALLABLE", "DISABLED", "HIDDEN", "REJECTED"];
   if (options.baselines) headers.push("BASELINE");
   return {
@@ -535,6 +734,147 @@ function verdictText(input: SurfaceSummaryInput): string {
     : "every authored capability is reached by a scenario";
 }
 
+export interface CheckOverview {
+  status: "PASS" | "FAIL" | "ERROR";
+  coverage?: CoverageReport;
+  unresolvedAllowed: boolean;
+  baselineCurrent: number;
+  baselineTotal: number;
+  scenarioManifestOk: boolean;
+  rejected: number;
+  mountFailures: number;
+  /** What the run was pointed at. Printed above the matrix (`AS-CLI-007`). */
+  context?: RunContext;
+  /** Per-scenario totals, one row each — including the ones that threw. */
+  stats: ScenarioStats[];
+}
+
+/** The health matrix: one row per class of finding, whether or not it fired. */
+function checkMatrixRows(input: CheckOverview): ReportRow[] {
+  const rows: ReportRow[] = [];
+  const coverage = input.coverage;
+
+  if (coverage) {
+    rows.push({
+      label: "Coverage",
+      status:
+        coverage.unreached.length > 0 || coverage.staleAllowlist.length > 0
+          ? "FAIL"
+          : coverage.allowed.length > 0
+            ? "WARN"
+            : "PASS",
+      text:
+        `${coverage.reached}/${coverage.authored} authored capabilities reached` +
+        (coverage.unreached.length > 0 ? ` · ${coverage.unreached.length} unreached` : "") +
+        (coverage.allowed.length > 0 ? ` · ${coverage.allowed.length} unreached allowlisted` : "") +
+        (coverage.staleAllowlist.length > 0
+          ? ` · ${coverage.staleAllowlist.length} stale allowlist entr${
+              coverage.staleAllowlist.length === 1 ? "y" : "ies"
+            }`
+          : ""),
+    });
+
+    const unread = coverage.unresolved.length;
+    const accepted = coverage.allowedUnread.length;
+    rows.push({
+      label: "Catalog",
+      status:
+        coverage.staleUnreadAllowlist.length > 0 || (unread > 0 && !input.unresolvedAllowed)
+          ? "FAIL"
+          : unread > 0 || accepted > 0
+            ? "WARN"
+            : "PASS",
+      text:
+        coverage.staleUnreadAllowlist.length > 0
+          ? `${coverage.staleUnreadAllowlist.length} stale unread allowlist entr${
+              coverage.staleUnreadAllowlist.length === 1 ? "y" : "ies"
+            }`
+          : unread > 0
+            ? `${unread} unread static site${unread === 1 ? "" : "s"}${
+                input.unresolvedAllowed ? " accepted by --allow-unresolved" : ""
+              }`
+            : accepted > 0
+              ? `${accepted} unread static site${accepted === 1 ? "" : "s"} allowlisted`
+              : "all static sites resolved",
+    });
+
+    rows.push({
+      label: "Domain",
+      status:
+        coverage.unmanifestedDomain.length > 0
+          ? "FAIL"
+          : coverage.domainAuthoritative
+            ? "PASS"
+            : "WARN",
+      text:
+        coverage.unmanifestedDomain.length > 0
+          ? `${coverage.unmanifestedDomain.length} mounted capabilit${
+              coverage.unmanifestedDomain.length === 1 ? "y" : "ies"
+            } absent from manifest`
+          : coverage.domainAuthoritative
+            ? `${coverage.domainReached.length} manifest capabilit${
+                coverage.domainReached.length === 1 ? "y" : "ies"
+              } reached`
+            : "authoritative manifest not configured",
+    });
+  } else {
+    rows.push({
+      label: "Coverage",
+      status: input.status === "ERROR" ? "ERROR" : "WARN",
+      text:
+        input.status === "ERROR"
+          ? "no verdict; runtime analysis incomplete"
+          : "not evaluated — statement about these scenarios only; re-run with --depth full",
+    });
+  }
+
+  const baselineOk = input.baselineCurrent === input.baselineTotal && input.scenarioManifestOk;
+  rows.push({
+    label: "Baselines",
+    status: baselineOk ? "PASS" : "FAIL",
+    text:
+      `${input.baselineCurrent}/${input.baselineTotal} scenario baselines current` +
+      (input.scenarioManifestOk ? "" : " · scenario manifest differs"),
+  });
+
+  const mounted = input.stats.filter((entry) => !entry.failed).length;
+  rows.push({
+    label: "Runtime",
+    status: input.mountFailures > 0 ? "ERROR" : input.rejected > 0 ? "FAIL" : "PASS",
+    text:
+      input.mountFailures > 0
+        ? `${input.mountFailures} scenario${input.mountFailures === 1 ? "" : "s"} did not mount`
+        : input.rejected > 0
+          ? `${input.rejected} registration${input.rejected === 1 ? "" : "s"} rejected`
+          : `${mounted} scenario${mounted === 1 ? "" : "s"} mounted`,
+  });
+
+  return rows;
+}
+
+/** `check`'s first screen: the verdict, what it was computed over, then health. */
+export function checkOverviewParts(input: CheckOverview): ReportPart[] {
+  const table = scenarioTable(input.stats, { baselines: true });
+  return [
+    {
+      kind: "blocks",
+      blocks: [
+        {
+          title: `SURFACE CHECK  ${input.status}`,
+          rows: input.context ? runContextRows(input.context) : [],
+        },
+        { rows: checkMatrixRows(input) },
+      ],
+    },
+    {
+      kind: "table",
+      title: `SCENARIOS  (${input.stats.length})`,
+      headers: table.headers,
+      rows: table.rows,
+    },
+  ];
+}
+
 /**
  * The findings a coverage report carries. Shared by `inspect`, `snapshot` and
  * `check`, so the gate and the viewer cannot describe the same gap differently.
@@ -644,6 +984,42 @@ export function unreadSection(
     hint: allowlistPath
       ? `make the call site readable, or accept each key in ${displayPath(allowlistPath)}`
       : "make the call site readable, or accept each key in .agent-surface/unresolved-allow.json",
+  };
+}
+
+/**
+ * A scenario the config declares whose mount threw.
+ *
+ * A finding like any other, and it has to look like one: this is the class that
+ * invalidates every count in the report, so a reader must not have to notice
+ * that it was printed in a different style from the findings above it.
+ */
+export function failureSection(failures: ScenarioFailure[]): FindingSection {
+  return {
+    title: "DID NOT MOUNT",
+    gloss: "these scenarios threw, and were skipped",
+    count: failures.length,
+    lines: failures.flatMap((failure) => [failure.scenario, `    ${failure.message}`]),
+  };
+}
+
+/**
+ * Why there is no coverage verdict. Never silence: a reader who asked for the
+ * complete answer and got a partial one has to be told which part is missing,
+ * or the partial one reads as the complete one.
+ *
+ * The failures themselves are listed directly above by `failureSection`. This
+ * says what their absence costs the rest of the report, and nothing else.
+ */
+export function noVerdictSection(failures: ScenarioFailure[]): FindingSection {
+  return {
+    title: "NO COVERAGE VERDICT",
+    gloss: "a scenario did not mount, so nothing reached anything",
+    count: failures.length,
+    lines: [
+      "Every capability those scenarios would have surfaced would be reported unreached,",
+      "so no verdict is printed at all. Fix the mount, or name a scenario that works.",
+    ],
   };
 }
 

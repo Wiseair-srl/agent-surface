@@ -3,7 +3,16 @@ import { Box, Static, Text, useInput } from "ink";
 import Spinner from "ink-spinner";
 import type { CapabilityRow, CapabilityGroup, SurfaceView } from "./model.js";
 import { flatRows } from "./model.js";
-import { riskClause, type FindingSection, type ReportBlock, type ReportRow } from "./summary.js";
+import {
+  reportGrid,
+  riskClause,
+  STATUS_WIDTH,
+  type FindingSection,
+  type ReportBlock,
+  type ReportPart,
+  type ReportRow,
+  type TableRow,
+} from "./summary.js";
 
 const OUTCOME = {
   expose: { mark: "●", color: "green" as const, state: "callable" },
@@ -21,8 +30,6 @@ const STATUS_COLOR = {
 const TONE_COLOR = { good: "green", warn: "yellow", bad: "red" } as const;
 
 const NONE = "—";
-const LABEL_WIDTH = 12;
-const STATUS_WIDTH = 7;
 
 /**
  * Same column widths as the plain renderer computes, and for the same reason:
@@ -97,27 +104,34 @@ function Row({ row, width, statuses }: { row: ReportRow; width: number; statuses
 /**
  * The labelled blocks a report is built from — the run header, the catalog
  * summary, the closing verdict. Same rows the plain renderer prints, same
- * widths, with the status word and the tone carrying colour on a terminal.
+ * widths from the same `reportGrid`, with the status word and the tone carrying
+ * colour on a terminal.
  */
-export function Report({ blocks }: { blocks: ReportBlock[] }): ReactElement {
-  const width = Math.max(
-    LABEL_WIDTH,
-    ...blocks.flatMap((block) => block.rows.map((row) => row.label.length + 2)),
-  );
-  const statuses = blocks.some((block) => block.rows.some((row) => row.status));
+export function Report({
+  blocks,
+  labelWidth,
+}: {
+  blocks: ReportBlock[];
+  labelWidth?: number;
+}): ReactElement {
+  const grid = reportGrid(blocks, labelWidth);
+  // An empty, untitled block is dropped rather than painted, exactly as the
+  // plain renderer drops it — otherwise the same report carries a blank line in
+  // the terminal that a CI log does not have.
+  const drawn = blocks.filter((block) => block.title || block.rows.length > 0);
   // Ink prints a newline of its own after each painted frame, so only the
   // blocks *within* one frame ask for the blank line above them. A margin on
   // the first would double it, which reads as a missing block rather than as
   // breathing room.
   return (
     <Static
-      items={blocks.map((block, index) => ({ key: block.title ?? `block-${index}`, block, index }))}
+      items={drawn.map((block, index) => ({ key: block.title ?? `block-${index}`, block, index }))}
     >
       {({ key, block, index }) => (
         <Box key={key} flexDirection="column" marginTop={index === 0 ? 0 : 1}>
           {block.title ? <Text bold>{block.title}</Text> : null}
           {block.rows.map((row) => (
-            <Row key={row.label} row={row} width={width} statuses={statuses} />
+            <Row key={row.label} row={row} width={grid.label} statuses={grid.statuses} />
           ))}
         </Box>
       )}
@@ -125,13 +139,7 @@ export function Report({ blocks }: { blocks: ReportBlock[] }): ReactElement {
   );
 }
 
-function Grid({
-  headers,
-  rows,
-}: {
-  headers: string[];
-  rows: Array<{ cells: string[]; note?: string }>;
-}): ReactElement {
+function Grid({ headers, rows }: { headers: string[]; rows: TableRow[] }): ReactElement {
   const widths = widthsFor(
     headers,
     rows.map((row) => row.cells),
@@ -167,19 +175,76 @@ function Grid({
 
 export function Table({
   title,
+  lead,
   headers,
   rows,
 }: {
   title: string;
+  lead?: string;
   headers: string[];
-  rows: Array<{ cells: string[]; note?: string }>;
+  rows: TableRow[];
 }): ReactElement {
   return (
     <Static items={[{ key: title }]}>
       {(block) => (
         <Box key={block.key} flexDirection="column">
           <Text bold>{title}</Text>
+          {lead ? (
+            <Text dimColor wrap="wrap">
+              {lead}
+            </Text>
+          ) : null}
           <Grid headers={headers} rows={rows} />
+        </Box>
+      )}
+    </Static>
+  );
+}
+
+/**
+ * Lines that are neither a grid nor a finding: a closing hint, a list of keys
+ * to copy. Never wrapped, and dimmed only where the part says so — an allowlist
+ * key is read by selecting it, and a reflowed or greyed-out one is a key nobody
+ * pastes.
+ */
+export function Note({
+  title,
+  lines,
+  muted,
+}: {
+  title?: string;
+  lines: string[];
+  muted?: boolean;
+}): ReactElement {
+  return (
+    <Static items={[{ key: title ?? lines[0] ?? "note" }]}>
+      {(block) => (
+        <Box key={block.key} flexDirection="column">
+          {title ? <Text bold>{title}</Text> : null}
+          {lines.map((line, index) => (
+            <Text key={`${index}`} dimColor={muted === true}>
+              {line}
+            </Text>
+          ))}
+        </Box>
+      )}
+    </Static>
+  );
+}
+
+/** The commands that clear a report, in the order worth running them. */
+export function Steps({ title, steps }: { title: string; steps: string[] }): ReactElement {
+  return (
+    <Static items={[{ key: title }]}>
+      {(block) => (
+        <Box key={block.key} flexDirection="column">
+          <Text bold>{title}</Text>
+          {steps.map((step, index) => (
+            <Box key={`${index}`} paddingLeft={2}>
+              <Text color="cyan">{`${index + 1}. `}</Text>
+              <Text wrap="wrap">{step}</Text>
+            </Box>
+          ))}
         </Box>
       )}
     </Static>
@@ -486,6 +551,50 @@ function CapabilityTable({ rows }: { rows: CapabilityRow[] }): ReactElement {
 }
 
 type Block = { key: string; group?: CapabilityGroup; rows?: CapabilityRow[] };
+
+/**
+ * One part of a report, drawn.
+ *
+ * This switch is the only place the terminal UI learns what a report can
+ * contain, and it is the same list `renderPartPlain` switches on — so a part
+ * that renders here renders there, and neither can grow a shape the other has
+ * never heard of.
+ */
+export function Part({
+  part,
+  labelWidth,
+}: {
+  part: ReportPart;
+  labelWidth?: number;
+}): ReactElement {
+  switch (part.kind) {
+    case "blocks":
+      return <Report blocks={part.blocks} {...(labelWidth ? { labelWidth } : {})} />;
+    case "table":
+      return (
+        <Table
+          title={part.title}
+          {...(part.lead ? { lead: part.lead } : {})}
+          headers={part.headers}
+          rows={part.rows}
+        />
+      );
+    case "findings":
+      return <Findings sections={part.sections} />;
+    case "surface":
+      return <Surface view={part.view} {...(part.detail ? { detail: true } : {})} />;
+    case "note":
+      return (
+        <Note
+          {...(part.title ? { title: part.title } : {})}
+          {...(part.muted ? { muted: true } : {})}
+          lines={part.lines}
+        />
+      );
+    case "steps":
+      return <Steps title={part.title} steps={part.steps} />;
+  }
+}
 
 export function Surface({
   view,
