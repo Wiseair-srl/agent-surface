@@ -461,7 +461,7 @@ Each entry carries how much of its call site was understood:
 | `resolution` | Meaning |
 |---|---|
 | `static` | Identity and metadata both recovered from literals. |
-| `partial` | Identity resolved, some metadata dynamic. The common case: a spread `instanceId`, or a description built from a template. |
+| `partial` | Identity resolved, some metadata or runtime presence dynamic. The common case: a spread `instanceId`, a conditional capability, or a description built from a template. |
 | `unresolved` | Identity **not** resolved, or members that cannot be enumerated. Reported with its file, line and the construct that defeated the extractor — never dropped. |
 
 #### A spread has to prove it is harmless
@@ -477,6 +477,11 @@ So the extractor resolves what the spread *can* contribute. When the key set is 
 ```tsx
 ...(props.instance ? { instanceId: props.instance } : {})        // keys: instanceId — quiet
 ```
+
+The same rule applies inside `observations` and `actions`. Readable spread keys
+become `partial` authored capabilities: their identities are known, while their
+runtime presence or definition metadata may be dynamic. Only an unreadable key
+set remains a `spread-members` finding.
 
 When the key set cannot be read, the registration is reported unread, **even if a literal `observations` alongside it resolved perfectly** (`AS-COVER-002`). The half that resolves says nothing about the `actions` the spread may add, and a half read as a whole is the failure this half of the tool exists to prevent.
 
@@ -594,6 +599,13 @@ DID NOT MOUNT — these scenarios threw, and were skipped  (1)
 
 NO COVERAGE VERDICT — a scenario did not mount, so nothing reached anything  (1)
 ```
+
+Failure reasons are never blank. An empty thrown `Error` falls back to its
+constructor name; React render failures retain up to six component-stack frames
+when React supplies them, plus the first useful JavaScript frame. JSON output
+keeps the full JavaScript and component stacks. The CLI's jsdom setup aligns
+global `Event` and `CustomEvent` with the window realm, so Radix focus scopes can
+dispatch their mount events.
 
 The static half still prints, and so does every scenario that *did* mount — one unmountable scenario must not cost you the rest of the answer.
 

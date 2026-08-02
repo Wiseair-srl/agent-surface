@@ -69,6 +69,41 @@ export function staticConfigScope(options: AnalysisOptions): string[] | undefine
 export interface ScenarioFailure {
   scenario: string;
   message: string;
+  stack?: string;
+  componentStack?: string;
+  cause?: string;
+}
+
+function describeThrown(error: unknown): string {
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    if (message) return message;
+    const name = error.name.trim() || error.constructor.name || "Error";
+    return `${name} (no message)`;
+  }
+  const rendered = String(error).trim();
+  return rendered || "Unknown thrown value (empty)";
+}
+
+function nonEmptyStringProperty(error: unknown, key: string): string | undefined {
+  if (!error || (typeof error !== "object" && typeof error !== "function")) return undefined;
+  const value = (error as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function scenarioFailure(scenario: string, error: unknown): ScenarioFailure {
+  const message = describeThrown(error);
+  const stack = nonEmptyStringProperty(error, "stack");
+  const componentStack = nonEmptyStringProperty(error, "componentStack");
+  const cause = error instanceof Error ? error.cause : undefined;
+  const causeMessage = cause !== undefined && cause !== error ? describeThrown(cause) : undefined;
+  return {
+    scenario,
+    message,
+    ...(stack ? { stack } : {}),
+    ...(componentStack ? { componentStack } : {}),
+    ...(causeMessage && causeMessage !== message ? { cause: causeMessage } : {}),
+  };
 }
 
 /**
@@ -159,10 +194,7 @@ export async function mountScenarios(
           ...(options.scope ? { scope: options.scope } : {}),
         });
       } catch (error) {
-        failures.push({
-          scenario,
-          message: error instanceof Error ? error.message : String(error),
-        });
+        failures.push(scenarioFailure(scenario, error));
         continue;
       }
       results.push(result);

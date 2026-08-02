@@ -231,6 +231,49 @@ describe("an unreadable call site is reported, never dropped (AS-COVER-002)", ()
     it("keeps the example app quiet, which uses exactly that shape", () => {
       expect(unresolved(extractCapabilities({ root: dirname(DEVICES) }))).toEqual([]);
     });
+
+    it("enumerates readable spreads inside capability maps as partial identities", () => {
+      const current = inventory();
+      const entries = current.capabilities.filter((capability) =>
+        capability.capabilityId.startsWith("view:spread.group-readable."),
+      );
+      const ids = [
+        "view:spread.group-readable.clearFilters",
+        "view:spread.group-readable.readFilters",
+        "view:spread.group-readable.setFilters",
+      ];
+
+      expect(entries.map((entry) => entry.capabilityId).sort()).toEqual(ids);
+      expect([...authoredIds(current)]).toEqual(expect.arrayContaining(ids));
+      expect(entries.find((entry) => entry.capabilityId.endsWith(".readFilters"))?.kind).toBe(
+        "observation",
+      );
+      expect(entries.filter((entry) => !entry.capabilityId.endsWith(".readFilters")))
+        .toHaveLength(2);
+      expect(
+        entries
+          .filter((entry) => !entry.capabilityId.endsWith(".readFilters"))
+          .every((entry) => entry.kind === "action"),
+      ).toBe(true);
+      expect(entries.every((entry) => entry.resolution === "partial")).toBe(true);
+      expect(entries.every((entry) => entry.note?.includes("runtime presence"))).toBe(true);
+      expect(
+        unresolved(current).some((entry) => entry.note?.includes("spread.group-readable")),
+      ).toBe(false);
+    });
+
+    it("deduplicates conditional branches and preserves unread spreads beside them", () => {
+      const current = inventory();
+      expect(
+        current.capabilities.filter(
+          (entry) => entry.capabilityId === "view:spread.group-readable.setFilters",
+        ),
+      ).toHaveLength(1);
+      expect(authoredIds(current)).toContain("view:spread.group-mixed.visible");
+      expect(
+        unresolved(current).some((entry) => entry.note?.includes("spread.group-mixed")),
+      ).toBe(true);
+    });
   });
 });
 
@@ -549,6 +592,12 @@ describe("the gap reaches every command, and a scope cannot fake one (AS-COVER-0
       const rendered = output();
       expect(rendered).toContain("DID NOT MOUNT");
       expect(rendered).toContain("broken");
+      expect(rendered).toContain("blank-mount");
+      expect(rendered).toContain("blank-render");
+      expect(rendered).toContain("Error (no message)");
+      expect(rendered).toContain("Error thrown while rendering the scenario (no message)");
+      expect(rendered).toContain("React component stack:");
+      expect(rendered).toContain("BlankRenderFailure");
       expect(rendered).toContain("NO COVERAGE VERDICT");
       expect(rendered).not.toContain("UNREACHED");
       // The static half survived, and so did the scenario that does mount.
@@ -701,6 +750,14 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     writeFileSync(join(baselineDir, "unresolved-allow.json"), JSON.stringify(entries, null, 2));
   }
 
+  /** Keep these tests focused on unread acceptance, not this fixture's gaps. */
+  function allowSpreadCoverageGaps(): void {
+    const entries = [...authoredIds(extractCapabilities({ root: dirname(SPREAD) }))]
+      .filter((id) => id !== "view:spread.instance.poke")
+      .map((id) => [id, "mounted only in another scenario"]);
+    writeAllowlist(Object.fromEntries(entries));
+  }
+
   /** Every unread key a root produces, order-independent. */
   function keysFor(root: string): string[] {
     return unresolved(extractCapabilities({ root })).map(unreadKey).sort();
@@ -806,7 +863,7 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     "stops failing check on a listed site, and keeps reporting it",
     async () => {
       await main(["snapshot", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]);
-      writeAllowlist({ "view:spread.some.read": "mounted only in another scenario" });
+      allowSpreadCoverageGaps();
 
       captured = [];
       expect(
@@ -831,7 +888,7 @@ describe("unread call sites ratchet per entry, like unreached ones (AS-COVER-008
     "fails on an entry the extractor can now read, so the list shrinks",
     async () => {
       await main(["snapshot", "--config", SPREAD, "--baseline-dir", baselineDir, "--plain"]);
-      writeAllowlist({ "view:spread.some.read": "mounted only in another scenario" });
+      allowSpreadCoverageGaps();
       const unreadEntries = unresolved(extractCapabilities({ root: dirname(SPREAD) }));
       writeUnreadAllowlist({
         ...Object.fromEntries(unreadEntries.map((entry) => [unreadKey(entry), "still unread"])),

@@ -19,6 +19,30 @@ function buildMembers() {
   };
 }
 
+function buildActionMembers() {
+  return {
+    hidden: action({
+      description: "built by a helper",
+      input: empty,
+      effect: "local-state",
+      execute: () => undefined,
+    }),
+  };
+}
+
+const readFilters = observation({
+  description: "reads the filters",
+  output: empty,
+  read: () => ({}),
+});
+
+const changeFilters = action({
+  description: "changes the filters",
+  input: empty,
+  effect: "local-state",
+  execute: () => undefined,
+});
+
 /**
  * The reported shape (#29): `type` is a literal, but every member arrives
  * through a spread whose contents the extractor cannot read. Nothing is
@@ -62,6 +86,36 @@ export function SpreadInstanceId(props: { instance?: string }): React.ReactEleme
     ...(props.instance ? { instanceId: props.instance } : {}),
     actions: {
       poke: action({ description: "literal", input: empty, effect: "local-state", execute: () => ({}) }),
+    },
+  });
+  return <div />;
+}
+
+/** Readable spreads inside capability maps contribute optional identities. */
+export function SpreadGroupReadable(props: { editable?: boolean }): React.ReactElement {
+  useAgentComponent({
+    type: "spread.group-readable",
+    description: "readable spreads inside capability maps",
+    observations: {
+      ...(props.editable ? { readFilters } : {}),
+    },
+    actions: {
+      ...(props.editable
+        ? { setFilters: changeFilters, clearFilters: changeFilters }
+        : { setFilters: changeFilters }),
+    },
+  });
+  return <div />;
+}
+
+/** A readable spread must not hide an unread spread beside it. */
+export function SpreadGroupMixed(props: { editable?: boolean }): React.ReactElement {
+  useAgentComponent({
+    type: "spread.group-mixed",
+    description: "readable and unreadable capability-map spreads",
+    actions: {
+      ...(props.editable ? { visible: changeFilters } : {}),
+      ...buildActionMembers(),
     },
   });
   return <div />;

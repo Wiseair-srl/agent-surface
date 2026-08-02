@@ -59,8 +59,9 @@ export interface AuthoredCapability {
    * How much of this call site the extractor understood.
    *
    * `static` — identity and metadata both recovered from literals.
-   * `partial` — identity resolved, some metadata dynamic. The common case: a
-   *   spread `instanceId`, or a description built from a template.
+   * `partial` — identity resolved, some metadata or runtime presence dynamic.
+   *   The common case: a spread `instanceId`, a conditional capability, or a
+   *   description built from a template.
    * `unresolved` — identity NOT resolved. Reported, never dropped.
    */
   resolution: "static" | "partial" | "unresolved";
@@ -396,7 +397,7 @@ function spreadKeys(
     const whenTrue = spreadKeys(expression.whenTrue, source, depth);
     const whenFalse = spreadKeys(expression.whenFalse, source, depth);
     if (!whenTrue || !whenFalse) return undefined;
-    return [...whenTrue, ...whenFalse];
+    return [...new Set([...whenTrue, ...whenFalse])];
   }
 
   const resolved = objectLiteralFor(expression, source);
@@ -422,7 +423,7 @@ function spreadKeys(
     if (name === undefined) return undefined;
     keys.push(name);
   }
-  return keys;
+  return [...new Set(keys)];
 }
 
 function literalText(node: ts.Expression | undefined): string | undefined {
@@ -532,17 +533,36 @@ function capabilitiesFromGroup(
   }
 
   for (const property of resolved.object.properties) {
-    // A spread inside the capability map can add capabilities this extractor
-    // cannot name. That is an identity gap, not a metadata gap.
+    // A capability-map spread is only an identity gap when its keys cannot be
+    // read. Readable keys are authored capabilities even when runtime presence
+    // is conditional; the catalog is deliberately an upper bound.
     if (ts.isSpreadAssignment(property)) {
-      emit.push({
-        capabilityId: `view:${componentType}.${UNRESOLVED_ID}`,
-        kind,
-        origin: emit.origin(property),
-        resolution: "unresolved",
-        reason: "spread-members",
-      note: `\`${kind}s\` on "${componentType}" spreads another object, which may contribute capabilities this inventory cannot name`,
-      });
+      const keys = spreadKeys(property.expression, source);
+      if (keys === undefined) {
+        emit.push({
+          capabilityId: `view:${componentType}.${UNRESOLVED_ID}`,
+          kind,
+          origin: emit.origin(property),
+          resolution: "unresolved",
+          reason: "spread-members",
+          note: `\`${kind}s\` on "${componentType}" spreads another object, which may contribute capabilities this inventory cannot name`,
+        });
+        continue;
+      }
+
+      for (const name of keys) {
+        const notes = [
+          ...(componentPartial ? [componentPartial] : []),
+          `\`${name}\` is contributed by a spread, so its definition metadata or runtime presence may be dynamic`,
+        ];
+        emit.push({
+          capabilityId: `view:${componentType}.${name}`,
+          kind,
+          origin: emit.origin(property),
+          resolution: "partial",
+          note: notes.join("; "),
+        });
+      }
       continue;
     }
 
@@ -560,7 +580,7 @@ function capabilitiesFromGroup(
         origin: emit.origin(property),
         resolution: "unresolved",
         reason: "computed-name",
-      note: `a capability on "${componentType}" has a computed name`,
+        note: `a capability on "${componentType}" has a computed name`,
       });
       continue;
     }
