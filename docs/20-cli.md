@@ -47,7 +47,7 @@ pnpm exec agent-surface inspect [--base <ref>] [--verbosity <level>] [--format <
 
 Compiles the current graph and displays the capability inventory plus source-to-snapshot drift. With `--base`, it also displays contract drift from the selected Git ref. Findings do not change exit `0`; compilation and completeness failures exit `2`.
 
-The default view is compact: a headline with the size of the surface, how much of it is gated, and the snapshot's integrity, then the inventory as one flat table. Drift rows appear only when there is drift — an explicit `--base` always gets its answer, even when that answer is no changes.
+The default view is compact: a two-line headline with the size of the surface, how much of it is gated, and the snapshot's integrity, then the inventory as one flat six-column table ending in `POLICIES`. This structure and colour vocabulary match the sibling `orpc-agent inspect` view; domain-only fields keep their own names. Drift rows appear only when there is drift — an explicit `--base` always gets its answer, even when that answer is no changes.
 
 Columns are `CAPABILITY`, `KIND`, `EFFECT`, `REACH`, `CONFIRM`, `POLICIES`. A capability that declares no confirmation or policy shows `—` rather than an empty cell. `REACH` is derived from the effect — `read` and `local-state` are `low`, `navigation` and `server-query` are `medium`, `server-mutation`, `external-side-effect` and `destructive` are `high` — and it is printed as a word, not signalled by colour alone, so a pipe or a CI log carries the same grade a terminal does. At a terminal, colour repeats the words: effects cool when they read and warm when they write, grades green through red.
 
@@ -57,7 +57,7 @@ Columns are `CAPABILITY`, `KIND`, `EFFECT`, `REACH`, `CONFIRM`, `POLICIES`. A ca
 - `normal` — the default described above.
 - `detail` — adds provenance (contract hash, compiler, snapshot path), groups capabilities under the declaration that owns them — the declaration written once as a heading rather than repeated on every row — and prints each capability's description and tags beneath its row. `--detail` is the shorthand.
 
-The view closes by saying what it cannot know: the contract is what production code can declare, and `CONFIRM` and `POLICIES` are declarations. Whether a policy admits, denies, or hides a capability depends on the actor, input, and context of a real invocation, which no CLI command performs.
+The view closes by saying what it cannot know: the contract is what production code can declare. A policy listed for a capability is in its declared chain; whether it admits, denies, or hides depends on the actor, input, and context of a real invocation, which no CLI command performs.
 
 Use `inspect` for local review and diagnosis.
 

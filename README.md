@@ -232,7 +232,7 @@ The snapshot carries no timestamps, checkout paths, or runtime ids, so identical
 AGENT SURFACE CHECK · FAIL
 
 11 capabilities · 5 declarations · 6 action · 4 observation · 1 procedure
-reach 9 low · 1 medium · 1 high · declared gates: 1 confirmation · 0 policy
+reach 9 low · 1 medium · 1 high · declared gates: 1 confirmation · 0 policy-scoped capabilities
 
 Contract      08b424d2e3819333f39c612d64772df695404aa0373e962b44590ecf799d1620
 Compiler      0.17.0
@@ -250,7 +250,7 @@ Both rows are deliberately counter-intuitive. Weakening a gate is widening, and 
 
 ```
 11 capabilities · 5 declarations · 6 action · 4 observation · 1 procedure
-reach 9 low · 1 medium · 1 high · declared gates: 1 confirmation · 0 policy · snapshot current
+reach 9 low · 1 medium · 1 high · declared gates: 1 confirmation · 0 policy-scoped capabilities · snapshot current
 
 CAPABILITY                     KIND         EFFECT       REACH   CONFIRM   POLICIES
 domain:devices.disable         procedure    destructive  high    required  —
