@@ -1,5 +1,11 @@
 # @agent-surface/core
 
+## 0.23.0
+
+### Minor Changes
+
+- 6c95df2: Align inspection wording and policy coverage presentation with `orpc-agent`.
+
 ## 0.22.0
 
 ### Minor Changes
