@@ -101,6 +101,7 @@ describe("human inspect view", () => {
   it("prints every capability, compact and flat by default", () => {
     const text = renderReport(report, "human");
     expect(text).toContain("2 capabilities · 2 declarations");
+    expect(text).toContain("declared gates: 1 confirmation · 1 policy-scoped capability");
     for (const entry of [base, second]) {
       expect(text).toContain(entry.capabilityId);
       // The declaration is provenance, not inventory: it moves to --verbosity

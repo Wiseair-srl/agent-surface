@@ -267,7 +267,8 @@ export function headline(manifest: CapabilityContractManifest): string[] {
       groupByDeclaration(capabilities).length,
       "declaration",
     )}${count > 0 ? ` · ${tally(capabilities.map((entry) => entry.kind))}` : ""}`,
-    `reach ${reach || NONE} · declared gates: ${gated} confirmation · ${policed} policy`,
+    `reach ${reach || NONE} · declared gates: ${gated} confirmation · ${policed} policy-scoped ` +
+      `${policed === 1 ? "capability" : "capabilities"}`,
   ];
 }
 
@@ -284,15 +285,15 @@ export function integrityWord(report: ContractReport): string | undefined {
  */
 export const CONTRACT_CAVEAT_SHORT = [
   "Declared contract, compiled from the production graph — what this code can expose,",
-  "not what a mount exposed at runtime; a policy's verdict needs a real invocation.",
+  "not what a mount exposed at runtime. A listed policy's verdict needs a real invocation.",
 ];
 
 /** The full statement, kept for detail verbosity where prose has room. */
 export const CONTRACT_CAVEAT = [
   "Declarations, compiled from the production graph — what this code can expose,",
-  "not what a mount exposed at runtime. CONFIRM and POLICIES are declared per",
-  "capability; whether a policy admits, denies or hides one depends on the actor,",
-  "input and context of a real invocation, which this command never performs.",
+  "not what a mount exposed at runtime. A policy listed for a capability is in its",
+  "declared chain; whether it admits, denies or hides depends on the actor, input",
+  "and context of a real invocation, which this command never performs.",
 ];
 
 /** Column widths shared by the plain and drawn renderers, so both align alike. */
