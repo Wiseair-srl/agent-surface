@@ -1,5 +1,18 @@
 # @agent-surface/webmcp
 
+## 0.24.0
+
+### Minor Changes
+
+- Add `@agent-surface/core/host` browser sessions with tab, connection, registration, revision, and invocation binding; bounded replay protection and explicit expiry/disconnection outcomes. Add generated portable manifests and the governed oRPC bridge for remote agent gateways, stable invocation identities, approval receipts, and unknown-outcome reconciliation.
+
+  Server approval errors now use `DOMAIN_APPROVAL_REQUIRED` with `approvalId`, distinct from browser `CONFIRMATION_REQUIRED`. Lost governed responses use `DOMAIN_OUTCOME_UNKNOWN`; neither invites automatic replay. The `requiresApproval` hint no longer forces local browser confirmation. Add explicit `confirmation: "required"` where that extra prompt is desired and regenerate affected compiled contracts. Packages release in lockstep.
+
+### Patch Changes
+
+- Updated dependencies
+  - @agent-surface/core@0.24.0
+
 ## 0.23.0
 
 ### Minor Changes

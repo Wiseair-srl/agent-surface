@@ -1265,6 +1265,51 @@
         "packages/cli/test/contract.test.ts"
       ],
       "status": "implemented"
+    },
+    "AS-HOST-001": {
+      "title": "Remote calls validate authenticated session bindings and current registrations before authorized registry dispatch",
+      "source": "21-distributed-host.md",
+      "decision": "D43",
+      "tests": [
+        "packages/core/test/host.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-HOST-002": {
+      "title": "Browser session replay protection is bounded, lifetime-scoped, and never evicts accepted calls",
+      "source": "21-distributed-host.md",
+      "decision": "D43",
+      "tests": [
+        "packages/core/test/host.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-HOST-003": {
+      "title": "Disconnect, navigation and reconnect never silently transfer calls across connections",
+      "source": "21-distributed-host.md",
+      "decision": "D43",
+      "tests": [
+        "packages/core/test/host.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-GOVERNED-001": {
+      "title": "Portable manifests preserve metadata and governed contextual calls forward validated bound input with stable identity",
+      "source": "21-distributed-host.md",
+      "decision": "D43",
+      "tests": [
+        "packages/orpc/test/governed.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-GOVERNED-002": {
+      "title": "Domain approval and unknown outcomes remain distinct from local confirmation and unsafe retry",
+      "source": "21-distributed-host.md",
+      "decision": "D43",
+      "tests": [
+        "packages/orpc/test/governed.test.ts"
+      ],
+      "status": "implemented"
     }
   }
 }

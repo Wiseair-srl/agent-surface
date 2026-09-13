@@ -45,6 +45,7 @@ export default withMermaid(
             { text: "Core API", link: "/03-core-api" },
             { text: "React API", link: "/04-react-api" },
             { text: "oRPC integration", link: "/05-orpc-integration" },
+            { text: "Distributed hosts", link: "/21-distributed-host" },
             { text: "Adapters", link: "/09-adapters" },
           ],
         },

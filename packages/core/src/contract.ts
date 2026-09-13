@@ -563,7 +563,7 @@ const CONFIRMATION_RANK = { never: 0, optional: 1, required: 2 } as const;
 function effectiveProcedureConfirmation(
   binding: AgentProcedureBinding<any, any>,
 ): "never" | "optional" | "required" {
-  if (binding.ref.requiresApproval || binding.config.confirmation === "required") return "required";
+  if (binding.config.confirmation === "required") return "required";
   return binding.config.confirmation ?? "never";
 }
 

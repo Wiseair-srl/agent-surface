@@ -23,6 +23,9 @@ export interface OrpcAgentManifest {
       effect: AgentProcedureEffect;
       /** Server-declared flags the client must respect (e.g. approval required). */
       requiresApproval?: boolean;
+      /** Canonical backend identity and semantic revision from portable descriptors. */
+      capabilityId?: string;
+      contractDigest?: string;
     }
   >;
 }
@@ -107,13 +110,13 @@ function defaultMapServerError(
   const data = isRecord(error.data) ? error.data : undefined;
   if (code === "APPROVAL_REQUIRED" || data?.approvalRequired === true) {
     return {
-      code: "CONFIRMATION_REQUIRED",
+      code: "DOMAIN_APPROVAL_REQUIRED",
       message:
-        "The server requires its own approval for this operation. Wait for approval, then retry.",
-      retry: "with-confirmation",
+        "The server requires approval for this operation. Resume through the domain approval endpoint.",
+      retry: "no",
       details: {
         origin: "server",
-        ...(typeof data?.approvalId === "string" ? { confirmationId: data.approvalId } : {}),
+        ...(typeof data?.approvalId === "string" ? { approvalId: data.approvalId } : {}),
       },
     };
   }
@@ -212,7 +215,7 @@ export function createOrpcAgentBridge<TClient extends object>(
   return {
     refs: refs as RefsFor<TClient>,
     executor,
-    hasPath: (path) => path in manifest.tools,
+    hasPath: (path) => Object.hasOwn(manifest.tools, path),
     manifest,
   };
 }

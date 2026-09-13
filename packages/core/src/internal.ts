@@ -326,7 +326,6 @@ export function normalizeRegistration(
       confirmationFloor: maxConfirmation(
         defaultConfirmationFor(effect),
         binding.config.confirmation ?? "never",
-        binding.ref.requiresApproval === true ? "required" : "never",
       ),
       idempotent: effect === "server-query",
       auditLevel: defaultAuditFor(effect),

@@ -797,6 +797,35 @@
       "RefsFor": {
         "kind": "type",
         "class": "type"
+      },
+      "PortableDomainCapability": {
+        "kind": "type",
+        "class": "type"
+      },
+      "GovernedDomainOutcome": {
+        "kind": "type",
+        "class": "type"
+      },
+      "GovernedDomainClient": {
+        "kind": "type",
+        "class": "type"
+      },
+      "GovernedOrpcAgentBridgeOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "createOrpcAgentManifest": {
+        "kind": "value",
+        "class": "utility"
+      },
+      "createGovernedOrpcAgentBridge": {
+        "kind": "value",
+        "class": "capability-construction",
+        "requires": "proof",
+        "conformance": [
+          "AS-CONTRACT-001",
+          "AS-GOVERNED-001"
+        ]
       }
     },
     "@agent-surface/orpc/react": {
@@ -993,6 +1022,44 @@
       "WebMcpToolResult": {
         "kind": "type",
         "class": "type"
+      }
+    },
+    "@agent-surface/core/host": {
+      "BrowserSurfaceIdentity": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceAnnouncement": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceCall": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceRejection": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceResult": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceSessionOptions": {
+        "kind": "type",
+        "class": "type"
+      },
+      "BrowserSurfaceSession": {
+        "kind": "type",
+        "class": "type"
+      },
+      "createBrowserSurfaceSession": {
+        "kind": "value",
+        "class": "execution-boundary",
+        "requires": "registry",
+        "conformance": [
+          "AS-HOST-001"
+        ]
       }
     }
   }
