@@ -81,7 +81,7 @@ The client is the application's existing typed oRPC client and uses the user's n
 
 ### Manifest
 
-The bridge manifest contract is Experimental. Keep its production source tied to the backend's agent exposure configuration.
+Generate portable manifests with `createOrpcAgentManifest` from backend descriptors. The legacy hand-authored shape remains available. For agent-initiated remote execution, use the [governed bridge](./21-distributed-host.md#governed-contextual-procedures).
 
 ```ts
 interface OrpcAgentManifest {
@@ -95,6 +95,8 @@ interface OrpcAgentManifest {
       | "external-side-effect"
       | "destructive";
     requiresApproval?: boolean;
+    capabilityId?: string;
+    contractDigest?: string;
   }>;
 }
 ```
@@ -216,6 +218,8 @@ Two mounted components may reference the same procedure with different bindings.
 
 Frontend confirmation and server approval are independent. Passing browser confirmation evidence never grants server authority.
 
+`requiresApproval` is a server hint and does not force a local confirmation. Server approval errors map to `DOMAIN_APPROVAL_REQUIRED` with an `approvalId`; they never enter the browser confirmation controller. The governed bridge additionally reports `DOMAIN_OUTCOME_UNKNOWN` for lost or uncorrelated responses. See [approval and reconciliation](./21-distributed-host.md#approval-and-reconciliation).
+
 ## Client and server responsibilities
 
 | Check | Browser surface | Server |
@@ -234,6 +238,6 @@ Frontend confirmation and server approval are independent. Passing browser confi
 - **Embedded loop:** the host projects registry tools directly in or next to the page.
 - **Remote loop with per-turn frontend tools:** the host sends the current tool definitions to a server loop and routes calls back to the browser.
 
-Both require a live page and registry. Synchronizing contextual frontend state to an autonomous server agent is not provided.
+Both require a live page and registry. The [browser session adapter](./21-distributed-host.md#browser-session) supports authenticated host transport integration with strict tab, connection, and revision binding; it does not replicate React state into a server registry.
 
 In either topology, expose a contextually governed procedure through exactly one model-facing path. A direct server tool and a frontend procedure reference for the same operation would bypass binding, staleness, or browser confirmation on one of the paths.

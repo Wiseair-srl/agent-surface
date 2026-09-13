@@ -93,6 +93,8 @@ export interface AgentProcedureDescriptor {
   outputSchema?: JsonSchema;
   effect: AgentProcedureEffect;
   confirmation: ConfirmationLevel; // max(manifest, reference)
+  /** Independent server approval hint; browser confirmation cannot satisfy it. */
+  requiresApproval?: boolean;
   available: boolean;
   unavailableReason?: string;
   boundFields: Array<{ path: string; locked: boolean; source: "ui-state" }>;
@@ -266,6 +268,7 @@ export function createSnapshot(
         ...(proc.outputJsonSchema ? { outputSchema: proc.outputJsonSchema } : {}),
         effect: proc.effect,
         confirmation: proc.confirmationFloor,
+        ...(proc.requiresApproval ? { requiresApproval: true } : {}),
         available,
         ...(available ? {} : { unavailableReason: reason }),
         boundFields: proc.boundKeys.map((path) => ({

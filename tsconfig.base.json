@@ -21,6 +21,7 @@
     "paths": {
       "@agent-surface/core": ["./packages/core/src/index.ts"],
       "@agent-surface/core/explain": ["./packages/core/src/explain.ts"],
+      "@agent-surface/core/host": ["./packages/core/src/host.ts"],
       "@agent-surface/compiler": ["./packages/compiler/src/index.ts"],
       "@agent-surface/cli": ["./packages/cli/src/index.ts"],
       "@agent-surface/react": ["./packages/react/src/index.ts"],

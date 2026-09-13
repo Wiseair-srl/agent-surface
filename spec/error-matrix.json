@@ -96,6 +96,35 @@
       "retry": ["no", "after-delay"],
       "cacheable": true,
       "details": ["reason", "transient", "retryAfterMs"]
+    },
+    "DOMAIN_APPROVAL_REQUIRED": {
+      "phases": [
+        9
+      ],
+      "retry": [
+        "no"
+      ],
+      "cacheable": true,
+      "details": [
+        "origin",
+        "invocationId",
+        "executionId",
+        "approvalId",
+        "expiresAt"
+      ]
+    },
+    "DOMAIN_OUTCOME_UNKNOWN": {
+      "phases": [
+        9
+      ],
+      "retry": [
+        "no"
+      ],
+      "cacheable": true,
+      "details": [
+        "origin",
+        "invocationId"
+      ]
     }
   }
 }

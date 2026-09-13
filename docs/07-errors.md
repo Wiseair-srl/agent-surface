@@ -29,6 +29,8 @@ export type AgentCapabilityErrorCode =
   | "PRECONDITION_FAILED"
   | "CONFIRMATION_REQUIRED"
   | "CONFIRMATION_INVALID"
+  | "DOMAIN_APPROVAL_REQUIRED"
+  | "DOMAIN_OUTCOME_UNKNOWN"
   | "RATE_LIMITED"
   | "TIMEOUT"
   | "CANCELLED"
@@ -115,7 +117,7 @@ For each: meaning · produced when · `retry` · agent-visible `details` · log-
 
 ### `CONFIRMATION_REQUIRED`
 - **Meaning:** a user approval gate is active; not a failure ([Policies & Security §confirmation](06-policies-and-security.md#confirmation)).
-- **Retry:** `with-confirmation`. **Details:** `{ confirmationId, summary, expiresAt, effect, origin: "client" | "server" }`. **Adapter:** in `wait` mode handle internally; in `two-phase` mode relay to the model with instructions to retry with `confirmationId` after approval. Never cached as terminal in the dedupe window.
+- **Retry:** `with-confirmation`. **Details:** `{ confirmationId, summary, expiresAt, effect, origin: "client" }`. **Adapter:** in `wait` mode handle internally; in `two-phase` mode relay to the model with instructions to retry with `confirmationId` after local confirmation. Never cached as terminal in the dedupe window.
 
 ### `CONFIRMATION_INVALID`
 - **Meaning:** evidence rejected.
@@ -161,3 +163,11 @@ Adapters MUST preserve `code`, `retry`, and `details` losslessly; they MAY prepe
 | `LIMIT_EXCEEDED` | description/meta size caps |
 
 Runtime rejection cases (dead handle + event, never thrown): duplicate `(type, instanceId)` under `"reject"`, guard rejection — see [Core API §registry](03-core-api.md#registry).
+
+## Domain approval and uncertain execution
+
+`DOMAIN_APPROVAL_REQUIRED` is emitted by a domain bridge during execution (phase 9), with retry `no` and details `{ origin: "server", invocationId?, executionId?, approvalId?, expiresAt? }`. It is retained as a terminal browser receipt while the host resumes the operation through the backend approval API. It never enters the local confirmation controller.
+
+`DOMAIN_OUTCOME_UNKNOWN` is emitted when a governed domain response is lost or cannot be correlated (phase 9). Retry is `no`; details contain `{ origin: "server", invocationId }`. The host must reconcile the backend invocation receipt before continuing. The result is cacheable in the browser deduplication window.
+
+See [distributed approval and reconciliation](./21-distributed-host.md#approval-and-reconciliation).

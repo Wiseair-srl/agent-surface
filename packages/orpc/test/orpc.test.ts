@@ -129,7 +129,7 @@ describe("createOrpcAgentBridge (docs/05)", () => {
     ).rejects.toMatchObject({ payload: { code: "NOT_AUTHORIZED", details: { origin: "server" } } });
   });
 
-  it("maps server approval demands to CONFIRMATION_REQUIRED {origin: server}", async () => {
+  it("maps server approval demands separately from local confirmation", async () => {
     const bridge = createOrpcAgentBridge({
       client: {
         devices: {
@@ -155,8 +155,8 @@ describe("createOrpcAgentBridge (docs/05)", () => {
       }),
     ).rejects.toMatchObject({
       payload: {
-        code: "CONFIRMATION_REQUIRED",
-        details: { origin: "server", confirmationId: "apr_1" },
+        code: "DOMAIN_APPROVAL_REQUIRED",
+        details: { origin: "server", approvalId: "apr_1" },
       },
     });
   });

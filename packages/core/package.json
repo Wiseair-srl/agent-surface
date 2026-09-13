@@ -1,6 +1,6 @@
 {
   "name": "@agent-surface/core",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "Framework-agnostic registry, types, policies, errors, snapshot, invocation for frontend agent surfaces",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,10 @@
     "./explain": {
       "types": "./dist/explain.d.ts",
       "import": "./dist/explain.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
     }
   },
   "files": [
@@ -69,6 +73,10 @@
     {
       "path": "dist/explain.js",
       "limit": "2 kB"
+    },
+    {
+      "path": "dist/host.js",
+      "limit": "5 kB"
     }
   ]
 }

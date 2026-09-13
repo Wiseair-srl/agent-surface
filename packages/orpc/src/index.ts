@@ -9,3 +9,5 @@ export type {
 } from "./bridge.js";
 
 export type { AgentProcedureBindingConfig } from "./binding.js";
+export { createOrpcAgentManifest, createGovernedOrpcAgentBridge } from "./governed.js";
+export type { PortableDomainCapability, GovernedDomainOutcome, GovernedDomainClient, GovernedOrpcAgentBridgeOptions } from "./governed.js";

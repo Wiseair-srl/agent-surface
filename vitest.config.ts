@@ -5,6 +5,7 @@ const r = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 
 const alias = {
   "@agent-surface/core/explain": r("./packages/core/src/explain.ts"),
+  "@agent-surface/core/host": r("./packages/core/src/host.ts"),
   "@agent-surface/core": r("./packages/core/src/index.ts"),
   "@agent-surface/compiler": r("./packages/compiler/src/index.ts"),
   "@agent-surface/cli": r("./packages/cli/src/index.ts"),
