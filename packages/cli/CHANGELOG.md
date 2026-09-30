@@ -1,5 +1,17 @@
 # @agent-surface/cli
 
+## 0.26.0
+
+### Minor Changes
+
+- 0b9da8f: WebMCP confirmations now complete without the `confirm` hook. Its tools have no slot for a `confirmationId`, so the two-phase fallback could never succeed: each retry after approval opened a new confirmation. When `confirm` doesn't apply (not set, no `requestUserInteraction`, or the UI throws), `execute` now waits for the host's confirmation UI and retries with the evidence. Denial or expiry returns `CONFIRMATION_INVALID`; `stop()` aborts pending waits.
+
+### Patch Changes
+
+- Updated dependencies [0b9da8f]
+  - @agent-surface/compiler@0.26.0
+  - @agent-surface/core@0.26.0
+
 ## 0.25.0
 
 ### Minor Changes
