@@ -5,6 +5,7 @@ export type {
   AgentSurfaceRegistry,
   JsonSchema,
   JsonValue,
+  PendingConfirmation,
   SnapshotContext,
 } from "@agent-surface/core";
 

@@ -199,18 +199,53 @@ await adapter.start({
 });
 ```
 
-The curation hook may skip a capability or replace its description. It cannot replace execution.
+The curation hook may skip a capability or replace its description. It cannot replace execution, and it cannot change annotations.
 
 Current mapping:
 
 - one wire-named tool per available capability;
-- refresh on `surface-changed`;
+- reconciled on `surface-changed`: with `registerTool`/`unregisterTool` present, only added, removed, or changed tools are touched; otherwise the full set is re-sent through `provideContext`;
+- a tool is re-registered when its description, input schema, `registrationId`, or read-only hint changes; a tool that survives a change unmodified keeps its registration and echoes the latest projected `surfaceVersion`;
 - execution through `registry.invoke`;
-- two-phase confirmation;
+- `annotations: { readOnlyHint: true }` for observations and `read`/`server-query` effects only, derived from the declared kind and effect, never from curation;
+- two-phase confirmation by default, with an opt-in in-page hook (below);
 - capability errors encoded in tool content;
-- no-op start when `navigator.modelContext` is unavailable.
+- no-op start when `navigator.modelContext` is unavailable;
+- `stop()` withdraws every tool the adapter exposed (`unregisterTool` for its own names, else `clearContext()`, else an empty `provideContext`), releases the subscription, and is safe to call repeatedly.
 
 Unavailable capabilities are omitted because the current transport has no disabled-tool state. Use `snapshotContext.scope` to minimize exposure to the browser peer.
+
+### In-page confirmation
+
+WebMCP passes a client to `execute(input, client)` whose `requestUserInteraction(callback)` lets a tool run in-page UI during the call. The `confirm` option routes a required confirmation through it:
+
+```ts
+const adapter = createWebMcpAdapter({
+  confirm: (request) => showConfirmDialog(request.summary, request.input),
+});
+```
+
+When an invocation returns `CONFIRMATION_REQUIRED` and the client supports `requestUserInteraction`, the adapter runs `confirm(pendingConfirmation, client)` inside it, resolves the registry's pending record with the answer, and retries once with the same `invocationId` and `confirmationId`. The browser agent sees one final result. The registry stays the confirmation authority: it checks the evidence, consumes the record, and returns `CONFIRMATION_INVALID` on denial.
+
+The hook is opt-in because it needs host UI. Without `confirm`, without client support, if the UI throws, or if the adapter stops during the prompt, the call returns `CONFIRMATION_REQUIRED` and the flow stays two-phase.
+
+### Imperative API only
+
+The adapter uses only WebMCP's imperative API. The declarative API, where form attributes turn rendered DOM forms into tools, is a [non-goal](11-non-goals.md#declarative-webmcp-tools): capabilities must be compiler-authorized, not derived from the rendered DOM.
+
+### Targeted WebMCP revision
+
+The adapter targets the WebMCP draft from the W3C Web Machine Learning Community Group ([webmachinelearning/webmcp](https://github.com/webmachinelearning/webmcp)) as exposed by the Chrome early preview (Chrome 146+, `chrome://flags/#enable-webmcp-testing`). It assumes exactly this surface; anything else is drift the adapter must absorb:
+
+| Member | Use |
+|---|---|
+| `navigator.modelContext.provideContext({ tools })` | required; fallback full-set replacement |
+| `navigator.modelContext.clearContext()` | optional; `stop()` on the fallback path |
+| `navigator.modelContext.registerTool(tool)` / `unregisterTool(name)` | optional, feature-detected together; incremental path |
+| tool `{ name, description, inputSchema, annotations?: { readOnlyHint? }, execute(input, client) }` | tool shape |
+| `client.requestUserInteraction(callback)` | optional; in-page confirmation |
+
+The same table lives in the package README. Update both when moving the target.
 
 ## Testing adapter
 
