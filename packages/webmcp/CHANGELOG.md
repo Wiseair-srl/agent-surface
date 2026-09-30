@@ -1,5 +1,16 @@
 # @agent-surface/webmcp
 
+## 0.25.0
+
+### Minor Changes
+
+- a2cde1e: WebMCP adapter: `stop()` now withdraws every exposed tool and is idempotent; tools are reconciled incrementally with `registerTool`/`unregisterTool` when the browser supports them (full `provideContext` otherwise); a new opt-in `confirm` option completes required confirmations in page through `client.requestUserInteraction`; observations and read-only effects carry `annotations.readOnlyHint`. Zero-argument tool calls now forward `{}` instead of dropping it, which previously failed `INVALID_INPUT` on actions. Docs record the declarative WebMCP API as a non-goal and pin the targeted WebMCP surface.
+
+### Patch Changes
+
+- Updated dependencies [a2cde1e]
+  - @agent-surface/core@0.25.0
+
 ## 0.24.0
 
 ### Minor Changes
