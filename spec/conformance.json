@@ -639,7 +639,7 @@
       "status": "implemented"
     },
     "AS-ADAPTER-008": {
-      "title": "WebMCP adapter: opt-in confirm hook resolves the registry's pending confirmation via requestUserInteraction; absent hook or client support stays two-phase",
+      "title": "WebMCP adapter: opt-in confirm hook resolves the registry's pending confirmation via requestUserInteraction; otherwise the call waits for the host's confirmation UI and retries once",
       "source": "09-adapters.md#webmcp-adapter",
       "decision": "D26",
       "tests": [

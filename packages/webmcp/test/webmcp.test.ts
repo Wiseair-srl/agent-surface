@@ -435,6 +435,8 @@ function makeConfirmRegistry() {
   return { registry, cleared };
 }
 
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 const interactiveClient: WebMcpClient = {
   requestUserInteraction: (callback) => callback(),
 };
@@ -475,7 +477,7 @@ describe("WebMCP adapter: in-page confirmation via requestUserInteraction", () =
     adapter.stop();
   });
 
-  it("falls back to two-phase without a confirm option or client support", async () => {
+  it("without a confirm option or client support, waits for the host's confirmation UI", async () => {
     for (const setup of [
       { confirm: undefined, client: interactiveClient },
       { confirm: () => true, client: {} as WebMcpClient },
@@ -489,16 +491,22 @@ describe("WebMCP adapter: in-page confirmation via requestUserInteraction", () =
       });
       adapter.start({ registry, consumer });
       const tool = modelContext.live.get("view_draft__editor__clearDraft")!;
-      const result = await tool.execute({}, setup.client);
-      const payload = JSON.parse(result.content[0]!.text) as { code: string };
-      expect(payload.code).toBe("CONFIRMATION_REQUIRED");
+      const call = tool.execute({}, setup.client);
+      await tick();
       expect(cleared.value).toBe(false);
-      expect(registry.confirmations.pending()).toHaveLength(1);
+      const pending = registry.confirmations.pending();
+      expect(pending).toHaveLength(1);
+      registry.confirmations.resolve(pending[0]!.confirmationId, { approved: true });
+      const result = await call;
+      expect(result.isError).toBeUndefined();
+      expect(cleared.value).toBe(true);
+      // The retry consumed the evidence instead of opening a new confirmation.
+      expect(registry.confirmations.pending()).toEqual([]);
       adapter.stop();
     }
   });
 
-  it("a failing in-page UI leaves the confirmation pending (two-phase)", async () => {
+  it("a failing in-page UI falls back to the host's confirmation UI", async () => {
     const { registry, cleared } = makeConfirmRegistry();
     const modelContext = makeIncrementalModelContext();
     const adapter = createWebMcpAdapter({
@@ -509,11 +517,55 @@ describe("WebMCP adapter: in-page confirmation via requestUserInteraction", () =
     });
     adapter.start({ registry, consumer });
     const tool = modelContext.live.get("view_draft__editor__clearDraft")!;
-    const result = await tool.execute({}, interactiveClient);
-    const payload = JSON.parse(result.content[0]!.text) as { code: string };
-    expect(payload.code).toBe("CONFIRMATION_REQUIRED");
-    expect(cleared.value).toBe(false);
+    const call = tool.execute({}, interactiveClient);
+    await tick();
+    registry.confirmations.resolve(registry.confirmations.pending()[0]!.confirmationId, {
+      approved: true,
+    });
+    expect((await call).isError).toBeUndefined();
+    expect(cleared.value).toBe(true);
     adapter.stop();
+  });
+
+  it("host denial or expiry while waiting: CONFIRMATION_INVALID, nothing executes", async () => {
+    for (const settle of ["denied", "expired"] as const) {
+      const { registry, cleared } = makeConfirmRegistry();
+      const modelContext = makeIncrementalModelContext();
+      const adapter = createWebMcpAdapter({ modelContext });
+      adapter.start({ registry, consumer });
+      const tool = modelContext.live.get("view_draft__editor__clearDraft")!;
+      const call = tool.execute({});
+      await tick();
+      const id = registry.confirmations.pending()[0]!.confirmationId;
+      if (settle === "denied") registry.confirmations.resolve(id, { approved: false });
+      else registry.confirmations.forceExpire(id);
+      const payload = JSON.parse((await call).content[0]!.text) as {
+        code: string;
+        details: { reason: string };
+      };
+      expect(payload.code).toBe("CONFIRMATION_INVALID");
+      expect(payload.details.reason).toBe(settle);
+      expect(cleared.value).toBe(false);
+      adapter.stop();
+    }
+  });
+
+  it("stop() while waiting returns CONFIRMATION_REQUIRED; a late approval executes nothing", async () => {
+    const { registry, cleared } = makeConfirmRegistry();
+    const modelContext = makeIncrementalModelContext();
+    const adapter = createWebMcpAdapter({ modelContext });
+    adapter.start({ registry, consumer });
+    const tool = modelContext.live.get("view_draft__editor__clearDraft")!;
+    const call = tool.execute({});
+    await tick();
+    adapter.stop();
+    const payload = JSON.parse((await call).content[0]!.text) as { code: string };
+    expect(payload.code).toBe("CONFIRMATION_REQUIRED");
+    registry.confirmations.resolve(registry.confirmations.pending()[0]!.confirmationId, {
+      approved: true,
+    });
+    await tick();
+    expect(cleared.value).toBe(false);
   });
 
   it("stop() during the prompt does not resolve or execute", async () => {

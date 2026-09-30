@@ -25,13 +25,15 @@ adapter.start({ registry, consumer: { id: "browser-agent", kind: "webmcp" } });
 
 If `navigator.modelContext` is absent, `start()` resolves and does nothing (feature-detect, never polyfill). Capability errors ride in tool content with `code`/`retry`/`details` preserved, never as protocol-level errors. `stop()` withdraws every tool the adapter exposed and can run repeatedly.
 
-Confirmations are two-phase by default. To confirm in page within one tool call, pass host UI; it runs through WebMCP's `client.requestUserInteraction` and the registry still decides:
+Confirmations complete within one tool call. By default the call waits for your host's confirmation UI to resolve the pending record, then retries with the evidence; denial or expiry returns `CONFIRMATION_INVALID`, and `stop()` aborts the wait. To prompt through WebMCP's `client.requestUserInteraction` instead, pass host UI; the registry still decides:
 
 ```ts
 createWebMcpAdapter({
   confirm: (request) => showConfirmDialog(request.summary),
 });
 ```
+
+WebMCP does not revoke the agent's DOM access, and the confirmation UI lives in the same page, so the server stays the real gate.
 
 Only the imperative API is used. The declarative API (DOM forms as tools) is a non-goal: capabilities must be compiler-authorized, not derived from rendered DOM.
 

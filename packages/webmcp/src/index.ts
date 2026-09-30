@@ -78,8 +78,8 @@ export interface CreateWebMcpAdapterOptions {
    * the WebMCP client supports `requestUserInteraction`, this host UI runs
    * inside it; the answer resolves the registry's pending confirmation and the
    * call is retried once, so the agent sees one final result. The registry
-   * stays the confirmation authority. Absent (or no client support) ⇒
-   * unchanged two-phase behavior.
+   * stays the confirmation authority. Absent (or no client support, or the UI
+   * throws) ⇒ the call waits for the host's own confirmation UI instead.
    */
   confirm?: (request: PendingConfirmation, client: WebMcpClient) => Promise<boolean> | boolean;
   /** Test seam: defaults to (navigator as any).modelContext. */
@@ -117,8 +117,14 @@ const READ_ONLY_EFFECTS: ReadonlySet<string> = new Set(["read", "server-query"])
  * reconciled on every surface-changed (incremental registerTool/unregisterTool
  * when the browser supports it, full provideContext otherwise); unavailable
  * capabilities are not registered (WebMCP has no disabled state today —
- * accepted limitation); confirmations stay two-phase unless `confirm` is set;
- * absent modelContext ⇒ start() does nothing; stop() withdraws every tool.
+ * accepted limitation); absent modelContext ⇒ start() does nothing; stop()
+ * withdraws every tool and aborts confirmation waits.
+ *
+ * Confirmations complete within one call: through `confirm` when it applies,
+ * otherwise by waiting (bounded by the confirmation TTL) for the host to
+ * resolve the pending record. Plain two-phase cannot work on this transport:
+ * the tool schema has no slot for a confirmationId, so a retry never carries
+ * evidence and each one opens a new confirmation.
  */
 export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): AgentSurfaceAdapter {
   let session:
@@ -128,6 +134,7 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
         exposed: Map<string, ExposedTool>;
         unsubscribe: () => void;
         active: boolean;
+        waits: Set<AbortController>;
       }
     | undefined;
 
@@ -151,6 +158,18 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
         exposed: new Map<string, ExposedTool>(),
         unsubscribe: () => {},
         active: true,
+        waits: new Set<AbortController>(),
+      };
+
+      /** Wait for the host to resolve a pending confirmation; aborted by stop(). */
+      const waitForConfirmation = async (confirmationId: string): Promise<void> => {
+        const controller = new AbortController();
+        state.waits.add(controller);
+        try {
+          await host.registry.confirmations.waitFor(confirmationId, { signal: controller.signal });
+        } finally {
+          state.waits.delete(controller);
+        }
       };
 
       const invoke = (target: ToolTarget, invocationId: string, input: JsonValue, confirmationId?: string) =>
@@ -181,6 +200,7 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
             result.status === "error" && result.error.code === "CONFIRMATION_REQUIRED"
               ? result.error.details?.confirmationId
               : undefined;
+          let resolvedInPage = false;
           if (
             options?.confirm &&
             typeof confirmationId === "string" &&
@@ -198,7 +218,7 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
                   (await client.requestUserInteraction(async () => confirm(pending, client))) ===
                   true;
               } catch {
-                approved = undefined; // UI failed: leave it pending, fall back to two-phase
+                approved = undefined; // UI failed: leave it pending, fall back to waiting
               }
               // A stop() mid-prompt returns the pending result as-is (docs/09 §9).
               if (approved !== undefined && state.active) {
@@ -209,8 +229,17 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
                 // Same invocationId + confirmationId (docs/03 D14): the registry
                 // decides the outcome, the adapter only relayed the answer.
                 result = await invoke(target, invocationId, input, confirmationId);
+                resolvedInPage = true;
               }
             }
+          }
+
+          // Fallback: wait for the host's own confirmation UI, then retry once.
+          // Denial and expiry come back as CONFIRMATION_INVALID, never retried.
+          // A stop() before or during the wait returns the pending result as-is.
+          if (!resolvedInPage && typeof confirmationId === "string" && state.active) {
+            await waitForConfirmation(confirmationId);
+            if (state.active) result = await invoke(target, invocationId, input, confirmationId);
           }
 
           // Capability errors ride in tool CONTENT, never protocol errors
@@ -348,6 +377,8 @@ export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): Agent
       if (!state) return; // idempotent
       state.active = false;
       state.unsubscribe();
+      for (const controller of state.waits) controller.abort();
+      state.waits.clear();
       const { modelContext } = state;
       if (state.incremental) {
         // Withdraw only our tools; other page code may own the rest.

@@ -208,14 +208,29 @@ Current mapping:
 - a tool is re-registered when its description, input schema, `registrationId`, or read-only hint changes; a tool that survives a change unmodified keeps its registration and echoes the latest projected `surfaceVersion`;
 - execution through `registry.invoke`;
 - `annotations: { readOnlyHint: true }` for observations and `read`/`server-query` effects only, derived from the declared kind and effect, never from curation;
-- two-phase confirmation by default, with an opt-in in-page hook (below);
+- confirmation within one call: waiting for the host's confirmation UI by default, or an opt-in `requestUserInteraction` hook (below);
 - capability errors encoded in tool content;
 - no-op start when `navigator.modelContext` is unavailable;
 - `stop()` withdraws every tool the adapter exposed (`unregisterTool` for its own names, else `clearContext()`, else an empty `provideContext`), releases the subscription, and is safe to call repeatedly.
 
 Unavailable capabilities are omitted because the current transport has no disabled-tool state. Use `snapshotContext.scope` to minimize exposure to the browser peer.
 
-### In-page confirmation
+### Confirmation
+
+Plain two-phase confirmation cannot work over WebMCP. A tool's input schema is the capability's own, so there is no slot for a `confirmationId`: a retry would never carry evidence, and each one would open a new confirmation. The adapter therefore completes confirmation inside the tool call.
+
+By default, when an invocation returns `CONFIRMATION_REQUIRED`, `execute` stays pending while the host renders its usual confirmation UI (from `registry.confirmations`), then retries once with the same `invocationId` and `confirmationId`:
+
+| Outcome | Tool result |
+|---|---|
+| approved | the capability's output |
+| denied | `CONFIRMATION_INVALID { reason: "denied" }`, never retried |
+| no decision within the TTL | `CONFIRMATION_INVALID { reason: "expired" }` |
+| `adapter.stop()` while waiting | the original `CONFIRMATION_REQUIRED`; nothing executes |
+
+The wait is bounded by `limits.confirmationTtlMs` (default 120 s). If the user agent times out tool calls sooner, lower the TTL to fit.
+
+#### Through `requestUserInteraction`
 
 WebMCP passes a client to `execute(input, client)` whose `requestUserInteraction(callback)` lets a tool run in-page UI during the call. The `confirm` option routes a required confirmation through it:
 
@@ -227,7 +242,11 @@ const adapter = createWebMcpAdapter({
 
 When an invocation returns `CONFIRMATION_REQUIRED` and the client supports `requestUserInteraction`, the adapter runs `confirm(pendingConfirmation, client)` inside it, resolves the registry's pending record with the answer, and retries once with the same `invocationId` and `confirmationId`. The browser agent sees one final result. The registry stays the confirmation authority: it checks the evidence, consumes the record, and returns `CONFIRMATION_INVALID` on denial.
 
-The hook is opt-in because it needs host UI. Without `confirm`, without client support, if the UI throws, or if the adapter stops during the prompt, the call returns `CONFIRMATION_REQUIRED` and the flow stays two-phase.
+The hook is opt-in because it needs host UI. Without `confirm`, without client support, or if the UI throws, the call falls back to waiting for the host's confirmation UI. If the adapter stops during the prompt, the call returns `CONFIRMATION_REQUIRED` and nothing executes.
+
+### What WebMCP does not restrict
+
+WebMCP adds a structured channel next to whatever DOM access the user agent grants its agent; it does not remove that access. Registry policies and confirmations govern only calls routed through the registry. A browser agent that operates the DOM can click the app's own controls, which run the app's handlers directly, and it can click a confirmation dialog rendered in the same page. Treat in-page confirmation as protection against a misled model using the tools, not against an agent that drives the page. Domain authority stays on the server.
 
 ### Imperative API only
 
