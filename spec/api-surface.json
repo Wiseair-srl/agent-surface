@@ -1011,7 +1011,15 @@
         "kind": "type",
         "class": "type"
       },
+      "WebMcpClient": {
+        "kind": "type",
+        "class": "type"
+      },
       "WebMcpModelContext": {
+        "kind": "type",
+        "class": "type"
+      },
+      "WebMcpToolAnnotations": {
         "kind": "type",
         "class": "type"
       },

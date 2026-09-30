@@ -36,6 +36,10 @@ There is no role store, policy language, or approval workflow engine. Browser po
 
 Core snapshots and invocations are in-memory types. Adapters translate them to provider or browser protocols. WebMCP is one adapter, not the foundation of the architecture.
 
+### Declarative WebMCP tools
+
+WebMCP's declarative API turns annotated DOM forms into tools. agent-surface does not use it and will not generate it. A capability exists because the compiler authorized it and the registry admitted it; a tool derived from rendered markup has neither provenance, bypasses the policy and confirmation pipeline, and changes whenever the DOM does. `@agent-surface/webmcp` uses only the imperative API, where every tool maps to a registry capability and executes through `registry.invoke`. See [Adapters](09-adapters.md#imperative-api-only).
+
 ## Scope summary
 
 | In agent-surface | Host or server responsibility |

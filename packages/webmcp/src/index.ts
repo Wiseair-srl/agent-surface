@@ -6,6 +6,7 @@ import {
   type AgentSurfaceRegistry,
   type JsonSchema,
   type JsonValue,
+  type PendingConfirmation,
   type SnapshotContext,
 } from "./core-facade.js";
 
@@ -27,13 +28,26 @@ export interface AgentSurfaceAdapter {
 /* ───────────── assumed navigator.modelContext shape (Experimental) ─────────────
  * The WebMCP surface area is unstable (OQ-2); this module encodes the current
  * assumption and absorbs drift so nothing WebMCP-shaped leaks into core.
+ * Targeted revision: see "Targeted WebMCP revision" in docs/09.
  */
+
+export interface WebMcpToolAnnotations {
+  /** The tool does not change state; a browser agent may skip its approval prompt. */
+  readOnlyHint?: boolean;
+}
+
+/** The per-call client WebMCP passes to `execute`. */
+export interface WebMcpClient {
+  /** Pauses the tool call to run in-page UI; resolves with the callback's value. */
+  requestUserInteraction?<T>(callback: () => Promise<T>): Promise<T>;
+}
 
 export interface WebMcpToolInit {
   name: string;
   description: string;
   inputSchema: JsonSchema;
-  execute(input: JsonValue): Promise<WebMcpToolResult>;
+  annotations?: WebMcpToolAnnotations;
+  execute(input: JsonValue, client?: WebMcpClient): Promise<WebMcpToolResult>;
 }
 
 export interface WebMcpToolResult {
@@ -42,7 +56,12 @@ export interface WebMcpToolResult {
 }
 
 export interface WebMcpModelContext {
+  /** Replaces the whole tool set. Fallback when the incremental API is absent. */
   provideContext(context: { tools: WebMcpToolInit[] }): void;
+  /** Removes every tool provided through provideContext. */
+  clearContext?(): void;
+  registerTool?(tool: WebMcpToolInit): unknown;
+  unregisterTool?(name: string): void;
 }
 
 export interface CreateWebMcpAdapterOptions {
@@ -54,134 +73,297 @@ export interface CreateWebMcpAdapterOptions {
   exposeCapability?: (
     descriptor: AgentCapabilityDescriptorUnion,
   ) => { description?: string } | null | undefined;
+  /**
+   * Opt-in in-page confirmation. When a call returns CONFIRMATION_REQUIRED and
+   * the WebMCP client supports `requestUserInteraction`, this host UI runs
+   * inside it; the answer resolves the registry's pending confirmation and the
+   * call is retried once, so the agent sees one final result. The registry
+   * stays the confirmation authority. Absent (or no client support) ⇒
+   * unchanged two-phase behavior.
+   */
+  confirm?: (request: PendingConfirmation, client: WebMcpClient) => Promise<boolean> | boolean;
   /** Test seam: defaults to (navigator as any).modelContext. */
   modelContext?: WebMcpModelContext;
 }
 
+interface ToolTarget {
+  capabilityId: string;
+  registrationId: string;
+  /** Updated in place when the tool survives a surface change unchanged. */
+  surfaceVersion: string;
+}
+
+interface ExposedTool {
+  tool: WebMcpToolInit;
+  target: ToolTarget;
+  /** Everything the browser agent sees, plus the registration it routes to. */
+  signature: string;
+}
+
+interface DesiredTool {
+  name: string;
+  capabilityId: string;
+  registrationId: string;
+  inputSchema: JsonSchema;
+  description: string;
+  readOnly: boolean;
+}
+
+const READ_ONLY_EFFECTS: ReadonlySet<string> = new Set(["read", "server-query"]);
+
 /**
  * Maps the registry onto `navigator.modelContext`, treating WebMCP strictly
  * as transport/discovery: one wire-named tool per AVAILABLE capability,
- * re-provided on every surface-changed; unavailable capabilities are not
- * registered (WebMCP has no disabled state today — accepted limitation);
- * confirmations stay two-phase; absent modelContext ⇒ start() does nothing.
+ * reconciled on every surface-changed (incremental registerTool/unregisterTool
+ * when the browser supports it, full provideContext otherwise); unavailable
+ * capabilities are not registered (WebMCP has no disabled state today —
+ * accepted limitation); confirmations stay two-phase unless `confirm` is set;
+ * absent modelContext ⇒ start() does nothing; stop() withdraws every tool.
  */
 export function createWebMcpAdapter(options?: CreateWebMcpAdapterOptions): AgentSurfaceAdapter {
-  let unsubscribe: (() => void) | undefined;
+  let session:
+    | {
+        modelContext: WebMcpModelContext;
+        incremental: boolean;
+        exposed: Map<string, ExposedTool>;
+        unsubscribe: () => void;
+        active: boolean;
+      }
+    | undefined;
 
   return {
     name: "webmcp",
 
     start(host: AdapterHost): void {
+      if (session) return;
       const modelContext =
         options?.modelContext ??
         (globalThis as { navigator?: { modelContext?: WebMcpModelContext } }).navigator
           ?.modelContext;
       if (!modelContext) return; // feature-detect, never polyfill
 
-      const provide = (): void => {
+      const incremental =
+        typeof modelContext.registerTool === "function" &&
+        typeof modelContext.unregisterTool === "function";
+      const state = {
+        modelContext,
+        incremental,
+        exposed: new Map<string, ExposedTool>(),
+        unsubscribe: () => {},
+        active: true,
+      };
+
+      const invoke = (target: ToolTarget, invocationId: string, input: JsonValue, confirmationId?: string) =>
+        host.registry.invoke(
+          {
+            invocationId,
+            capabilityId: target.capabilityId,
+            registrationId: target.registrationId,
+            surfaceVersion: target.surfaceVersion,
+            // Forwarded as given (like the core toolset): dropping `{}` made
+            // zero-argument actions fail INVALID_INPUT. Observations ignore input.
+            ...(input !== undefined ? { input } : {}),
+            ...(confirmationId !== undefined ? { confirmationId } : {}),
+          },
+          { consumer: host.consumer },
+        );
+
+      const toTool = (desired: DesiredTool, target: ToolTarget): WebMcpToolInit => ({
+        name: desired.name,
+        description: desired.description,
+        inputSchema: desired.inputSchema,
+        ...(desired.readOnly ? { annotations: { readOnlyHint: true } } : {}),
+        execute: async (input: JsonValue, client?: WebMcpClient): Promise<WebMcpToolResult> => {
+          const invocationId = randomInvocationId();
+          let result = await invoke(target, invocationId, input);
+
+          const confirmationId =
+            result.status === "error" && result.error.code === "CONFIRMATION_REQUIRED"
+              ? result.error.details?.confirmationId
+              : undefined;
+          if (
+            options?.confirm &&
+            typeof confirmationId === "string" &&
+            typeof client?.requestUserInteraction === "function" &&
+            state.active
+          ) {
+            const pending = host.registry.confirmations
+              .pending()
+              .find((record) => record.confirmationId === confirmationId);
+            if (pending) {
+              const confirm = options.confirm;
+              let approved: boolean | undefined;
+              try {
+                approved =
+                  (await client.requestUserInteraction(async () => confirm(pending, client))) ===
+                  true;
+              } catch {
+                approved = undefined; // UI failed: leave it pending, fall back to two-phase
+              }
+              // A stop() mid-prompt returns the pending result as-is (docs/09 §9).
+              if (approved !== undefined && state.active) {
+                host.registry.confirmations.resolve(
+                  confirmationId,
+                  approved ? { approved: true } : { approved: false, reason: "Declined in page" },
+                );
+                // Same invocationId + confirmationId (docs/03 D14): the registry
+                // decides the outcome, the adapter only relayed the answer.
+                result = await invoke(target, invocationId, input, confirmationId);
+              }
+            }
+          }
+
+          // Capability errors ride in tool CONTENT, never protocol errors
+          // (docs/07 adapter mapping): code/retry/details preserved.
+          if (result.status === "ok") {
+            return {
+              content: [{ type: "text", text: JSON.stringify(result.output ?? null) }],
+            };
+          }
+          return {
+            content: [{ type: "text", text: JSON.stringify(result.error) }],
+            isError: true,
+          };
+        },
+      });
+
+      const desiredTools = (): { surfaceVersion: string; tools: DesiredTool[] } => {
         const snapshot = host.registry.snapshot({
           consumer: host.consumer,
           ...(options?.snapshotContext ?? host.snapshotContext ?? {}),
           includeUnavailable: false,
         });
-
-        const tools: WebMcpToolInit[] = [];
-
-        const toTool = (
+        const tools: DesiredTool[] = [];
+        const add = (
           descriptor: AgentCapabilityDescriptorUnion,
           capabilityId: string,
           registrationId: string,
           inputSchema: JsonSchema,
-          description: string,
-        ): WebMcpToolInit => ({
-          name: encodeWireName(capabilityId),
-          description,
-          inputSchema,
-          execute: async (input: JsonValue): Promise<WebMcpToolResult> => {
-            const result = await host.registry.invoke(
-              {
-                invocationId: randomInvocationId(),
-                capabilityId,
-                registrationId,
-                surfaceVersion: snapshot.surfaceVersion,
-                ...(input !== undefined && Object.keys(input as object).length > 0
-                  ? { input }
-                  : {}),
-              },
-              { consumer: host.consumer },
-            );
-            // Capability errors ride in tool CONTENT, never protocol errors
-            // (docs/07 adapter mapping): code/retry/details preserved.
-            if (result.status === "ok") {
-              return {
-                content: [{ type: "text", text: JSON.stringify(result.output ?? null) }],
-              };
-            }
-            return {
-              content: [{ type: "text", text: JSON.stringify(result.error) }],
-              isError: true,
-            };
-          },
-        });
+          defaultDescription: string,
+          readOnly: boolean,
+        ): void => {
+          if (!descriptor.available) return;
+          const curated = options?.exposeCapability?.(descriptor);
+          if (options?.exposeCapability && curated === null) return;
+          tools.push({
+            name: encodeWireName(capabilityId),
+            capabilityId,
+            registrationId,
+            inputSchema,
+            description: curated?.description ?? defaultDescription,
+            // Derived from the declared kind/effect only; curation cannot widen it.
+            readOnly,
+          });
+        };
 
         for (const component of snapshot.components) {
           for (const obs of component.observations) {
-            if (!obs.available) continue;
-            const curated = options?.exposeCapability?.(obs);
-            if (options?.exposeCapability && curated === null) continue;
-            tools.push(
-              toTool(
-                obs,
-                obs.capabilityId,
-                component.registrationId,
-                { type: "object", properties: {}, additionalProperties: false },
-                curated?.description ?? `[view · read] ${obs.description}`,
-              ),
+            add(
+              obs,
+              obs.capabilityId,
+              component.registrationId,
+              { type: "object", properties: {}, additionalProperties: false },
+              `[view · read] ${obs.description}`,
+              true,
             );
           }
           for (const act of component.actions) {
-            if (!act.available) continue;
-            const curated = options?.exposeCapability?.(act);
-            if (options?.exposeCapability && curated === null) continue;
-            tools.push(
-              toTool(
-                act,
-                act.capabilityId,
-                component.registrationId,
-                act.inputSchema,
-                curated?.description ?? `[view · ${act.effect}] ${act.description}`,
-              ),
+            add(
+              act,
+              act.capabilityId,
+              component.registrationId,
+              act.inputSchema,
+              `[view · ${act.effect}] ${act.description}`,
+              READ_ONLY_EFFECTS.has(act.effect),
             );
           }
         }
         for (const proc of snapshot.procedures) {
-          if (!proc.available) continue;
-          const curated = options?.exposeCapability?.(proc);
-          if (options?.exposeCapability && curated === null) continue;
-          tools.push(
-            toTool(
-              proc,
-              proc.procedureId,
-              proc.registrationId,
-              proc.inputSchema,
-              curated?.description ??
-                `[domain · ${proc.effect}${proc.confirmation === "required" ? " · requires confirmation" : ""}] ${proc.description}`,
-            ),
+          add(
+            proc,
+            proc.procedureId,
+            proc.registrationId,
+            proc.inputSchema,
+            `[domain · ${proc.effect}${proc.confirmation === "required" ? " · requires confirmation" : ""}] ${proc.description}`,
+            READ_ONLY_EFFECTS.has(proc.effect),
           );
         }
-
-        modelContext.provideContext({ tools });
+        return { surfaceVersion: snapshot.surfaceVersion, tools };
       };
 
-      provide();
-      unsubscribe = host.registry.subscribe((event) => {
-        if (event.type === "surface-changed") provide();
+      const reconcile = (): void => {
+        if (!state.active) return;
+        const { surfaceVersion, tools } = desiredTools();
+        const next = new Map<string, ExposedTool>();
+        const toRegister: WebMcpToolInit[] = [];
+
+        for (const desired of tools) {
+          const signature = JSON.stringify([
+            desired.description,
+            desired.inputSchema,
+            desired.registrationId,
+            desired.capabilityId,
+            desired.readOnly,
+          ]);
+          const current = state.exposed.get(desired.name);
+          if (current && current.signature === signature) {
+            // Unchanged tool: keep the registration, refresh the version it
+            // echoes so execute carries the latest projected surfaceVersion.
+            current.target.surfaceVersion = surfaceVersion;
+            next.set(desired.name, current);
+            continue;
+          }
+          const target: ToolTarget = {
+            capabilityId: desired.capabilityId,
+            registrationId: desired.registrationId,
+            surfaceVersion,
+          };
+          const tool = toTool(desired, target);
+          next.set(desired.name, { tool, target, signature });
+          toRegister.push(tool);
+        }
+
+        if (state.incremental) {
+          for (const [name, current] of state.exposed) {
+            const replacement = next.get(name);
+            if (replacement !== current) modelContext.unregisterTool!(name);
+          }
+          for (const tool of toRegister) modelContext.registerTool!(tool);
+        } else {
+          modelContext.provideContext({ tools: [...next.values()].map((entry) => entry.tool) });
+        }
+        state.exposed = next;
+      };
+
+      session = state;
+      reconcile();
+      state.unsubscribe = host.registry.subscribe((event) => {
+        if (event.type === "surface-changed") reconcile();
       });
     },
 
     stop(): void {
-      unsubscribe?.();
-      unsubscribe = undefined;
+      const state = session;
+      session = undefined;
+      if (!state) return; // idempotent
+      state.active = false;
+      state.unsubscribe();
+      const { modelContext } = state;
+      if (state.incremental) {
+        // Withdraw only our tools; other page code may own the rest.
+        for (const name of state.exposed.keys()) {
+          try {
+            modelContext.unregisterTool!(name);
+          } catch {
+            // Already gone on the browser side; nothing left to release.
+          }
+        }
+      } else if (typeof modelContext.clearContext === "function") {
+        modelContext.clearContext();
+      } else {
+        modelContext.provideContext({ tools: [] });
+      }
+      state.exposed.clear();
     },
   };
 }

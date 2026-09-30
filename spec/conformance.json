@@ -620,6 +620,42 @@
       ],
       "status": "implemented"
     },
+    "AS-ADAPTER-006": {
+      "title": "WebMCP adapter: stop() withdraws every tool it exposed and is idempotent",
+      "source": "09-adapters.md#webmcp-adapter",
+      "decision": "D26",
+      "tests": [
+        "packages/webmcp/test/webmcp.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-007": {
+      "title": "WebMCP adapter: incremental registerTool/unregisterTool by wire name, provideContext fallback, surviving tools echo the latest surfaceVersion",
+      "source": "09-adapters.md#webmcp-adapter",
+      "decision": "D26",
+      "tests": [
+        "packages/webmcp/test/webmcp.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-008": {
+      "title": "WebMCP adapter: opt-in confirm hook resolves the registry's pending confirmation via requestUserInteraction; absent hook or client support stays two-phase",
+      "source": "09-adapters.md#webmcp-adapter",
+      "decision": "D26",
+      "tests": [
+        "packages/webmcp/test/webmcp.test.ts"
+      ],
+      "status": "implemented"
+    },
+    "AS-ADAPTER-009": {
+      "title": "WebMCP adapter: annotations.readOnlyHint only for observations and read/server-query effects; curation cannot widen it",
+      "source": "09-adapters.md#webmcp-adapter",
+      "decision": "D26",
+      "tests": [
+        "packages/webmcp/test/webmcp.test.ts"
+      ],
+      "status": "implemented"
+    },
     "AS-REACT-001": {
       "title": "Commit-phase registration with Strict Mode symmetry (register/cleanup/register)",
       "source": "04-react-api.md",
